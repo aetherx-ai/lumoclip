@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+@keyframes auroraSpin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes logoLight {
+  0% {
+    transform: translate3d(-45px, 0, 0) rotate(28deg);
+    opacity: 0;
+  }
+
+  15% {
+    opacity: 0.8;
+  }
+
+  45% {
+    opacity: 0.45;
+  }
+
+  70% {
+    opacity: 0;
+  }
+
+  100% {
+    transform: translate3d(80px, 0, 0) rotate(28deg);
+    opacity: 0;
+  }
+}
+
+@keyframes orbitDot {
+  0% {
+    transform: translate(-50%, -50%) rotate(0deg) translateX(9px);
+  }
+
+  100% {
+    transform: translate(-50%, -50%) rotate(360deg) translateX(9px);
+  }
+}
+
+@keyframes logoShine {
+  0% {
+    left: -40px;
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 1;
+  }
+
+  60% {
+    opacity: 1;
+  }
+
+  100% {
+    left: 55px;
+    opacity: 0;
+  }
+}
+
+/* Accessibility + performance */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

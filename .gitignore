@@ -1,0 +1,14 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+downloads/
+tmp/
+desktop.ini
+youtube-test.mp4
+media/
