@@ -94,13 +94,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
     try {
       const { error } =
-        await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo:
-              window.location.origin,
-          },
-        });
+  await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      redirectTo: "https://lumo-clip.com",
+    },
+  });
 
       if (error) throw error;
     } catch (err: any) {
