@@ -25,6 +25,26 @@ const app = express();
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
 
+// SEO: robots.txt
+app.get("/robots.txt", (_req, res) => {
+  res.type("text/plain").send(`User-agent: *
+Allow: /
+
+Sitemap: https://lumo-clip.com/sitemap.xml`);
+});
+
+// SEO: sitemap.xml
+app.get("/sitemap.xml", (_req, res) => {
+  res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://lumo-clip.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>`);
+});
+
 const PORT = Number(process.env.PORT || 3000);
 
 const GEMINI_MODEL =
@@ -32,7 +52,9 @@ const GEMINI_MODEL =
 
 // Backend-enforced billing rules.
 // Do not trust frontend values or environment overrides for these limits.
+
 const VIDEO_COST = 10;
+
 const DAILY_CREDIT_LIMIT = 150;
 
 const MAX_CLIPS = Number(
