@@ -665,6 +665,30 @@ for (const dir of [
   });
 }
 
+const youtubeCookiesPath = path.join(
+  tempDir,
+  "youtube-cookies.txt",
+);
+
+if (process.env.YOUTUBE_COOKIES_B64) {
+  fs.writeFileSync(
+    youtubeCookiesPath,
+    Buffer.from(
+      process.env.YOUTUBE_COOKIES_B64,
+      "base64",
+    ),
+    { mode: 0o600 },
+  );
+}
+
+console.log(
+  "YouTube cookies:",
+  process.env.YOUTUBE_COOKIES_B64
+    ? "configured"
+    : "missing",
+);
+
+
 /* =========================================================
    FFMPEG
 ========================================================= */
@@ -1994,30 +2018,35 @@ async function downloadYouTubeVideo(
         youtubedl.create(ytDlpPath);
 
       const options: any = {
-        output: outputPath,
+  output: outputPath,
 
-        format,
+  format,
 
-        noPlaylist: true,
+  noPlaylist: true,
 
-        forceOverwrites: true,
+  forceOverwrites: true,
 
-        noPart: true,
+  noPart: true,
 
-        noContinue: true,
+  noContinue: true,
+
+  mergeOutputFormat: "mp4",
+
+  ffmpegLocation: ffmpegPath,
+
+  jsRuntimes: "node",
+
+  remoteComponents: "ejs:github",
+
+  ...(fs.existsSync(youtubeCookiesPath)
+    ? { cookies: youtubeCookiesPath }
+    : {}),
 
         /* ---------------------------------------------------
            FFmpeg
         --------------------------------------------------- */
 
-        mergeOutputFormat: "mp4",
-
-ffmpegLocation: ffmpegPath,
-
-// Required by current YouTube extraction flow
-jsRuntimes: "node",
-remoteComponents: "ejs:github",
-
+       
         /* ---------------------------------------------------
            Filename
         --------------------------------------------------- */
