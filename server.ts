@@ -2012,7 +2012,11 @@ async function downloadYouTubeVideo(
 
         mergeOutputFormat: "mp4",
 
-        ffmpegLocation: ffmpegPath,
+ffmpegLocation: ffmpegPath,
+
+// Required by current YouTube extraction flow
+jsRuntimes: "node",
+remoteComponents: "ejs:github",
 
         /* ---------------------------------------------------
            Filename
