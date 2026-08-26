@@ -30,9 +30,10 @@ const PORT = Number(process.env.PORT || 3000);
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
-const VIDEO_COST = Number(
-  process.env.VIDEO_COST || 3,
-);
+// Backend-enforced billing rules.
+// Do not trust frontend values or environment overrides for these limits.
+const VIDEO_COST = 10;
+const DAILY_CREDIT_LIMIT = 150;
 
 const MAX_CLIPS = Number(
   process.env.MAX_CLIPS || 10,
@@ -1049,9 +1050,8 @@ async function getProfile(
      DAILY CREDIT RESET
   ===================================================== */
 
-  const dailyLimit = Number(
-    profile.daily_credits || 150,
-  );
+  // Daily processing allowance is fixed by backend policy.
+  const dailyLimit = DAILY_CREDIT_LIMIT;
 
   if (
     isNewDhakaDay(
@@ -1066,6 +1066,7 @@ async function getProfile(
         .from("profiles")
         .update({
           credits: dailyLimit,
+          daily_credits: dailyLimit,
           last_credit_reset_at:
             new Date().toISOString(),
         })
@@ -3090,65 +3091,78 @@ async function processVideo(
    CREDIT REFUND
 ========================================================= */
 
+async function refundCreditsDirect(
+  userId: string,
+) {
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "refund_video_credits",
+    {
+      p_user_id: userId,
+      p_cost: VIDEO_COST,
+      p_daily_limit: DAILY_CREDIT_LIMIT,
+    },
+  );
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
 async function refundCredits(
   userId: string,
   projectId: string,
 ) {
   try {
-    const {
-      data: profile,
-    } = await supabase
-      .from("profiles")
-      .select("credits")
-      .eq("id", userId)
-      .single();
+    const data =
+      await refundCreditsDirect(
+        userId,
+      );
 
-    if (!profile) {
-      return;
-    }
-
-    const newCredits =
+    const refundedCredits =
       Number(
-        profile.credits || 0,
-      ) + VIDEO_COST;
-
-    await supabase
-      .from("profiles")
-      .update({
-        credits:
-          newCredits,
-      })
-      .eq("id", userId);
+        data?.refunded ?? VIDEO_COST,
+      );
 
     await supabase
       .from("usage_logs")
       .insert({
         user_id: userId,
-
         action:
           `Refund: failed project ${projectId}`,
-
         credits_used:
-          -VIDEO_COST,
+          -refundedCredits,
       });
 
     await createNotification({
       userId,
       type: "credits_refunded",
       title: "Credits refunded",
-      message: `${VIDEO_COST} credits were returned because the project could not be completed.`,
+      message:
+        `${refundedCredits} credits were returned because the project could not be completed.`,
       projectId,
-      metadata: { credits: VIDEO_COST },
+      metadata: {
+        credits: refundedCredits,
+        reason: "processing_failed",
+      },
     });
 
     console.log(
-      `Refunded ${VIDEO_COST} credits.`,
+      `Refunded ${refundedCredits} credits for project ${projectId}.`,
     );
+
+    return refundedCredits;
   } catch (error) {
     console.error(
-      "Credit refund failed:",
+      `Credit refund failed for project ${projectId}:`,
       error,
     );
+
+    return 0;
   }
 }
 
@@ -3162,147 +3176,188 @@ async function createProjectAndCharge(
   sourceType: string,
   sourceUrl: string,
 ) {
+  // Get profile only for the response/UI metadata.
+  // Credit enforcement is performed atomically in Supabase.
   const profile =
-    await getProfile(
-      userId,
+    await getProfile(userId);
+
+  // =========================================================
+  // ATOMIC CREDIT CHARGE
+  // 10 credits / video
+  // 150 credits / Dhaka day
+  // concurrency-safe
+  // =========================================================
+
+  const {
+    data: chargeResult,
+    error: chargeError,
+  } = await supabase.rpc(
+    "charge_video_credits",
+    {
+      p_user_id: userId,
+      p_cost: VIDEO_COST,
+      p_daily_limit: DAILY_CREDIT_LIMIT,
+    },
+  );
+
+  if (chargeError) {
+    console.error(
+      "Credit charge failed:",
+      chargeError,
     );
 
-  const credits =
-    Number(
-      profile.credits || 0,
+    const message = String(
+      chargeError.message || "",
     );
 
-  if (
-    credits < VIDEO_COST
-  ) {
-    const error: any =
-      new Error(
-        `You need ${VIDEO_COST} credits.`,
-      );
+    if (
+      message.includes(
+        "INSUFFICIENT_CREDITS",
+      )
+    ) {
+      const error: any =
+        new Error(
+          `You need ${VIDEO_COST} credits.`,
+        );
 
-    error.statusCode =
-      402;
+      error.statusCode = 402;
+      error.credits = 0;
 
-    error.credits =
-      credits;
+      throw error;
+    }
 
-    throw error;
+    throw new Error(
+      "Failed to charge credits.",
+    );
   }
+
+  const newCredits =
+    Number(
+      chargeResult?.credits ?? 0,
+    );
+
+  // =========================================================
+  // CREATE PROJECT
+  // =========================================================
 
   const {
     data: project,
     error: projectError,
-  } =
-    await supabase
-      .from("projects")
-      .insert({
-        user_id:
-          userId,
+  } = await supabase
+    .from("projects")
+    .insert({
+      user_id: userId,
+      name,
+      status: "processing",
+      source_type: sourceType,
+      source_media_url: "",
+      source_url:
+        sourceType === "youtube"
+          ? sourceUrl
+          : "",
+      duration: 0,
+      progress: 5,
+      current_step:
+        sourceType === "youtube"
+          ? "Preparing YouTube video"
+          : "Video uploaded",
+      transcript: [],
+      transcript_segments: [],
+    })
+    .select()
+    .single();
 
-        name,
-
-        status:
-          "processing",
-
-        source_type:
-          sourceType,
-
-        source_media_url:
-          "",
-
-        source_url:
-          sourceType ===
-          "youtube"
-            ? sourceUrl
-            : "",
-
-        duration: 0,
-
-        progress: 5,
-
-        current_step:
-          sourceType ===
-          "youtube"
-            ? "Preparing YouTube video"
-            : "Video uploaded",
-
-        transcript: [],
-
-        transcript_segments: [],
-      })
-      .select()
-      .single();
+  // =========================================================
+  // PROJECT CREATION FAILURE -> REFUND
+  // =========================================================
 
   if (
     projectError ||
     !project
   ) {
+    console.error(
+      "Project creation failed:",
+      projectError,
+    );
+
+    try {
+      await refundCreditsDirect(
+        userId,
+      );
+    } catch (refundError) {
+      console.error(
+        "Automatic project-creation refund failed:",
+        refundError,
+      );
+    }
+
     throw new Error(
       projectError?.message ||
         "Failed to create project.",
     );
   }
 
-  const newCredits =
-    credits -
-    VIDEO_COST;
+  // =========================================================
+  // USAGE LOG
+  // =========================================================
 
   const {
-    error: creditError,
-  } =
-    await supabase
-      .from("profiles")
-      .update({
-        credits:
-          newCredits,
-      })
-      .eq("id", userId);
-
-  if (creditError) {
-    await supabase
-      .from("projects")
-      .delete()
-      .eq(
-        "id",
-        project.id,
-      );
-
-    throw new Error(
-      "Failed to update credits.",
-    );
-  }
-
-  await supabase
+    error: usageError,
+  } = await supabase
     .from("usage_logs")
     .insert({
-      user_id:
-        userId,
-
+      user_id: userId,
       action:
         `${
-          sourceType ===
-          "youtube"
+          sourceType === "youtube"
             ? "YouTube"
             : "Project"
         } Repurpose: ${name}`,
-
-      credits_used:
-        VIDEO_COST,
+      credits_used: VIDEO_COST,
     });
 
-  await createNotification({
-    userId,
-    type: "project_started",
-    title: "Project processing started",
-    message: `LumoClip is turning “${name}” into high-performing short clips.`,
-    projectId: project.id,
-    metadata: { sourceType },
-  });
+  if (usageError) {
+    // Do not refund: the project exists and processing has been charged.
+    console.error(
+      "Usage log failed:",
+      usageError,
+    );
+  }
+
+  // =========================================================
+  // NOTIFICATION
+  // Notification failure must not turn a successful charge/project
+  // creation into an endpoint failure.
+  // =========================================================
+
+  try {
+    await createNotification({
+      userId,
+      type: "project_started",
+      title:
+        "Project processing started",
+      message:
+        `LumoClip is turning “${name}” into high-performing short clips.`,
+      projectId: project.id,
+      metadata: {
+        sourceType,
+        creditsCharged:
+          VIDEO_COST,
+      },
+    });
+  } catch (notificationError) {
+    console.error(
+      "Project-start notification failed:",
+      notificationError,
+    );
+  }
 
   return {
     profile,
     project,
     newCredits,
+    creditsCharged: VIDEO_COST,
+    dailyLimit: DAILY_CREDIT_LIMIT,
   };
 }
 
@@ -3676,11 +3731,20 @@ app.post(
     let tempPath =
       "";
 
+    let authenticatedUserId =
+      "";
+
+    let creditsCharged =
+      false;
+
     try {
       const user =
         await getAuthenticatedUser(
           req,
         );
+
+      authenticatedUserId =
+        user.id;
 
       if (!req.file) {
         return res
@@ -3718,6 +3782,9 @@ app.post(
 
       projectId =
         project.id;
+
+      creditsCharged =
+        true;
 
       const extension =
         extensionForMime(
@@ -3863,13 +3930,30 @@ app.post(
       }
 
       if (projectId) {
-        await updateProject(
-          projectId,
-          0,
-          error?.message ||
-            "Upload failed.",
-          "failed",
-        );
+        try {
+          await updateProject(
+            projectId,
+            0,
+            error?.message ||
+              "Upload failed.",
+            "failed",
+          );
+        } catch (updateError) {
+          console.error(
+            "Failed to mark upload project as failed:",
+            updateError,
+          );
+        }
+
+        if (
+          creditsCharged &&
+          authenticatedUserId
+        ) {
+          await refundCredits(
+            authenticatedUserId,
+            projectId,
+          );
+        }
       }
 
       if (
@@ -3914,11 +3998,20 @@ app.post(
     let projectId =
       "";
 
+    let authenticatedUserId =
+      "";
+
+    let creditsCharged =
+      false;
+
     try {
       const user =
         await getAuthenticatedUser(
           req,
         );
+
+      authenticatedUserId =
+        user.id;
 
       const sourceUrl =
         typeof req.body
@@ -3964,6 +4057,9 @@ app.post(
       projectId =
         project.id;
 
+      creditsCharged =
+        true;
+
       const projectDir =
         path.join(
           mediaDir,
@@ -4003,7 +4099,7 @@ app.post(
 
         user: {
           id:
-            profile.id,
+            user.id,
 
           name:
             profile.name,
@@ -4071,13 +4167,33 @@ app.post(
       );
 
       if (projectId) {
-        await updateProject(
-          projectId,
-          0,
-          error?.message ||
-            "YouTube processing failed.",
-          "failed",
-        );
+        try {
+          await updateProject(
+            projectId,
+            0,
+            error?.message ||
+              "YouTube processing failed.",
+            "failed",
+          );
+        } catch (updateError) {
+          console.error(
+            "Failed to mark YouTube project as failed:",
+            updateError,
+          );
+        }
+
+        // This catch only handles failures before the background
+        // processor takes over. Background failures are refunded
+        // inside the background catch below.
+        if (
+          creditsCharged &&
+          authenticatedUserId
+        ) {
+          await refundCredits(
+            authenticatedUserId,
+            projectId,
+          );
+        }
       }
 
       if (
@@ -4989,6 +5105,10 @@ app.listen(
 
     console.log(
       `Video cost: ${VIDEO_COST} credits`,
+    );
+
+    console.log(
+      `Daily credit limit: ${DAILY_CREDIT_LIMIT} credits`,
     );
 
     console.log(
