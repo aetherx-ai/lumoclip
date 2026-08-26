@@ -12,7 +12,11 @@ import {
   createPartFromUri,
 } from "@google/genai";
 import ffmpeg from "fluent-ffmpeg";
+import ffmpegStatic from "ffmpeg-static";
+// @ts-expect-error ffprobe-static does not provide TypeScript declarations
+import ffprobeStatic from "ffprobe-static";
 import { google } from "googleapis";
+
 
 dotenv.config();
 
@@ -665,12 +669,24 @@ for (const dir of [
    FFMPEG
 ========================================================= */
 
+const packagedFfmpegPath =
+  typeof ffmpegStatic === "string"
+    ? ffmpegStatic
+    : undefined;
+
+const packagedFfprobePath =
+  typeof ffprobeStatic?.path === "string"
+    ? ffprobeStatic.path
+    : undefined;
+
 const ffmpegPath =
   process.env.FFMPEG_PATH ||
+  packagedFfmpegPath ||
   "ffmpeg";
 
 const ffprobePath =
   process.env.FFPROBE_PATH ||
+  packagedFfprobePath ||
   "ffprobe";
 
 if (
