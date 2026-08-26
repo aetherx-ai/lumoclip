@@ -961,46 +961,127 @@ async function getAuthenticatedUser(
    PROFILE
 ========================================================= */
 
+function isNewDhakaDay(
+  lastResetAt: string | null,
+): boolean {
+  if (!lastResetAt) return true;
+
+  const now = new Date();
+
+  const todayDhaka = new Intl.DateTimeFormat(
+    "en-CA",
+    {
+      timeZone: "Asia/Dhaka",
+    },
+  ).format(now);
+
+  const lastResetDhaka =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone: "Asia/Dhaka",
+      },
+    ).format(new Date(lastResetAt));
+
+  return todayDhaka !== lastResetDhaka;
+}
+
 async function getProfile(
   userId: string,
 ) {
   const {
     data: authData,
     error: authError,
-  } = await supabase.auth.admin.getUserById(userId);
+  } =
+    await supabase.auth.admin.getUserById(
+      userId,
+    );
 
-  if (authError || !authData?.user) {
-    throw new Error("Authenticated user not found.");
+  if (
+    authError ||
+    !authData?.user
+  ) {
+    throw new Error(
+      "Authenticated user not found.",
+    );
   }
 
-  const authUser = authData.user;
+  const authUser =
+    authData.user;
 
   const avatar =
-    authUser.user_metadata?.avatar_url ||
-    authUser.user_metadata?.picture ||
+    authUser.user_metadata
+      ?.avatar_url ||
+    authUser.user_metadata
+      ?.picture ||
     null;
 
   const name =
-    authUser.user_metadata?.full_name ||
-    authUser.user_metadata?.name ||
+    authUser.user_metadata
+      ?.full_name ||
+    authUser.user_metadata
+      ?.name ||
     authUser.email?.split("@")[0] ||
     "User";
 
   const {
     data: profile,
     error: profileError,
-  } = await supabase
-    .from("profiles")
-    .select(
-      "id, name, email, avatar, credits, plan",
-    )
-    .eq("id", userId)
-    .single();
+  } =
+    await supabase
+      .from("profiles")
+      .select(
+        "id, name, email, avatar, credits, plan, daily_credits, last_credit_reset_at",
+      )
+      .eq("id", userId)
+      .single();
 
-  if (profileError || !profile) {
+  if (
+    profileError ||
+    !profile
+  ) {
     throw new Error(
       "User profile not found.",
     );
+  }
+
+  /* =====================================================
+     DAILY CREDIT RESET
+  ===================================================== */
+
+  const dailyLimit = Number(
+    profile.daily_credits || 150,
+  );
+
+  if (
+    isNewDhakaDay(
+      profile.last_credit_reset_at,
+    )
+  ) {
+    const {
+      data: resetProfile,
+      error: resetError,
+    } =
+      await supabase
+        .from("profiles")
+        .update({
+          credits: dailyLimit,
+          last_credit_reset_at:
+            new Date().toISOString(),
+        })
+        .eq("id", userId)
+        .select(
+          "id, name, email, avatar, credits, plan, daily_credits, last_credit_reset_at",
+        )
+        .single();
+
+    if (resetError) {
+      throw resetError;
+    }
+
+    if (resetProfile) {
+      return resetProfile;
+    }
   }
 
   // Automatically sync Google/Supabase Auth avatar
@@ -1008,7 +1089,10 @@ async function getProfile(
     avatar &&
     avatar !== profile.avatar
   ) {
-    const { data: updatedProfile, error } =
+    const {
+      data: updatedProfile,
+      error,
+    } =
       await supabase
         .from("profiles")
         .update({
@@ -1017,11 +1101,14 @@ async function getProfile(
         })
         .eq("id", userId)
         .select(
-          "id, name, email, avatar, credits, plan",
+          "id, name, email, avatar, credits, plan, daily_credits, last_credit_reset_at",
         )
         .single();
 
-    if (!error && updatedProfile) {
+    if (
+      !error &&
+      updatedProfile
+    ) {
       return updatedProfile;
     }
 
