@@ -27,7 +27,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // SEO: robots.txt
 app.get("/robots.txt", (_req, res) => {
-  res.type("text/plain").send(`User-agent: *
+  res.status(200)
+    .set("Cache-Control", "public, max-age=3600")
+    .type("text/plain; charset=utf-8")
+    .send(`User-agent: *
 Allow: /
 
 Sitemap: https://lumo-clip.com/sitemap.xml`);
@@ -35,7 +38,10 @@ Sitemap: https://lumo-clip.com/sitemap.xml`);
 
 // SEO: sitemap.xml
 app.get("/sitemap.xml", (_req, res) => {
-  res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?>
+  res.status(200)
+    .set("Cache-Control", "public, max-age=3600")
+    .type("application/xml; charset=utf-8")
+    .send(`<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://lumo-clip.com/</loc>
@@ -5014,7 +5020,7 @@ app.use(express.static(clientDistDir));
 // Any GET request that isn't an API route falls back to
 // index.html so client-side routing (React Router, etc.) works
 // on refresh / direct navigation.
-app.get(/^(?!\/api\/).*/, (req, res) => {
+app.get(/^(?!\/api\/)(?!\/robots\.txt$)(?!\/sitemap\.xml$).*/, (req, res) => {
   const indexPath = path.join(
     clientDistDir,
     "index.html",
