@@ -13,7 +13,7 @@ import {
 } from "@google/genai";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
-// @ts-expect-error ffprobe-static does not provide TypeScript declarations
+// @ts-ignore
 import ffprobeStatic from "ffprobe-static";
 import { google } from "googleapis";
 
@@ -145,6 +145,23 @@ const GEMINI_RETRY_MAX_MS = Number(
 const CLIP_CONCURRENCY = Number(
   process.env.CLIP_CONCURRENCY || 2,
 );
+
+/* =========================================================
+   SELF-HOSTED YOUTUBE WORKER
+
+   Render never contacts YouTube directly. A trusted PC worker
+   polls for queued YouTube jobs, downloads the video locally,
+   then uploads the resulting file to Render.
+
+   This worker does not bypass CAPTCHAs, PO tokens, bot checks,
+   or other access controls. It only downloads content that
+   yt-dlp can legitimately access from the worker machine.
+========================================================= */
+const LUMO_WORKER_TOKEN =
+  process.env.LUMO_WORKER_TOKEN?.trim() || "";
+
+const WORKER_ENABLED = Boolean(LUMO_WORKER_TOKEN);
+
 
 
 /* =========================================================
@@ -1905,1217 +1922,18 @@ EXACT JSON SHAPE:
 }
 
 /* =========================================================
-   YOUTUBE DOWNLOAD — VISIONOS FIRST / 403 RESILIENT
+   YOUTUBE DOWNLOAD
+
+   Render intentionally does NOT download YouTube URLs.
+   YouTube jobs are handled by the self-hosted PC worker.
 ========================================================= */
 
 async function downloadYouTubeVideo(
-  url: string,
-  outputPath: string,
+  _url: string,
+  _outputPath: string,
 ) {
-  if (!isYouTubeUrl(url)) {
-    throw new Error("Invalid YouTube URL.");
-  }
-
-  fs.mkdirSync(path.dirname(outputPath), {
-    recursive: true,
-  });
-
-  /*
-   * Production YouTube strategy:
-   *
-   * 1) Render/server environments use the hosted downloader API.
-   *    YouTube can challenge data-center IPs, so direct yt-dlp is
-   *    intentionally NOT used as the first production path.
-   *
-   * 2) Local development can still use yt-dlp as a fallback.
-   *
-   * EasyDown API:
-   *   POST https://api.easydown.org/api/v1/platforms/youtube/parse
-   *   Authorization: Bearer <YOUTUBE_DOWNLOAD_API_KEY>
-   *
-   * Required on Render:
-   *   YOUTUBE_DOWNLOAD_API_KEY=ed_live_...
-   *
-   * Optional:
-   *   YOUTUBE_DOWNLOAD_API_URL=https://api.easydown.org/api/v1/platforms/youtube/parse
-   */
-
-  const hostedApiKey =
-    process.env.YOUTUBE_DOWNLOAD_API_KEY?.trim() || "";
-
-  const hostedApiUrl =
-    process.env.YOUTUBE_DOWNLOAD_API_URL?.trim() ||
-    "https://api.easydown.org/api/v1/platforms/youtube/parse";
-
-  const isRender =
-    process.env.RENDER === "true" ||
-    Boolean(process.env.RENDER_SERVICE_ID);
-
-  const allowRenderYtDlpFallback =
-    process.env.ALLOW_RENDER_YTDLP_FALLBACK === "true";
-
-  const targetHeight = Math.max(
-    144,
-    Math.min(
-      1080,
-      Number(YOUTUBE_MAX_HEIGHT) || 480,
-    ),
-  );
-
-  const DOWNLOAD_TIMEOUT_MS = Math.max(
-    30_000,
-    Number(process.env.YOUTUBE_DOWNLOAD_TIMEOUT_MS) || 180_000,
-  );
-
-  const cleanup = () => {
-    for (const file of [
-      outputPath,
-      `${outputPath}.part`,
-      `${outputPath}.ytdl`,
-      `${outputPath}.video`,
-      `${outputPath}.audio`,
-      `${outputPath}.tmp`,
-    ]) {
-      try {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
-        }
-      } catch {}
-    }
-  };
-
-  const normalizeHeaders = (
-    input?: Record<string, unknown>,
-  ): Record<string, string> => {
-    const result: Record<string, string> = {};
-
-    if (!input || typeof input !== "object") {
-      return result;
-    }
-
-    for (const [key, value] of Object.entries(input)) {
-      if (
-        value !== undefined &&
-        value !== null &&
-        String(value).trim()
-      ) {
-        result[key] = String(value);
-      }
-    }
-
-    return result;
-  };
-
-  const downloadFile = async (
-    mediaUrl: string,
-    destination: string,
-    extraHeaders?: Record<string, unknown>,
-  ) => {
-    let parsedUrl: URL;
-
-    try {
-      parsedUrl = new URL(mediaUrl);
-    } catch {
-      throw new Error("Downloader returned an invalid media URL.");
-    }
-
-    if (
-      parsedUrl.protocol !== "https:" &&
-      parsedUrl.protocol !== "http:"
-    ) {
-      throw new Error(
-        `Unsupported media URL protocol: ${parsedUrl.protocol}`,
-      );
-    }
-
-    const controller = new AbortController();
-
-    const timeout = setTimeout(
-      () => controller.abort(),
-      DOWNLOAD_TIMEOUT_MS,
-    );
-
-    const headers: Record<string, string> = {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
-      Accept:
-        "video/mp4,video/webm,audio/mp4,audio/webm,*/*;q=0.8",
-      Referer: "https://www.youtube.com/",
-      Origin: "https://www.youtube.com",
-      ...normalizeHeaders(extraHeaders),
-    };
-
-    try {
-      const response = await fetch(
-        parsedUrl,
-        {
-          headers,
-          redirect: "follow",
-          signal: controller.signal,
-        },
-      );
-
-      if (!response.ok || !response.body) {
-        throw new Error(
-          `Media download failed: HTTP ${response.status}`,
-        );
-      }
-
-      const contentType =
-        String(
-          response.headers.get("content-type") || "",
-        ).toLowerCase();
-
-      if (
-        contentType.includes("text/html") ||
-        contentType.includes("application/json")
-      ) {
-        throw new Error(
-          `Media URL returned ${contentType || "non-video content"} instead of video/audio data.`,
-        );
-      }
-
-      const file =
-        fs.createWriteStream(
-          destination,
-        );
-
-      try {
-        const reader =
-          response.body.getReader();
-
-        try {
-          while (true) {
-            const { done, value } =
-              await reader.read();
-
-            if (done) break;
-
-            if (value) {
-              await new Promise<void>(
-                (resolve, reject) => {
-                  if (
-                    file.write(
-                      Buffer.from(value),
-                    )
-                  ) {
-                    resolve();
-                  } else {
-                    file.once(
-                      "drain",
-                      resolve,
-                    );
-                    file.once(
-                      "error",
-                      reject,
-                    );
-                  }
-                },
-              );
-            }
-          }
-        } finally {
-          reader.releaseLock();
-        }
-      } catch (error: any) {
-        try {
-          file.destroy();
-        } catch {}
-
-        if (
-          error?.name ===
-          "AbortError"
-        ) {
-          throw new Error(
-            `Media download timed out after ${Math.round(
-              DOWNLOAD_TIMEOUT_MS / 1000,
-            )} seconds.`,
-          );
-        }
-
-        throw error;
-      } finally {
-        if (!file.destroyed) {
-          await new Promise<void>(
-            (resolve) => {
-              file.end(resolve);
-            },
-          );
-        }
-      }
-    } finally {
-      clearTimeout(timeout);
-    }
-
-    const stat =
-      fs.statSync(destination);
-
-    if (
-      !stat.isFile() ||
-      stat.size < 100 * 1024
-    ) {
-      throw new Error(
-        `Downloaded media is invalid or too small: ${stat.size} bytes.`,
-      );
-    }
-  };
-
-  /*
-   * =========================================================
-   * 1. HOSTED DOWNLOADER API
-   * =========================================================
-   */
-  if (hostedApiKey) {
-    let hostedLastError: any = null;
-
-    // EasyDown media URLs are signed/time-limited. Re-parse the original
-    // YouTube URL once when the returned media URL responds with 403/404/410.
-    for (let hostedAttempt = 1; hostedAttempt <= 2; hostedAttempt++) {
-      cleanup();
-
-      try {
-      console.log(
-        "🎬 Using hosted YouTube downloader API:",
-        hostedApiUrl,
-      );
-
-      const controller =
-        new AbortController();
-
-      const timeout =
-        setTimeout(
-          () => controller.abort(),
-          DOWNLOAD_TIMEOUT_MS,
-        );
-
-      let hostedResponse: globalThis.Response;
-
-try {
-  hostedResponse = await fetch(hostedApiUrl, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${hostedApiKey}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      url,
-    }),
-    signal: controller.signal,
-  });
-} catch (error: any) {
-        if (
-          error?.name ===
-          "AbortError"
-        ) {
-          throw new Error(
-            `YouTube downloader API timed out after ${Math.round(
-              DOWNLOAD_TIMEOUT_MS / 1000,
-            )} seconds.`,
-          );
-        }
-
-        throw error;
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      const responseText = await hostedResponse.text();
-
-let payload: any;
-
-try {
-  payload = JSON.parse(responseText);
-} catch {
   throw new Error(
-    `Hosted downloader returned invalid JSON (HTTP ${hostedResponse.status}).`,
-  );
-}
-
-if (!hostedResponse.ok) {
-  const reason =
-    payload?.message ||
-    payload?.msg ||
-    payload?.error?.message ||
-    payload?.error ||
-    `HTTP ${hostedResponse.status}`;
-
-  throw new Error(
-    `Hosted YouTube downloader failed: ${String(reason)}`,
-  );
-}
-
-      /*
-       * EasyDown platform endpoint:
-       *   data.media.videos[]
-       *   data.media.audios[]
-       *
-       * Also accept the unified endpoint shape:
-       *   data.videos[]
-       *   data.audios[]
-       *
-       * And accept raw YouTube streamingData as a defensive
-       * compatibility path if a provider response includes it.
-       */
-      const platformMedia =
-        payload?.data?.media || {};
-
-      const unifiedMedia =
-        payload?.data || {};
-
-      const platformData =
-        payload?.data?.platformData ||
-        {};
-
-      const streamingData =
-        platformData?.streamingData ||
-        {};
-
-      const rawVideos = [
-        ...(Array.isArray(
-          platformMedia?.videos,
-        )
-          ? platformMedia.videos
-          : []),
-        ...(Array.isArray(
-          unifiedMedia?.videos,
-        )
-          ? unifiedMedia.videos
-          : []),
-        ...(Array.isArray(
-          platformMedia?.formats,
-        )
-          ? platformMedia.formats
-          : []),
-        ...(Array.isArray(
-          unifiedMedia?.formats,
-        )
-          ? unifiedMedia.formats
-          : []),
-        ...(Array.isArray(
-          streamingData?.formats,
-        )
-          ? streamingData.formats
-          : []),
-      ];
-
-      const rawAudios = [
-        ...(Array.isArray(
-          platformMedia?.audios,
-        )
-          ? platformMedia.audios
-          : []),
-        ...(Array.isArray(
-          unifiedMedia?.audios,
-        )
-          ? unifiedMedia.audios
-          : []),
-        ...(Array.isArray(
-          streamingData?.adaptiveFormats,
-        )
-          ? streamingData.adaptiveFormats
-          : []),
-      ];
-
-      const videos = rawVideos
-        .filter(
-          (item: any) =>
-            Boolean(
-              String(
-                item?.url || "",
-              ).trim(),
-            ),
-        )
-        .map((item: any) => ({
-          ...item,
-          url: String(
-            item.url,
-          ).trim(),
-          mimeType: String(
-            item.mimeType || "",
-          ),
-          height:
-            Number(item.height) ||
-            0,
-          hasAudio:
-            item?.hasAudio === true ||
-            String(
-              item.mimeType || "",
-            )
-              .toLowerCase()
-              .startsWith(
-                "video/",
-              ) &&
-            !String(
-              item.mimeType || "",
-            )
-              .toLowerCase()
-              .includes(
-                "video-only",
-              ),
-        }));
-
-      const audios = rawAudios
-        .filter(
-          (item: any) =>
-            Boolean(
-              String(
-                item?.url || "",
-              ).trim(),
-            ),
-        )
-        .map((item: any) => ({
-          ...item,
-          url: String(
-            item.url,
-          ).trim(),
-          bitrate:
-            Number(
-              item.bitrate,
-            ) || 0,
-        }));
-
-      const heightOf =
-        (item: any) => {
-          const direct =
-            Number(
-              item?.height,
-            );
-
-          if (
-            Number.isFinite(
-              direct,
-            ) &&
-            direct > 0
-          ) {
-            return direct;
-          }
-
-          const quality =
-            String(
-              item?.quality ||
-                item?.qualityLabel ||
-                "",
-            );
-
-          const match =
-            quality.match(
-              /(\d{3,4})p/i,
-            );
-
-          return match
-            ? Number(match[1])
-            : 0;
-        };
-
-      /*
-       * Prefer:
-       *   - MP4
-       *   - <= target height
-       *   - closest/highest quality to target
-       *   - audio already included
-       */
-      const usableVideos =
-        videos.sort(
-          (
-            a: any,
-            b: any,
-          ) => {
-            const ah =
-              heightOf(a);
-            const bh =
-              heightOf(b);
-
-            const aMp4 =
-              String(
-                a.mimeType || "",
-              )
-                .toLowerCase()
-                .includes(
-                  "video/mp4",
-                )
-                ? 1
-                : 0;
-
-            const bMp4 =
-              String(
-                b.mimeType || "",
-              )
-                .toLowerCase()
-                .includes(
-                  "video/mp4",
-                )
-                ? 1
-                : 0;
-
-            if (
-              aMp4 !== bMp4
-            ) {
-              return (
-                bMp4 - aMp4
-              );
-            }
-
-            const aWithin =
-              ah > 0 &&
-              ah <=
-                targetHeight
-                ? 1
-                : 0;
-
-            const bWithin =
-              bh > 0 &&
-              bh <=
-                targetHeight
-                ? 1
-                : 0;
-
-            if (
-              aWithin !==
-              bWithin
-            ) {
-              return (
-                bWithin -
-                aWithin
-              );
-            }
-
-            if (
-              aWithin &&
-              bWithin
-            ) {
-              if (
-                Boolean(
-                  a.hasAudio,
-                ) !==
-                Boolean(
-                  b.hasAudio,
-                )
-              ) {
-                return a.hasAudio
-                  ? -1
-                  : 1;
-              }
-
-              return (
-                bh - ah
-              );
-            }
-
-            return (
-              Math.abs(
-                ah -
-                  targetHeight,
-              ) -
-              Math.abs(
-                bh -
-                  targetHeight,
-              )
-            );
-          },
-        );
-
-      const video =
-        usableVideos[0];
-
-      if (!video?.url) {
-        throw new Error(
-          "Hosted downloader returned no usable YouTube video format.",
-        );
-      }
-
-      if (
-        video.hasAudio === true
-      ) {
-        await downloadFile(
-          video.url,
-          outputPath,
-          video.headers,
-        );
-
-        console.log(
-          `✅ Hosted YouTube download complete: ${(
-            fs.statSync(
-              outputPath,
-            ).size /
-            1024 /
-            1024
-          ).toFixed(2)} MB`,
-        );
-
-        return outputPath;
-      }
-
-      const audio =
-        audios.sort(
-          (
-            a: any,
-            b: any,
-          ) =>
-            Number(
-              b.bitrate ||
-                0,
-            ) -
-            Number(
-              a.bitrate ||
-                0,
-            ),
-        )[0];
-
-      if (!audio?.url) {
-        throw new Error(
-          "Hosted downloader returned video without an audio stream.",
-        );
-      }
-
-      const videoPath =
-        `${outputPath}.video`;
-
-      const audioPath =
-        `${outputPath}.audio`;
-
-      try {
-        await Promise.all([
-          downloadFile(
-            video.url,
-            videoPath,
-            video.headers,
-          ),
-          downloadFile(
-            audio.url,
-            audioPath,
-            audio.headers,
-          ),
-        ]);
-
-        await new Promise<void>(
-          (
-            resolve,
-            reject,
-          ) => {
-            ffmpeg(
-              videoPath,
-            )
-              .input(
-                audioPath,
-              )
-              .outputOptions([
-                "-map",
-                "0:v:0",
-                "-map",
-                "1:a:0",
-                "-c:v",
-                "copy",
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
-                "-movflags",
-                "+faststart",
-                "-y",
-              ])
-              .output(
-                outputPath,
-              )
-              .on(
-                "end",
-                () => resolve(),
-              )
-              .on(
-                "error",
-                (error) =>
-                  reject(
-                    error,
-                  ),
-              )
-              .run();
-          },
-        );
-      } finally {
-        try {
-          if (
-            fs.existsSync(
-              videoPath,
-            )
-          ) {
-            fs.unlinkSync(
-              videoPath,
-            );
-          }
-        } catch {}
-
-        try {
-          if (
-            fs.existsSync(
-              audioPath,
-            )
-          ) {
-            fs.unlinkSync(
-              audioPath,
-            );
-          }
-        } catch {}
-      }
-
-      const stat =
-        fs.statSync(
-          outputPath,
-        );
-
-      if (
-        !stat.isFile() ||
-        stat.size < 100 * 1024
-      ) {
-        throw new Error(
-          "Merged YouTube output is invalid.",
-        );
-      }
-
-      console.log(
-        `✅ Hosted YouTube download + merge complete: ${(
-          stat.size /
-          1024 /
-          1024
-        ).toFixed(2)} MB`,
-      );
-
-      return outputPath;
-      } catch (error: any) {
-        hostedLastError = error;
-        cleanup();
-
-        const message = String(
-          error?.message ||
-            error?.stderr ||
-            error ||
-            "Hosted YouTube downloader failed.",
-        );
-
-        const retryMedia =
-          /HTTP\s+(403|404|410)/i.test(message) ||
-          /signed|expired|forbidden/i.test(message);
-
-        if (retryMedia && hostedAttempt === 1) {
-          console.warn(
-            "⚠️ EasyDown media URL was rejected. Re-parsing YouTube URL for a fresh signed URL...",
-          );
-          await sleep(800);
-          continue;
-        }
-
-        console.warn(
-          "⚠️ Hosted YouTube downloader failed; proceeding to yt-dlp fallback:",
-          message,
-        );
-        break;
-      }
-    }
-
-    if (hostedLastError) {
-      console.warn(
-        "Hosted downloader unavailable; trying yt-dlp fallback.",
-      );
-    }
-  }
-
-  /*
-   * Direct yt-dlp on Render is opt-in because data-center IPs may be
-   * challenged by YouTube. Set ALLOW_RENDER_YTDLP_FALLBACK=true only
-   * when this fallback is intentionally enabled.
-   */
-  if (isRender && !allowRenderYtDlpFallback) {
-    throw new Error(
-      [
-        "Hosted YouTube downloader failed.",
-        "Set ALLOW_RENDER_YTDLP_FALLBACK=true to enable direct yt-dlp fallback.",
-      ].join("\n"),
-    );
-  }
-
-  /*
-   * =========================================================
-   * 2. LOCAL / SELF-HOSTED yt-dlp FALLBACK
-   * =========================================================
-   */
-  const bundledYtDlpPath =
-    process.platform === "win32"
-      ? path.join(
-          process.cwd(),
-          "node_modules",
-          "youtube-dl-exec",
-          "bin",
-          "yt-dlp.exe",
-        )
-      : path.join(
-          process.cwd(),
-          "node_modules",
-          "youtube-dl-exec",
-          "bin",
-          "yt-dlp",
-        );
-
-  const ytDlpPath =
-    YTDLP_PATH_ENV ||
-    bundledYtDlpPath;
-
-  const pluginDir =
-    YTDLP_PLUGIN_DIR_ENV
-      ? path.resolve(
-          YTDLP_PLUGIN_DIR_ENV,
-        )
-      : path.join(
-          path.dirname(
-            ytDlpPath,
-          ),
-          "yt-dlp-plugins",
-        );
-
-  const pluginDirAvailable =
-    fs.existsSync(
-      pluginDir,
-    ) &&
-    fs.statSync(
-      pluginDir,
-    ).isDirectory();
-
-  if (
-    !fs.existsSync(
-      ytDlpPath,
-    )
-  ) {
-    throw new Error(
-      [
-        "YouTube downloader is not installed correctly.",
-        `yt-dlp executable not found: ${ytDlpPath}`,
-        "Run: npm install youtube-dl-exec@latest",
-      ].join("\n"),
-    );
-  }
-
-  if (
-    !ffmpegPath ||
-    ffmpegPath === "ffmpeg" ||
-    !fs.existsSync(
-      ffmpegPath,
-    )
-  ) {
-    throw new Error(
-      `FFmpeg executable not found: ${
-        ffmpegPath ||
-        "undefined"
-      }`,
-    );
-  }
-
-  const format =
-    `bv*[height<=${targetHeight}][ext=mp4]+ba[ext=m4a]` +
-    `/b[height<=${targetHeight}][ext=mp4]` +
-    `/bv*[height<=${targetHeight}]+ba` +
-    `/b[height<=${targetHeight}]` +
-    `/b`;
-
-  type Strategy = {
-    name: string;
-    playerClient: string;
-    useCookies: boolean;
-  };
-
-  const strategies: Strategy[] =
-    YOUTUBE_POT_PROVIDER_URL
-      ? [
-          {
-            name:
-              "mweb-with-pot",
-            playerClient:
-              "mweb",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "web-with-pot",
-            playerClient:
-              "web",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "web-embedded",
-            playerClient:
-              "web_embedded",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "tv",
-            playerClient:
-              "tv",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "web-cookies",
-            playerClient:
-              "web",
-            useCookies:
-              youtubeCookiesAvailable,
-          },
-        ]
-      : [
-          {
-            name:
-              "web-embedded",
-            playerClient:
-              "web_embedded",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "tv",
-            playerClient:
-              "tv",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "android-vr",
-            playerClient:
-              "android_vr",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "web-safari",
-            playerClient:
-              "web_safari",
-            useCookies:
-              false,
-          },
-          {
-            name:
-              "web-cookies",
-            playerClient:
-              "web",
-            useCookies:
-              youtubeCookiesAvailable,
-          },
-        ];
-
-  let lastError:
-    any = null;
-
-  for (
-    let i = 0;
-    i < strategies.length;
-    i++
-  ) {
-    const strategy =
-      strategies[i];
-
-    if (
-      strategy.useCookies &&
-      !youtubeCookiesAvailable
-    ) {
-      continue;
-    }
-
-    cleanup();
-
-    try {
-      const ytdlp =
-        youtubedl.create(
-          ytDlpPath,
-        );
-
-      const options: any = {
-        output: outputPath,
-        format,
-        noPlaylist: true,
-        forceOverwrites: true,
-        noPart: true,
-        noContinue: true,
-        mergeOutputFormat:
-          "mp4",
-        ffmpegLocation:
-          ffmpegPath,
-        jsRuntimes:
-          YTDLP_JS_RUNTIME,
-        remoteComponents:
-          process.env
-            .YTDLP_EJS_REMOTE_COMPONENTS
-            ?.trim() ||
-          "ejs:github",
-        ...(YTDLP_PLUGIN_DIR_ENV &&
-        pluginDirAvailable
-          ? {
-              pluginDirs:
-                pluginDir,
-            }
-          : {}),
-        ...(YTDLP_VERBOSE
-          ? {
-              verbose: true,
-            }
-          : {}),
-        restrictFilenames:
-          true,
-        forceIpv4:
-          true,
-        socketTimeout:
-          45,
-        retries: Math.max(
-          2,
-          YOUTUBE_RETRIES,
-        ),
-        fragmentRetries:
-          5,
-        extractorRetries:
-          3,
-        concurrentFragments:
-          Math.max(
-            1,
-            Math.min(
-              YOUTUBE_CONCURRENT_FRAGMENTS ||
-                2,
-              4,
-            ),
-          ),
-        httpChunkSize:
-          "5M",
-        referer:
-          "https://www.youtube.com/",
-        addHeader: [
-          "Accept-Language: en-US,en;q=0.9",
-        ],
-        extractorArgs: {
-          youtube: {
-            player_client:
-              strategy.playerClient,
-          },
-          ...(YOUTUBE_POT_PROVIDER_URL
-            ? {
-                "youtubepot-bgutilhttp":
-                  {
-                    base_url:
-                      YOUTUBE_POT_PROVIDER_URL,
-                  },
-              }
-            : {}),
-        },
-      };
-
-      if (
-        strategy.useCookies &&
-        youtubeCookiesAvailable
-      ) {
-        options.cookies =
-          youtubeCookiesPath;
-      }
-
-      console.log(
-        `▶ yt-dlp strategy ${i + 1}/${strategies.length}: ${strategy.playerClient}`,
-      );
-
-      await ytdlp(
-        url,
-        options,
-      );
-
-      if (
-        !fs.existsSync(
-          outputPath,
-        )
-      ) {
-        throw new Error(
-          "yt-dlp completed but output file was not created.",
-        );
-      }
-
-      const stat =
-        fs.statSync(
-          outputPath,
-        );
-
-      if (
-        !stat.isFile() ||
-        stat.size < 100 * 1024
-      ) {
-        throw new Error(
-          `Downloaded file is invalid or too small: ${stat.size} bytes`,
-        );
-      }
-
-      console.log(
-        `✅ yt-dlp download successful: ${(
-          stat.size /
-          1024 /
-          1024
-        ).toFixed(2)} MB`,
-      );
-
-      return outputPath;
-    } catch (error: any) {
-      lastError = error;
-
-      console.error(
-        `❌ yt-dlp strategy failed: ${strategy.name}`,
-        String(
-          error?.stderr ||
-            error?.stdout ||
-            error?.message ||
-            "",
-        ),
-      );
-
-      cleanup();
-      await sleep(900);
-    }
-  }
-
-  cleanup();
-
-  const finalMessage =
-    String(
-      lastError?.stderr ||
-        lastError?.stdout ||
-        lastError?.message ||
-        "",
-    );
-
-  const lower =
-    finalMessage.toLowerCase();
-
-  if (
-    lower.includes(
-      "sign in to confirm",
-    ) ||
-    lower.includes(
-      "not a bot",
-    ) ||
-    lower.includes(
-      "proof of origin",
-    ) ||
-    lower.includes(
-      "po token",
-    )
-  ) {
-    throw new Error(
-      [
-        "YouTube requires authentication or is blocking this server request.",
-        "The configured YouTube cookies are missing, expired, invalid, or not accepted by YouTube.",
-        "Refresh the cookies and set YOUTUBE_COOKIES_B64 in Render, or use a working hosted downloader API.",
-      ].join("\n"),
-    );
-  }
-
-  throw new Error(
-    "YouTube video could not be downloaded right now. Please try another public YouTube video.",
+    "Direct YouTube downloading is disabled on the Render server. Use the LumoClip PC worker.",
   );
 }
 
@@ -4340,6 +3158,8 @@ app.get(
       ffmpegPath,
 
       ffprobePath,
+      youtubeDownloader: "self-hosted-worker",
+      workerConfigured: WORKER_ENABLED,
     });
   },
 );
@@ -4940,67 +3760,41 @@ app.post(
 );
 
 /* =========================================================
-   YOUTUBE PROCESS
+   YOUTUBE PROCESS / QUEUE
+
+   The public API only creates a queued job. It does not contact
+   YouTube. The trusted PC worker claims the job and uploads the
+   downloaded file back to /api/worker/projects/:projectId/upload.
 ========================================================= */
 
 app.post(
   "/api/projects/process",
-  async (
-    req,
-    res,
-  ) => {
-    let projectId =
-      "";
-
-    let authenticatedUserId =
-      "";
-
-    let creditsCharged =
-      false;
+  async (req, res) => {
+    let projectId = "";
+    let authenticatedUserId = "";
+    let creditsCharged = false;
 
     try {
-      const user =
-        await getAuthenticatedUser(
-          req,
-        );
-
-      authenticatedUserId =
-        user.id;
+      const user = await getAuthenticatedUser(req);
+      authenticatedUserId = user.id;
 
       const sourceUrl =
-        typeof req.body
-          .sourceUrl ===
-        "string"
+        typeof req.body?.sourceUrl === "string"
           ? req.body.sourceUrl.trim()
           : "";
 
-      if (
-        !sourceUrl ||
-        !isYouTubeUrl(
-          sourceUrl,
-        )
-      ) {
-        return res
-          .status(400)
-          .json({
-            error:
-              "Please provide a valid YouTube URL.",
-          });
+      if (!sourceUrl || !isYouTubeUrl(sourceUrl)) {
+        return res.status(400).json({
+          error: "Please provide a valid YouTube URL.",
+        });
       }
 
       const projectName =
-        typeof req.body
-          .name ===
-          "string" &&
-        req.body.name.trim()
+        typeof req.body?.name === "string" && req.body.name.trim()
           ? req.body.name.trim()
           : "YouTube Project";
 
-      const {
-        profile,
-        project,
-        newCredits,
-      } =
+      const { profile, project, newCredits } =
         await createProjectAndCharge(
           user.id,
           projectName,
@@ -5008,176 +3802,308 @@ app.post(
           sourceUrl,
         );
 
-      projectId =
-        project.id;
+      projectId = project.id;
+      creditsCharged = true;
 
-      creditsCharged =
-        true;
+      const waitingMessage = WORKER_ENABLED
+        ? "Waiting for LumoClip worker"
+        : "Worker is not configured. Please start/configure the LumoClip PC worker.";
 
-      const projectDir =
-        path.join(
-          mediaDir,
-          safeSegment(
-            projectId,
-          ),
-        );
+      await updateProject(projectId, 5, waitingMessage, "processing");
 
-      fs.mkdirSync(
-        projectDir,
-        {
-          recursive:
-            true,
-        },
-      );
-
-      const sourcePath =
-        path.join(
-          projectDir,
-          "source.mp4",
-        );
-
-      res.json({
-        success:
-          true,
-
+      return res.json({
+        success: true,
         project: {
           ...project,
-
+          status: "processing",
           progress: 5,
-
-          current_step:
-            "Preparing YouTube video",
+          current_step: waitingMessage,
         },
-
         clips: [],
-
         user: {
-          id:
-            user.id,
-
-          name:
-            profile.name,
-
-          email:
-            profile.email,
-
-          credits:
-            newCredits,
-
-          plan:
-            profile.plan,
+          id: user.id,
+          name: profile.name,
+          email: profile.email,
+          credits: newCredits,
+          plan: profile.plan,
         },
-
-        message:
-          "YouTube video processing started.",
+        worker: {
+          enabled: WORKER_ENABLED,
+        },
+        message: WORKER_ENABLED
+          ? "YouTube job queued. Your LumoClip PC worker will download the video."
+          : "YouTube job queued, but the PC worker is not configured on the server.",
       });
-
-      (async () => {
-        try {
-          await updateProject(
-            projectId,
-            8,
-            "Downloading YouTube video",
-          );
-
-          await downloadYouTubeVideo(
-            sourceUrl,
-            sourcePath,
-          );
-
-          await processVideo(
-            projectId,
-            user.id,
-            sourcePath,
-            "video/mp4",
-            sourceUrl,
-          );
-        } catch (error) {
-          console.error(
-            `YouTube processing failed for project ${projectId}:`,
-            error,
-          );
-
-          await updateProject(
-            projectId,
-            0,
-            error instanceof
-              Error
-              ? error.message
-              : "YouTube processing failed",
-            "failed",
-          );
-
-          await refundCredits(
-            user.id,
-            projectId,
-          );
-        }
-      })();
     } catch (error: any) {
-      console.error(
-        "YouTube endpoint failed:",
-        error,
-      );
+      console.error("YouTube queue endpoint failed:", error);
 
       if (projectId) {
         try {
           await updateProject(
             projectId,
             0,
-            error?.message ||
-              "YouTube processing failed.",
+            error?.message || "YouTube job could not be queued.",
             "failed",
           );
         } catch (updateError) {
-          console.error(
-            "Failed to mark YouTube project as failed:",
-            updateError,
-          );
+          console.error("Failed to mark YouTube job as failed:", updateError);
         }
 
-        // This catch only handles failures before the background
-        // processor takes over. Background failures are refunded
-        // inside the background catch below.
-        if (
-          creditsCharged &&
-          authenticatedUserId
-        ) {
-          await refundCredits(
-            authenticatedUserId,
-            projectId,
-          );
+        if (creditsCharged && authenticatedUserId) {
+          await refundCredits(authenticatedUserId, projectId);
         }
       }
 
-      if (
-        error?.message ===
-        "UNAUTHORIZED"
-      ) {
-        return res
-          .status(401)
-          .json({
-            error:
-              "Unauthorized.",
-          });
+      if (error?.message === "UNAUTHORIZED") {
+        return res.status(401).json({ error: "Unauthorized." });
       }
 
-      res
-        .status(
-          error?.statusCode ||
-            500,
-        )
-        .json({
-          error:
-            error?.message ||
-            "YouTube processing failed.",
-
-          credits:
-            error?.credits,
-        });
+      return res.status(error?.statusCode || 500).json({
+        error: error?.message || "YouTube processing failed.",
+        credits: error?.credits,
+      });
     }
   },
 );
+
+/* =========================================================
+   WORKER AUTH
+========================================================= */
+
+function requireWorkerToken(req: express.Request, res: express.Response): boolean {
+  if (!LUMO_WORKER_TOKEN) {
+    res.status(503).json({
+      error: "LumoClip worker is not configured on this server.",
+    });
+    return false;
+  }
+
+  const supplied =
+    typeof req.headers["x-lumo-worker-token"] === "string"
+      ? req.headers["x-lumo-worker-token"].trim()
+      : "";
+
+  if (!supplied || supplied !== LUMO_WORKER_TOKEN) {
+    res.status(401).json({ error: "Invalid worker token." });
+    return false;
+  }
+
+  return true;
+}
+
+/* =========================================================
+   WORKER CLAIM
+========================================================= */
+
+app.post("/api/worker/claim", async (req, res) => {
+  if (!requireWorkerToken(req, res)) return;
+
+  try {
+    const { data: queuedProject, error: selectError } =
+      await supabase
+        .from("projects")
+        .select("id, user_id, name, source_type, source_url, status")
+        .eq("source_type", "youtube")
+        .eq("status", "processing")
+        .eq("current_step", "Waiting for LumoClip worker")
+        .not("source_url", "is", null)
+        .order("created_at", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+    if (selectError) throw selectError;
+
+    if (!queuedProject) {
+      return res.json({ success: true, job: null });
+    }
+
+    const { data: claimed, error: claimError } =
+      await supabase
+        .from("projects")
+        .update({
+          status: "worker_downloading",
+          progress: 8,
+          current_step: "Worker is downloading YouTube video",
+        })
+        .eq("id", queuedProject.id)
+        .eq("status", "processing")
+        .eq("current_step", "Waiting for LumoClip worker")
+        .select("id, user_id, name, source_type, source_url, status")
+        .maybeSingle();
+
+    if (claimError) throw claimError;
+
+    if (!claimed) {
+      return res.status(409).json({
+        error: "Job was claimed by another worker. Try again.",
+      });
+    }
+
+    return res.json({ success: true, job: claimed });
+  } catch (error: any) {
+    console.error("Worker claim failed:", error);
+    return res.status(500).json({
+      error: error?.message || "Failed to claim worker job.",
+    });
+  }
+});
+
+/* =========================================================
+   WORKER VIDEO UPLOAD
+========================================================= */
+
+app.post(
+  "/api/worker/projects/:projectId/upload",
+  upload.single("video"),
+  async (req, res) => {
+    if (!requireWorkerToken(req, res)) return;
+
+    let tempPath = "";
+    const projectId = req.params.projectId;
+
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "Worker did not upload a video file." });
+      }
+
+      tempPath = req.file.path;
+
+      const { data: project, error: projectError } =
+        await supabase
+          .from("projects")
+          .select("id, user_id, source_type, source_url, status")
+          .eq("id", projectId)
+          .eq("source_type", "youtube")
+          .eq("status", "processing")
+          .eq("current_step", "Worker is downloading YouTube video")
+          .maybeSingle();
+
+      if (projectError) throw projectError;
+      if (!project) {
+        return res.status(404).json({
+          error: "Worker job not found or is no longer accepting uploads.",
+        });
+      }
+
+      const projectDir = path.join(mediaDir, safeSegment(projectId));
+      fs.mkdirSync(projectDir, { recursive: true });
+
+      const sourcePath = path.join(projectDir, "source.mp4");
+      fs.copyFileSync(tempPath, sourcePath);
+
+      try {
+        fs.unlinkSync(tempPath);
+        tempPath = "";
+      } catch {}
+
+      const sourceMediaUrl = publicMediaUrl(projectId, "source.mp4");
+
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({
+          source_media_url: sourceMediaUrl,
+          progress: 10,
+          current_step: "YouTube video downloaded",
+          status: "processing",
+        })
+        .eq("id", projectId);
+
+      if (updateError) throw updateError;
+
+      void processVideo(
+        projectId,
+        project.user_id,
+        sourcePath,
+        "video/mp4",
+        project.source_url || undefined,
+      ).catch(async (error) => {
+        console.error(`Worker-upload processing failed for project ${projectId}:`, error);
+        await refundCredits(project.user_id, projectId);
+      });
+
+      return res.json({
+        success: true,
+        projectId,
+        message: "Video received. AI processing started.",
+      });
+    } catch (error: any) {
+      console.error(`Worker upload failed for ${projectId}:`, error);
+
+      if (tempPath) {
+        try {
+          if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+        } catch {}
+      }
+
+      try {
+        const { data: project } = await supabase
+          .from("projects")
+          .select("id, user_id")
+          .eq("id", projectId)
+          .maybeSingle();
+
+        if (project) {
+          await updateProject(
+            projectId,
+            0,
+            error?.message || "Worker upload failed.",
+            "failed",
+          );
+          await refundCredits(project.user_id, projectId);
+        }
+      } catch (cleanupError) {
+        console.error("Worker failure cleanup failed:", cleanupError);
+      }
+
+      return res.status(500).json({
+        error: error?.message || "Worker upload failed.",
+      });
+    }
+  },
+);
+
+/* =========================================================
+   WORKER FAIL
+========================================================= */
+
+app.post("/api/worker/projects/:projectId/fail", async (req, res) => {
+  if (!requireWorkerToken(req, res)) return;
+
+  const projectId = req.params.projectId;
+  const reason =
+    typeof req.body?.error === "string" && req.body.error.trim()
+      ? req.body.error.trim().slice(0, 1000)
+      : "YouTube worker could not download the video.";
+
+  try {
+    const { data: project, error } = await supabase
+      .from("projects")
+      .select("id, user_id, status")
+      .eq("id", projectId)
+      .eq("source_type", "youtube")
+      .eq("status", "processing")
+      .eq("current_step", "Worker is downloading YouTube video")
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!project) {
+      return res.status(404).json({ error: "Worker job not found." });
+    }
+
+    await updateProject(projectId, 0, reason, "failed");
+    await refundCredits(project.user_id, projectId);
+
+    return res.json({
+      success: true,
+      message: "Worker job marked as failed and credits refunded.",
+    });
+  } catch (error: any) {
+    console.error("Worker fail endpoint failed:", error);
+    return res.status(500).json({
+      error: error?.message || "Failed to mark worker job as failed.",
+    });
+  }
+});
 
 /* =========================================================
    YOUTUBE SOCIAL CONNECT ROUTES
@@ -6106,7 +5032,9 @@ async function ensureYtDlpReady() {
     );
   }
 }
-void ensureYtDlpReady();
+if (!process.env.RENDER) {
+  void ensureYtDlpReady();
+}
 
 app.listen(
   PORT,
