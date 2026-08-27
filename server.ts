@@ -92,8 +92,25 @@ const YOUTUBE_CONCURRENT_FRAGMENTS = Number(
 );
 
 const YOUTUBE_RETRIES = Number(
-  process.env.YOUTUBE_RETRIES || 2,
+  process.env.YOUTUBE_RETRIES || 3,
 );
+
+// Production YouTube extractor settings.
+// Keep secrets in hosting-provider environment variables, never in Git.
+const YTDLP_PATH_ENV =
+  process.env.YTDLP_PATH?.trim() || "";
+
+const YTDLP_JS_RUNTIME =
+  process.env.YTDLP_JS_RUNTIME?.trim() || "node";
+
+const YOUTUBE_COOKIES_PATH_ENV =
+  process.env.YOUTUBE_COOKIES_PATH?.trim() || "";
+
+const YOUTUBE_AUTO_UPDATE =
+  process.env.YOUTUBE_AUTO_UPDATE === "true";
+
+const YOUTUBE_POT_PROVIDER_URL =
+  process.env.YOUTUBE_POT_PROVIDER_URL?.trim() || "";
 
 const GEMINI_POLL_MS = Number(
   process.env.GEMINI_POLL_MS || 1500,
@@ -665,27 +682,47 @@ for (const dir of [
   });
 }
 
-const youtubeCookiesPath = path.join(
-  tempDir,
-  "youtube-cookies.txt",
-);
+const youtubeCookiesPath = YOUTUBE_COOKIES_PATH_ENV
+  ? path.resolve(YOUTUBE_COOKIES_PATH_ENV)
+  : path.join(tempDir, "youtube-cookies.txt");
 
+// The cookies file is NEVER committed to the repository.
+// For production, prefer YOUTUBE_COOKIES_B64 or a secret-mounted
+// YOUTUBE_COOKIES_PATH.
 if (process.env.YOUTUBE_COOKIES_B64) {
-  fs.writeFileSync(
-    youtubeCookiesPath,
-    Buffer.from(
-      process.env.YOUTUBE_COOKIES_B64,
+  try {
+    const decodedCookies = Buffer.from(
+      process.env.YOUTUBE_COOKIES_B64.replace(/\s+/g, ""),
       "base64",
-    ),
-    { mode: 0o600 },
-  );
+    );
+
+    if (!decodedCookies.length) {
+      throw new Error("Decoded cookie file is empty.");
+    }
+
+    fs.writeFileSync(
+      youtubeCookiesPath,
+      decodedCookies,
+      { mode: 0o600 },
+    );
+  } catch (error) {
+    console.error(
+      "Failed to create YouTube cookies file:",
+      error,
+    );
+  }
 }
+
+const youtubeCookiesAvailable =
+  fs.existsSync(youtubeCookiesPath) &&
+  fs.statSync(youtubeCookiesPath).isFile() &&
+  fs.statSync(youtubeCookiesPath).size > 20;
 
 console.log(
   "YouTube cookies:",
-  process.env.YOUTUBE_COOKIES_B64
+  youtubeCookiesAvailable
     ? "configured"
-    : "missing",
+    : "not configured (public-client fallback mode)",
 );
 
 
@@ -1865,10 +1902,14 @@ async function downloadYouTubeVideo(
   });
 
   /* ---------------------------------------------------------
-     yt-dlp
+     Resolve yt-dlp
+
+     Prefer YTDLP_PATH in production so the hosting provider can
+     point LumoClip at a current yt-dlp executable. Otherwise use
+     the executable bundled by youtube-dl-exec.
   --------------------------------------------------------- */
 
-  const ytDlpPath =
+  const bundledYtDlpPath =
     process.platform === "win32"
       ? path.join(
           process.cwd(),
@@ -1885,9 +1926,17 @@ async function downloadYouTubeVideo(
           "yt-dlp",
         );
 
+  const ytDlpPath =
+    YTDLP_PATH_ENV ||
+    bundledYtDlpPath;
+
   if (!fs.existsSync(ytDlpPath)) {
     throw new Error(
-      `yt-dlp executable not found: ${ytDlpPath}`,
+      [
+        "YouTube downloader is not installed correctly.",
+        `yt-dlp executable not found: ${ytDlpPath}`,
+        "Run: npm install youtube-dl-exec@latest",
+      ].join("\n"),
     );
   }
 
@@ -1913,6 +1962,19 @@ async function downloadYouTubeVideo(
   console.log("🎬 LumoClip YouTube Downloader");
   console.log("yt-dlp:", ytDlpPath);
   console.log("FFmpeg:", ffmpegPath);
+  console.log("JS runtime:", YTDLP_JS_RUNTIME);
+  console.log(
+    "PO token provider:",
+    YOUTUBE_POT_PROVIDER_URL
+      ? YOUTUBE_POT_PROVIDER_URL
+      : "not configured",
+  );
+  console.log(
+    "Cookies:",
+    youtubeCookiesAvailable
+      ? "enabled"
+      : "disabled",
+  );
   console.log("URL:", url);
   console.log(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
@@ -1933,6 +1995,8 @@ async function downloadYouTubeVideo(
       `${outputPath}.f480.mp4`,
       `${outputPath}.f140.m4a`,
       `${outputPath}.f251.webm`,
+      `${outputPath}.webm`,
+      `${outputPath}.mp4`,
     ];
 
     for (const file of files) {
@@ -1948,60 +2012,82 @@ async function downloadYouTubeVideo(
 
   /* ---------------------------------------------------------
      FORMAT
-     
-     Keep this aligned with the manually tested command.
 
-     480p first:
-       video + m4a audio
-
-     Fallback:
-       progressive MP4
-
-     Final fallback:
-       best available
+     Prefer MP4 up to the configured height, then progressively
+     fall back to whatever playable format YouTube exposes.
   --------------------------------------------------------- */
 
   const format =
     `bv*[height<=${YOUTUBE_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
     `/b[height<=${YOUTUBE_MAX_HEIGHT}][ext=mp4]` +
+    `/bv*[height<=${YOUTUBE_MAX_HEIGHT}]+ba` +
     `/b[height<=${YOUTUBE_MAX_HEIGHT}]` +
     `/b`;
 
   console.log("🎯 Format:", format);
 
   /* ---------------------------------------------------------
-     CLIENT STRATEGIES
+     CURRENT YOUTUBE CLIENT STRATEGIES
 
-     visionos is first because your current yt-dlp build
-     successfully downloaded this exact YouTube video using
-     visionos + m3u8.
+     The previous implementation used:
+       visionos -> android -> web
+
+     Current yt-dlp guidance has changed: YouTube is enforcing
+     PO tokens on several clients. We therefore try clients that
+     can avoid the affected GVS/PO-token path first, then use
+     cookies + web as a final fallback when configured.
   --------------------------------------------------------- */
 
-  const strategies = [
-    {
-      name: "visionos",
-      client: "visionos",
-    },
+  type YouTubeStrategy = {
+    name: string;
+    playerClient: string;
+    useCookies: boolean;
+  };
 
+  const strategies: YouTubeStrategy[] = [
     {
-      name: "android",
-      client: "android",
+      name: "tv",
+      playerClient: "tv",
+      useCookies: false,
     },
-
     {
-      name: "web",
-      client: "web",
+      name: "web_safari",
+      playerClient: "web_safari",
+      useCookies: false,
+    },
+    {
+      name: "android_vr",
+      playerClient: "android_vr",
+      useCookies: false,
+    },
+    {
+      name: "web_embedded",
+      playerClient: "web_embedded",
+      useCookies: false,
+    },
+    {
+      name: "web-with-cookies",
+      playerClient: "web",
+      useCookies: youtubeCookiesAvailable,
     },
   ];
 
-  let lastError: unknown = null;
+  let lastError: any = null;
 
-  /* ---------------------------------------------------------
-     TRY STRATEGIES
-  --------------------------------------------------------- */
-
-  for (let i = 0; i < strategies.length; i++) {
+  for (
+    let i = 0;
+    i < strategies.length;
+    i++
+  ) {
     const strategy = strategies[i];
+
+    // Do not attempt a cookie strategy when no cookie file exists.
+    if (
+      strategy.useCookies &&
+      !youtubeCookiesAvailable
+    ) {
+      continue;
+    }
 
     cleanup();
 
@@ -2010,7 +2096,14 @@ async function downloadYouTubeVideo(
       `▶ YouTube strategy ${i + 1}/${strategies.length}`,
     );
     console.log(
-      `🎯 Client: ${strategy.client}`,
+      `🎯 Player client: ${strategy.playerClient}`,
+    );
+    console.log(
+      `🍪 Cookies: ${
+        strategy.useCookies
+          ? "yes"
+          : "no"
+      }`,
     );
 
     try {
@@ -2018,58 +2111,32 @@ async function downloadYouTubeVideo(
         youtubedl.create(ytDlpPath);
 
       const options: any = {
-  output: outputPath,
+        output: outputPath,
+        format,
 
-  format,
+        noPlaylist: true,
+        forceOverwrites: true,
+        noPart: true,
+        noContinue: true,
 
-  noPlaylist: true,
+        mergeOutputFormat: "mp4",
+        ffmpegLocation: ffmpegPath,
 
-  forceOverwrites: true,
-
-  noPart: true,
-
-  noContinue: true,
-
-  mergeOutputFormat: "mp4",
-
-  ffmpegLocation: ffmpegPath,
-
-  jsRuntimes: "node",
-
-  remoteComponents: "ejs:github",
-
-  ...(fs.existsSync(youtubeCookiesPath)
-    ? { cookies: youtubeCookiesPath }
-    : {}),
-
-        /* ---------------------------------------------------
-           FFmpeg
-        --------------------------------------------------- */
-
-       
-        /* ---------------------------------------------------
-           Filename
-        --------------------------------------------------- */
+        // Full YouTube extraction now needs an external JS runtime.
+        jsRuntimes: YTDLP_JS_RUNTIME,
+        remoteComponents: "ejs:github",
 
         restrictFilenames: true,
 
-        /* ---------------------------------------------------
-           Network
-        --------------------------------------------------- */
-
         forceIpv4: true,
+        socketTimeout: 45,
 
-        socketTimeout: 30,
-
-        retries: YOUTUBE_RETRIES || 3,
-
-        fragmentRetries: 3,
-
-        extractorRetries: 2,
-
-        /* ---------------------------------------------------
-           Download concurrency
-        --------------------------------------------------- */
+        retries: Math.max(
+          2,
+          YOUTUBE_RETRIES,
+        ),
+        fragmentRetries: 5,
+        extractorRetries: 3,
 
         concurrentFragments: Math.max(
           1,
@@ -2079,23 +2146,37 @@ async function downloadYouTubeVideo(
           ),
         ),
 
-        /* ---------------------------------------------------
-           HTTP
-        --------------------------------------------------- */
+        httpChunkSize: "5M",
 
-        httpChunkSize: "10M",
-
-        /* ---------------------------------------------------
-           YouTube client
-        --------------------------------------------------- */
+        // Normal browser-like request metadata.
+        referer: "https://www.youtube.com/",
+        addHeader: [
+          "Accept-Language: en-US,en;q=0.9",
+        ],
 
         extractorArgs: {
           youtube: {
             player_client:
-              strategy.client,
+              strategy.playerClient,
           },
+          ...(YOUTUBE_POT_PROVIDER_URL
+            ? {
+                "youtubepot-bgutilhttp": {
+                  base_url:
+                    YOUTUBE_POT_PROVIDER_URL,
+                },
+              }
+            : {}),
         },
       };
+
+      if (
+        strategy.useCookies &&
+        youtubeCookiesAvailable
+      ) {
+        options.cookies =
+          youtubeCookiesPath;
+      }
 
       console.log(
         "🚀 Starting yt-dlp...",
@@ -2132,7 +2213,6 @@ async function downloadYouTubeVideo(
       console.log(
         "✅ YouTube download successful!",
       );
-
       console.log(
         `📦 Size: ${(
           stat.size /
@@ -2140,11 +2220,9 @@ async function downloadYouTubeVideo(
           1024
         ).toFixed(2)} MB`,
       );
-
       console.log(
-        `🎯 Client: ${strategy.client}`,
+        `🎯 Client: ${strategy.playerClient}`,
       );
-
       console.log(
         "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
       );
@@ -2163,29 +2241,53 @@ async function downloadYouTubeVideo(
           ? error.stdout
           : "";
 
-      const message =
-        stderr ||
-        stdout ||
-        error?.message ||
-        String(error);
-
-      console.error("");
-
-      console.error(
-        `❌ Strategy failed: ${strategy.name}`,
-      );
-
-      console.error(message);
+      const message = [
+        stderr,
+        stdout,
+        error?.message,
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .trim();
 
       const lower =
         message.toLowerCase();
 
+      console.error("");
+      console.error(
+        `❌ Strategy failed: ${strategy.name}`,
+      );
+      console.error(
+        message ||
+          "Unknown yt-dlp error.",
+      );
+
       if (
-        lower.includes("403") ||
-        lower.includes("forbidden")
+        lower.includes(
+          "sign in to confirm you're not a bot",
+        ) ||
+        lower.includes(
+          "sign in to confirm you’re not a bot",
+        ) ||
+        lower.includes(
+          "confirm you're not a bot",
+        )
       ) {
         console.warn(
-          "⚠️ HTTP 403 detected. Trying next YouTube client...",
+          "⚠️ YouTube bot verification detected. Trying another public client...",
+        );
+      } else if (
+        lower.includes("403") ||
+        lower.includes("forbidden") ||
+        lower.includes(
+          "proof of origin",
+        ) ||
+        lower.includes(
+          "po token",
+        )
+      ) {
+        console.warn(
+          "⚠️ YouTube access/PO-token restriction detected. Trying another client...",
         );
       } else if (
         lower.includes(
@@ -2193,52 +2295,79 @@ async function downloadYouTubeVideo(
         )
       ) {
         console.warn(
-          "⚠️ Requested format unavailable. Trying next client...",
+          "⚠️ Requested format unavailable. Trying another client...",
         );
       } else if (
         lower.includes(
-          "postprocessing",
+          "javascript",
+        ) ||
+        lower.includes(
+          "ejs",
         )
       ) {
         console.warn(
-          "⚠️ FFmpeg post-processing failed.",
+          "⚠️ YouTube JavaScript challenge issue detected. Trying another client...",
         );
       }
 
       cleanup();
 
-      /* -----------------------------------------------------
-         Small delay before fallback
-      ----------------------------------------------------- */
-
-      await new Promise(
-        (resolve) =>
-          setTimeout(resolve, 700),
-      );
+      // Avoid hammering YouTube between client changes.
+      await sleep(900);
     }
   }
 
+  cleanup();
+
   /* ---------------------------------------------------------
-     FINAL ERROR
+     USER-SAFE FINAL ERROR
+
+     Raw yt-dlp diagnostics stay in the server log instead of
+     being shown in the LumoClip dashboard.
   --------------------------------------------------------- */
 
-  const finalMessage =
-    (lastError as any)?.stderr ||
-    (lastError as any)?.stdout ||
-    (lastError as any)?.message ||
-    "Unknown yt-dlp error.";
+  const rawFinalMessage =
+    String(
+      lastError?.stderr ||
+        lastError?.stdout ||
+        lastError?.message ||
+        "",
+    );
+
+  const lowerFinal =
+    rawFinalMessage.toLowerCase();
+
+  if (
+    lowerFinal.includes(
+      "sign in to confirm",
+    ) ||
+    lowerFinal.includes(
+      "not a bot",
+    ) ||
+    lowerFinal.includes(
+      "proof of origin",
+    ) ||
+    lowerFinal.includes(
+      "po token",
+    )
+  ) {
+    throw new Error(
+      [
+        "YouTube is currently blocking this download request.",
+        "",
+        "LumoClip tried multiple YouTube clients and automatic JavaScript challenge solving.",
+        "",
+        youtubeCookiesAvailable
+          ? "A server-side YouTube cookies file was also tried."
+          : "No server-side YouTube cookies are configured.",
+        "",
+        "Please try another public video. If this happens repeatedly, update yt-dlp and configure a fresh YOUTUBE_COOKIES_B64 secret on the server.",
+      ].join("\n"),
+    );
+  }
 
   throw new Error(
-    [
-      "YouTube download failed after all client strategies.",
-      "",
-      "Tried:",
-      "• visionos",
-      "• android",
-      "• web",
-      "",
-      `yt-dlp error: ${finalMessage}`,
-    ].join("\n"),
+    "YouTube video could not be downloaded right now. Please try again with another public YouTube video.",
   );
 }
 
@@ -5175,6 +5304,61 @@ process.on(
 /* =========================================================
    START SERVER
 ========================================================= */
+async function ensureYtDlpReady() {
+  const bundledYtDlpPath =
+    process.platform === "win32"
+      ? path.join(
+          process.cwd(),
+          "node_modules",
+          "youtube-dl-exec",
+          "bin",
+          "yt-dlp.exe",
+        )
+      : path.join(
+          process.cwd(),
+          "node_modules",
+          "youtube-dl-exec",
+          "bin",
+          "yt-dlp",
+        );
+
+  const binaryPath =
+    YTDLP_PATH_ENV ||
+    bundledYtDlpPath;
+
+  if (!fs.existsSync(binaryPath)) {
+    console.error(
+      "❌ yt-dlp binary missing:",
+      binaryPath,
+    );
+    return;
+  }
+
+  try {
+    const ytdlp =
+      youtubedl.create(binaryPath);
+
+    const version =
+      await ytdlp("--version");
+
+    console.log(
+      "✅ yt-dlp version:",
+      String(version).trim(),
+    );
+
+    console.log(
+      "✅ yt-dlp binary:",
+      binaryPath,
+    );
+
+  } catch (error) {
+    console.warn(
+      "⚠️ Could not verify yt-dlp:",
+      error,
+    );
+  }
+}
+void ensureYtDlpReady();
 
 app.listen(
   PORT,
