@@ -810,17 +810,22 @@ console.log(
    FONT
 ========================================================= */
 
-const fontPath =
-  process.env.FFMPEG_FONT_PATH ||
-  (process.platform === "win32"
+const fontCandidates = [
+  process.env.FFMPEG_FONT_PATH?.trim(),
+  process.platform === "win32"
     ? "C:\\Windows\\Fonts\\arial.ttf"
-    : "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf");
+    : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+  "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
+].filter(Boolean) as string[];
 
-if (!fs.existsSync(fontPath)) {
-  console.warn(
-    "FFmpeg font not found:",
-    fontPath,
-  );
+const fontPath =
+  fontCandidates.find((candidate) => fs.existsSync(candidate)) ||
+  fontCandidates[fontCandidates.length - 1];
+
+if (fs.existsSync(fontPath)) {
+  console.log("FFmpeg font:", fontPath);
+} else {
+  console.warn("FFmpeg font not found:", fontPath);
 }
 
 /* =========================================================
@@ -1946,6 +1951,9 @@ async function downloadYouTubeVideo(
     process.env.RENDER === "true" ||
     Boolean(process.env.RENDER_SERVICE_ID);
 
+  const allowRenderYtDlpFallback =
+    process.env.ALLOW_RENDER_YTDLP_FALLBACK === "true";
+
   const targetHeight = Math.max(
     144,
     Math.min(
@@ -2695,31 +2703,31 @@ if (!hostedResponse.ok) {
           continue;
         }
 
-        throw new Error(message);
+        console.warn(
+          "⚠️ Hosted YouTube downloader failed; proceeding to yt-dlp fallback:",
+          message,
+        );
+        break;
       }
     }
 
-    throw new Error(
-      hostedLastError?.message ||
-        "Hosted YouTube downloader failed after retry.",
-    );
+    if (hostedLastError) {
+      console.warn(
+        "Hosted downloader unavailable; trying yt-dlp fallback.",
+      );
+    }
   }
 
   /*
-   * On Render, do not waste time running several direct yt-dlp
-   * strategies when the server IP is known to be challenged.
-   * Configure the hosted API key instead.
+   * Direct yt-dlp on Render is opt-in because data-center IPs may be
+   * challenged by YouTube. Set ALLOW_RENDER_YTDLP_FALLBACK=true only
+   * when this fallback is intentionally enabled.
    */
-  if (isRender) {
+  if (isRender && !allowRenderYtDlpFallback) {
     throw new Error(
       [
-        "YouTube downloader is not configured for Render.",
-        "",
-        "Add YOUTUBE_DOWNLOAD_API_KEY in Render → Environment.",
-        "Use your private EasyDown Bearer token (ed_live_...).",
-        "",
-        "Optional:",
-        "YOUTUBE_DOWNLOAD_API_URL=https://api.easydown.org/api/v1/platforms/youtube/parse",
+        "Hosted YouTube downloader failed.",
+        "Set ALLOW_RENDER_YTDLP_FALLBACK=true to enable direct yt-dlp fallback.",
       ].join("\n"),
     );
   }
