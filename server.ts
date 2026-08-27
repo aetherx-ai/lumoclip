@@ -2199,7 +2199,8 @@ async function downloadYouTubeVideo(
           ? { pluginDirs: pluginDir }
           : {}),
 
-        verbose: YTDLP_VERBOSE,
+        // yt-dlp 2026.08.19 rejects --no-verbose; omit the flag when disabled.
+        ...(YTDLP_VERBOSE ? { verbose: true } : {}),
         restrictFilenames: true,
 
         forceIpv4: true,
