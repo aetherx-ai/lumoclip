@@ -1914,21 +1914,25 @@ async function downloadYouTubeVideo(
   });
 
   /*
-   * Production fix:
-   * Render's server IP can be challenged by YouTube. When
-   * YOUTUBE_DOWNLOAD_API_KEY is configured, LumoClip uses the
-   * hosted downloader API first and downloads the returned media
-   * into the normal local source.mp4 pipeline.
+   * Production YouTube strategy:
    *
-   * Default API contract: EasyDown
-   * POST https://api.easydown.org/api/v1/platforms/youtube/parse
+   * 1) Render/server environments use the hosted downloader API.
+   *    YouTube can challenge data-center IPs, so direct yt-dlp is
+   *    intentionally NOT used as the first production path.
    *
-   * Required Render env:
-   *   YOUTUBE_DOWNLOAD_API_KEY=...
+   * 2) Local development can still use yt-dlp as a fallback.
+   *
+   * EasyDown API:
+   *   POST https://api.easydown.org/api/v1/platforms/youtube/parse
+   *   Authorization: Bearer <YOUTUBE_DOWNLOAD_API_KEY>
+   *
+   * Required on Render:
+   *   YOUTUBE_DOWNLOAD_API_KEY=ed_live_...
    *
    * Optional:
-   *   YOUTUBE_DOWNLOAD_API_URL=...
+   *   YOUTUBE_DOWNLOAD_API_URL=https://api.easydown.org/api/v1/platforms/youtube/parse
    */
+
   const hostedApiKey =
     process.env.YOUTUBE_DOWNLOAD_API_KEY?.trim() || "";
 
@@ -1936,12 +1940,21 @@ async function downloadYouTubeVideo(
     process.env.YOUTUBE_DOWNLOAD_API_URL?.trim() ||
     "https://api.easydown.org/api/v1/platforms/youtube/parse";
 
+  const isRender =
+    process.env.RENDER === "true" ||
+    Boolean(process.env.RENDER_SERVICE_ID);
+
   const targetHeight = Math.max(
     144,
     Math.min(
       1080,
       Number(YOUTUBE_MAX_HEIGHT) || 480,
     ),
+  );
+
+  const DOWNLOAD_TIMEOUT_MS = Math.max(
+    30_000,
+    Number(process.env.YOUTUBE_DOWNLOAD_TIMEOUT_MS) || 180_000,
   );
 
   const cleanup = () => {
@@ -1954,66 +1967,178 @@ async function downloadYouTubeVideo(
       `${outputPath}.tmp`,
     ]) {
       try {
-        if (fs.existsSync(file)) fs.unlinkSync(file);
+        if (fs.existsSync(file)) {
+          fs.unlinkSync(file);
+        }
       } catch {}
     }
+  };
+
+  const normalizeHeaders = (
+    input?: Record<string, unknown>,
+  ): Record<string, string> => {
+    const result: Record<string, string> = {};
+
+    if (!input || typeof input !== "object") {
+      return result;
+    }
+
+    for (const [key, value] of Object.entries(input)) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim()
+      ) {
+        result[key] = String(value);
+      }
+    }
+
+    return result;
   };
 
   const downloadFile = async (
     mediaUrl: string,
     destination: string,
-    headers?: Record<string, string>,
+    extraHeaders?: Record<string, unknown>,
   ) => {
-    const response = await fetch(mediaUrl, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
-        ...(headers || {}),
-      },
-      redirect: "follow",
-    });
+    let parsedUrl: URL;
 
-    if (!response.ok || !response.body) {
+    try {
+      parsedUrl = new URL(mediaUrl);
+    } catch {
+      throw new Error("Downloader returned an invalid media URL.");
+    }
+
+    if (
+      parsedUrl.protocol !== "https:" &&
+      parsedUrl.protocol !== "http:"
+    ) {
       throw new Error(
-        `Media download failed: HTTP ${response.status}`,
+        `Unsupported media URL protocol: ${parsedUrl.protocol}`,
       );
     }
 
-    const file = fs.createWriteStream(destination);
+    const controller = new AbortController();
+
+    const timeout = setTimeout(
+      () => controller.abort(),
+      DOWNLOAD_TIMEOUT_MS,
+    );
+
+    const headers: Record<string, string> = {
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
+      Accept:
+        "video/mp4,video/webm,audio/mp4,audio/webm,*/*;q=0.8",
+      Referer: "https://www.youtube.com/",
+      Origin: "https://www.youtube.com",
+      ...normalizeHeaders(extraHeaders),
+    };
 
     try {
-      const reader = response.body.getReader();
+      const response = await fetch(
+        parsedUrl,
+        {
+          headers,
+          redirect: "follow",
+          signal: controller.signal,
+        },
+      );
+
+      if (!response.ok || !response.body) {
+        throw new Error(
+          `Media download failed: HTTP ${response.status}`,
+        );
+      }
+
+      const contentType =
+        String(
+          response.headers.get("content-type") || "",
+        ).toLowerCase();
+
+      if (
+        contentType.includes("text/html") ||
+        contentType.includes("application/json")
+      ) {
+        throw new Error(
+          `Media URL returned ${contentType || "non-video content"} instead of video/audio data.`,
+        );
+      }
+
+      const file =
+        fs.createWriteStream(
+          destination,
+        );
 
       try {
-        while (true) {
-          const { done, value } =
-            await reader.read();
+        const reader =
+          response.body.getReader();
 
-          if (done) break;
+        try {
+          while (true) {
+            const { done, value } =
+              await reader.read();
 
-          if (value) {
-            await new Promise<void>(
-              (resolve, reject) => {
-                if (file.write(Buffer.from(value))) {
-                  resolve();
-                } else {
-                  file.once("drain", resolve);
-                  file.once("error", reject);
-                }
-              },
-            );
+            if (done) break;
+
+            if (value) {
+              await new Promise<void>(
+                (resolve, reject) => {
+                  if (
+                    file.write(
+                      Buffer.from(value),
+                    )
+                  ) {
+                    resolve();
+                  } else {
+                    file.once(
+                      "drain",
+                      resolve,
+                    );
+                    file.once(
+                      "error",
+                      reject,
+                    );
+                  }
+                },
+              );
+            }
           }
+        } finally {
+          reader.releaseLock();
         }
+      } catch (error: any) {
+        try {
+          file.destroy();
+        } catch {}
+
+        if (
+          error?.name ===
+          "AbortError"
+        ) {
+          throw new Error(
+            `Media download timed out after ${Math.round(
+              DOWNLOAD_TIMEOUT_MS / 1000,
+            )} seconds.`,
+          );
+        }
+
+        throw error;
       } finally {
-        reader.releaseLock();
+        if (!file.destroyed) {
+          await new Promise<void>(
+            (resolve) => {
+              file.end(resolve);
+            },
+          );
+        }
       }
     } finally {
-      await new Promise<void>((resolve) => {
-        file.end(resolve);
-      });
+      clearTimeout(timeout);
     }
 
-    const stat = fs.statSync(destination);
+    const stat =
+      fs.statSync(destination);
 
     if (
       !stat.isFile() ||
@@ -2039,171 +2164,356 @@ async function downloadYouTubeVideo(
         hostedApiUrl,
       );
 
-      const response = await fetch(
-        hostedApiUrl,
-        {
-          method: "POST",
-          headers: {
-            Authorization:
-              `Bearer ${hostedApiKey}`,
-            "Content-Type":
-              "application/json",
-            Accept:
-              "application/json",
-          },
-          body: JSON.stringify({
-            url,
-          }),
-        },
-      );
+      const controller =
+        new AbortController();
 
-      const text =
-        await response.text();
-
-      let payload: any;
-
-      try {
-        payload = JSON.parse(text);
-      } catch {
-        throw new Error(
-          `Hosted downloader returned invalid JSON (HTTP ${response.status}).`,
+      const timeout =
+        setTimeout(
+          () => controller.abort(),
+          DOWNLOAD_TIMEOUT_MS,
         );
-      }
 
-      if (!response.ok) {
-        const reason =
-          payload?.message ||
-          payload?.msg ||
-          payload?.error?.message ||
-          payload?.error ||
-          `HTTP ${response.status}`;
+      let hostedResponse: globalThis.Response;
 
-        throw new Error(
-          `Hosted YouTube downloader failed: ${String(reason)}`,
-        );
-      }
-
-      const media =
-        payload?.data?.media ||
-        payload?.data ||
-        payload?.media ||
-        {};
-
-      const videos =
-        Array.isArray(media.videos)
-          ? media.videos
-          : [];
-
-      const audios =
-        Array.isArray(media.audios)
-          ? media.audios
-          : [];
-
-      const heightOf = (item: any) => {
-        const direct =
-          Number(item?.height);
-
+try {
+  hostedResponse = await fetch(hostedApiUrl, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${hostedApiKey}`,
+      "Content-Type": "application/json",
+      Accept: "application/json",
+    },
+    body: JSON.stringify({
+      url,
+    }),
+    signal: controller.signal,
+  });
+} catch (error: any) {
         if (
-          Number.isFinite(direct) &&
-          direct > 0
+          error?.name ===
+          "AbortError"
         ) {
-          return direct;
+          throw new Error(
+            `YouTube downloader API timed out after ${Math.round(
+              DOWNLOAD_TIMEOUT_MS / 1000,
+            )} seconds.`,
+          );
         }
 
-        const quality =
-          String(
-            item?.quality || "",
-          );
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
 
-        const match =
-          quality.match(
-            /(\d{3,4})p/i,
-          );
+      const responseText = await hostedResponse.text();
 
-        return match
-          ? Number(match[1])
-          : 0;
-      };
+let payload: any;
 
-      const usableVideos =
-        videos
-          .filter(
-            (item: any) =>
-              Boolean(
-                String(
-                  item?.url || "",
-                ).trim(),
+try {
+  payload = JSON.parse(responseText);
+} catch {
+  throw new Error(
+    `Hosted downloader returned invalid JSON (HTTP ${hostedResponse.status}).`,
+  );
+}
+
+if (!hostedResponse.ok) {
+  const reason =
+    payload?.message ||
+    payload?.msg ||
+    payload?.error?.message ||
+    payload?.error ||
+    `HTTP ${hostedResponse.status}`;
+
+  throw new Error(
+    `Hosted YouTube downloader failed: ${String(reason)}`,
+  );
+}
+
+      /*
+       * EasyDown platform endpoint:
+       *   data.media.videos[]
+       *   data.media.audios[]
+       *
+       * Also accept the unified endpoint shape:
+       *   data.videos[]
+       *   data.audios[]
+       *
+       * And accept raw YouTube streamingData as a defensive
+       * compatibility path if a provider response includes it.
+       */
+      const platformMedia =
+        payload?.data?.media || {};
+
+      const unifiedMedia =
+        payload?.data || {};
+
+      const platformData =
+        payload?.data?.platformData ||
+        {};
+
+      const streamingData =
+        platformData?.streamingData ||
+        {};
+
+      const rawVideos = [
+        ...(Array.isArray(
+          platformMedia?.videos,
+        )
+          ? platformMedia.videos
+          : []),
+        ...(Array.isArray(
+          unifiedMedia?.videos,
+        )
+          ? unifiedMedia.videos
+          : []),
+        ...(Array.isArray(
+          platformMedia?.formats,
+        )
+          ? platformMedia.formats
+          : []),
+        ...(Array.isArray(
+          unifiedMedia?.formats,
+        )
+          ? unifiedMedia.formats
+          : []),
+        ...(Array.isArray(
+          streamingData?.formats,
+        )
+          ? streamingData.formats
+          : []),
+      ];
+
+      const rawAudios = [
+        ...(Array.isArray(
+          platformMedia?.audios,
+        )
+          ? platformMedia.audios
+          : []),
+        ...(Array.isArray(
+          unifiedMedia?.audios,
+        )
+          ? unifiedMedia.audios
+          : []),
+        ...(Array.isArray(
+          streamingData?.adaptiveFormats,
+        )
+          ? streamingData.adaptiveFormats
+          : []),
+      ];
+
+      const videos = rawVideos
+        .filter(
+          (item: any) =>
+            Boolean(
+              String(
+                item?.url || "",
+              ).trim(),
+            ),
+        )
+        .map((item: any) => ({
+          ...item,
+          url: String(
+            item.url,
+          ).trim(),
+          mimeType: String(
+            item.mimeType || "",
+          ),
+          height:
+            Number(item.height) ||
+            0,
+          hasAudio:
+            item?.hasAudio === true ||
+            String(
+              item.mimeType || "",
+            )
+              .toLowerCase()
+              .startsWith(
+                "video/",
+              ) &&
+            !String(
+              item.mimeType || "",
+            )
+              .toLowerCase()
+              .includes(
+                "video-only",
               ),
-          )
-          .sort(
-            (a: any, b: any) => {
-              const ah =
-                heightOf(a);
-              const bh =
-                heightOf(b);
+        }));
 
-              const aa =
-                a?.hasAudio === true
-                  ? 1
-                  : 0;
-              const ba =
-                b?.hasAudio === true
-                  ? 1
-                  : 0;
+      const audios = rawAudios
+        .filter(
+          (item: any) =>
+            Boolean(
+              String(
+                item?.url || "",
+              ).trim(),
+            ),
+        )
+        .map((item: any) => ({
+          ...item,
+          url: String(
+            item.url,
+          ).trim(),
+          bitrate:
+            Number(
+              item.bitrate,
+            ) || 0,
+        }));
 
-              if (aa !== ba) {
-                return ba - aa;
-              }
+      const heightOf =
+        (item: any) => {
+          const direct =
+            Number(
+              item?.height,
+            );
 
-              const aw =
-                ah > 0 &&
-                ah <= targetHeight
-                  ? 1
-                  : 0;
-              const bw =
-                bh > 0 &&
-                bh <= targetHeight
-                  ? 1
-                  : 0;
+          if (
+            Number.isFinite(
+              direct,
+            ) &&
+            direct > 0
+          ) {
+            return direct;
+          }
 
-              if (aw !== bw) {
-                return bw - aw;
-              }
+          const quality =
+            String(
+              item?.quality ||
+                item?.qualityLabel ||
+                "",
+            );
 
-              if (aw && bw) {
-                return bh - ah;
+          const match =
+            quality.match(
+              /(\d{3,4})p/i,
+            );
+
+          return match
+            ? Number(match[1])
+            : 0;
+        };
+
+      /*
+       * Prefer:
+       *   - MP4
+       *   - <= target height
+       *   - closest/highest quality to target
+       *   - audio already included
+       */
+      const usableVideos =
+        videos.sort(
+          (
+            a: any,
+            b: any,
+          ) => {
+            const ah =
+              heightOf(a);
+            const bh =
+              heightOf(b);
+
+            const aMp4 =
+              String(
+                a.mimeType || "",
+              )
+                .toLowerCase()
+                .includes(
+                  "video/mp4",
+                )
+                ? 1
+                : 0;
+
+            const bMp4 =
+              String(
+                b.mimeType || "",
+              )
+                .toLowerCase()
+                .includes(
+                  "video/mp4",
+                )
+                ? 1
+                : 0;
+
+            if (
+              aMp4 !== bMp4
+            ) {
+              return (
+                bMp4 - aMp4
+              );
+            }
+
+            const aWithin =
+              ah > 0 &&
+              ah <=
+                targetHeight
+                ? 1
+                : 0;
+
+            const bWithin =
+              bh > 0 &&
+              bh <=
+                targetHeight
+                ? 1
+                : 0;
+
+            if (
+              aWithin !==
+              bWithin
+            ) {
+              return (
+                bWithin -
+                aWithin
+              );
+            }
+
+            if (
+              aWithin &&
+              bWithin
+            ) {
+              if (
+                Boolean(
+                  a.hasAudio,
+                ) !==
+                Boolean(
+                  b.hasAudio,
+                )
+              ) {
+                return a.hasAudio
+                  ? -1
+                  : 1;
               }
 
               return (
-                Math.abs(
-                  ah -
-                    targetHeight,
-                ) -
-                Math.abs(
-                  bh -
-                    targetHeight,
-                )
+                bh - ah
               );
-            },
-          );
+            }
+
+            return (
+              Math.abs(
+                ah -
+                  targetHeight,
+              ) -
+              Math.abs(
+                bh -
+                  targetHeight,
+              )
+            );
+          },
+        );
 
       const video =
         usableVideos[0];
 
       if (!video?.url) {
         throw new Error(
-          "Hosted downloader returned no usable video format.",
+          "Hosted downloader returned no usable YouTube video format.",
         );
       }
 
-      /*
-       * Best case: one MP4 stream already has audio.
-       */
       if (
         video.hasAudio === true
       ) {
         await downloadFile(
-          String(video.url),
+          video.url,
           outputPath,
           video.headers,
         );
@@ -2221,28 +2531,21 @@ async function downloadYouTubeVideo(
         return outputPath;
       }
 
-      /*
-       * Otherwise download video + audio separately and merge.
-       */
       const audio =
-        audios
-          .filter(
-            (item: any) =>
-              Boolean(
-                String(
-                  item?.url || "",
-                ).trim(),
-              ),
-          )
-          .sort(
-            (a: any, b: any) =>
-              Number(
-                b?.bitrate || 0,
-              ) -
-              Number(
-                a?.bitrate || 0,
-              ),
-          )[0];
+        audios.sort(
+          (
+            a: any,
+            b: any,
+          ) =>
+            Number(
+              b.bitrate ||
+                0,
+            ) -
+            Number(
+              a.bitrate ||
+                0,
+            ),
+        )[0];
 
       if (!audio?.url) {
         throw new Error(
@@ -2252,68 +2555,97 @@ async function downloadYouTubeVideo(
 
       const videoPath =
         `${outputPath}.video`;
+
       const audioPath =
         `${outputPath}.audio`;
 
-      await downloadFile(
-        String(video.url),
-        videoPath,
-        video.headers,
-      );
-
-      await downloadFile(
-        String(audio.url),
-        audioPath,
-        audio.headers,
-      );
-
-      await new Promise<void>(
-        (resolve, reject) => {
-          ffmpeg(videoPath)
-            .input(audioPath)
-            .outputOptions([
-              "-map",
-              "0:v:0",
-              "-map",
-              "1:a:0",
-              "-c:v",
-              "copy",
-              "-c:a",
-              "aac",
-              "-b:a",
-              "128k",
-              "-movflags",
-              "+faststart",
-              "-y",
-            ])
-            .output(outputPath)
-            .on(
-              "end",
-              () => resolve(),
-            )
-            .on(
-              "error",
-              (error) =>
-                reject(error),
-            )
-            .run();
-        },
-      );
-
       try {
-        fs.unlinkSync(
-          videoPath,
-        );
-      } catch {}
+        await Promise.all([
+          downloadFile(
+            video.url,
+            videoPath,
+            video.headers,
+          ),
+          downloadFile(
+            audio.url,
+            audioPath,
+            audio.headers,
+          ),
+        ]);
 
-      try {
-        fs.unlinkSync(
-          audioPath,
+        await new Promise<void>(
+          (
+            resolve,
+            reject,
+          ) => {
+            ffmpeg(
+              videoPath,
+            )
+              .input(
+                audioPath,
+              )
+              .outputOptions([
+                "-map",
+                "0:v:0",
+                "-map",
+                "1:a:0",
+                "-c:v",
+                "copy",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
+                "-y",
+              ])
+              .output(
+                outputPath,
+              )
+              .on(
+                "end",
+                () => resolve(),
+              )
+              .on(
+                "error",
+                (error) =>
+                  reject(
+                    error,
+                  ),
+              )
+              .run();
+          },
         );
-      } catch {}
+      } finally {
+        try {
+          if (
+            fs.existsSync(
+              videoPath,
+            )
+          ) {
+            fs.unlinkSync(
+              videoPath,
+            );
+          }
+        } catch {}
+
+        try {
+          if (
+            fs.existsSync(
+              audioPath,
+            )
+          ) {
+            fs.unlinkSync(
+              audioPath,
+            );
+          }
+        } catch {}
+      }
 
       const stat =
-        fs.statSync(outputPath);
+        fs.statSync(
+          outputPath,
+        );
 
       if (
         !stat.isFile() ||
@@ -2336,16 +2668,30 @@ async function downloadYouTubeVideo(
     } catch (error: any) {
       cleanup();
 
-      /*
-       * Do not silently call yt-dlp after an API failure in
-       * production. This prevents duplicate upstream work and
-       * keeps billing predictable.
-       */
       throw new Error(
         error?.message ||
           "Hosted YouTube downloader failed.",
       );
     }
+  }
+
+  /*
+   * On Render, do not waste time running several direct yt-dlp
+   * strategies when the server IP is known to be challenged.
+   * Configure the hosted API key instead.
+   */
+  if (isRender) {
+    throw new Error(
+      [
+        "YouTube downloader is not configured for Render.",
+        "",
+        "Add YOUTUBE_DOWNLOAD_API_KEY in Render → Environment.",
+        "Use your private EasyDown Bearer token (ed_live_...).",
+        "",
+        "Optional:",
+        "YOUTUBE_DOWNLOAD_API_URL=https://api.easydown.org/api/v1/platforms/youtube/parse",
+      ].join("\n"),
+    );
   }
 
   /*
@@ -2387,8 +2733,12 @@ async function downloadYouTubeVideo(
         );
 
   const pluginDirAvailable =
-    fs.existsSync(pluginDir) &&
-    fs.statSync(pluginDir).isDirectory();
+    fs.existsSync(
+      pluginDir,
+    ) &&
+    fs.statSync(
+      pluginDir,
+    ).isDirectory();
 
   if (
     !fs.existsSync(
@@ -2400,7 +2750,6 @@ async function downloadYouTubeVideo(
         "YouTube downloader is not installed correctly.",
         `yt-dlp executable not found: ${ytDlpPath}`,
         "Run: npm install youtube-dl-exec@latest",
-        "For Render production, configure YOUTUBE_DOWNLOAD_API_KEY.",
       ].join("\n"),
     );
   }
@@ -2408,12 +2757,14 @@ async function downloadYouTubeVideo(
   if (
     !ffmpegPath ||
     ffmpegPath === "ffmpeg" ||
-    !fs.existsSync(ffmpegPath)
+    !fs.existsSync(
+      ffmpegPath,
+    )
   ) {
     throw new Error(
       `FFmpeg executable not found: ${
         ffmpegPath ||
-          "undefined"
+        "undefined"
       }`,
     );
   }
@@ -2459,7 +2810,8 @@ async function downloadYouTubeVideo(
               false,
           },
           {
-            name: "tv",
+            name:
+              "tv",
             playerClient:
               "tv",
             useCookies:
@@ -2484,7 +2836,8 @@ async function downloadYouTubeVideo(
               false,
           },
           {
-            name: "tv",
+            name:
+              "tv",
             playerClient:
               "tv",
             useCookies:
@@ -2516,7 +2869,8 @@ async function downloadYouTubeVideo(
           },
         ];
 
-  let lastError: any = null;
+  let lastError:
+    any = null;
 
   for (
     let i = 0;
@@ -2573,7 +2927,8 @@ async function downloadYouTubeVideo(
           : {}),
         restrictFilenames:
           true,
-        forceIpv4: true,
+        forceIpv4:
+          true,
         socketTimeout:
           45,
         retries: Math.max(
@@ -2715,9 +3070,8 @@ async function downloadYouTubeVideo(
     throw new Error(
       [
         "YouTube is blocking direct server-side extraction.",
-        "",
-        "For Render production, set YOUTUBE_DOWNLOAD_API_KEY.",
-        "The yt-dlp fallback cannot reliably overcome a YouTube IP challenge.",
+        "For Render production, configure YOUTUBE_DOWNLOAD_API_KEY.",
+        "Local yt-dlp works only when YouTube allows the current server/client.",
       ].join("\n"),
     );
   }
