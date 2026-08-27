@@ -1913,14 +1913,446 @@ async function downloadYouTubeVideo(
     recursive: true,
   });
 
-  /* ---------------------------------------------------------
-     Resolve yt-dlp
+  /*
+   * Production fix:
+   * Render's server IP can be challenged by YouTube. When
+   * YOUTUBE_DOWNLOAD_API_KEY is configured, LumoClip uses the
+   * hosted downloader API first and downloads the returned media
+   * into the normal local source.mp4 pipeline.
+   *
+   * Default API contract: EasyDown
+   * POST https://api.easydown.org/api/v1/platforms/youtube/parse
+   *
+   * Required Render env:
+   *   YOUTUBE_DOWNLOAD_API_KEY=...
+   *
+   * Optional:
+   *   YOUTUBE_DOWNLOAD_API_URL=...
+   */
+  const hostedApiKey =
+    process.env.YOUTUBE_DOWNLOAD_API_KEY?.trim() || "";
 
-     Prefer YTDLP_PATH in production so the hosting provider can
-     point LumoClip at a current yt-dlp executable. Otherwise use
-     the executable bundled by youtube-dl-exec.
-  --------------------------------------------------------- */
+  const hostedApiUrl =
+    process.env.YOUTUBE_DOWNLOAD_API_URL?.trim() ||
+    "https://api.easydown.org/api/v1/platforms/youtube/parse";
 
+  const targetHeight = Math.max(
+    144,
+    Math.min(
+      1080,
+      Number(YOUTUBE_MAX_HEIGHT) || 480,
+    ),
+  );
+
+  const cleanup = () => {
+    for (const file of [
+      outputPath,
+      `${outputPath}.part`,
+      `${outputPath}.ytdl`,
+      `${outputPath}.video`,
+      `${outputPath}.audio`,
+      `${outputPath}.tmp`,
+    ]) {
+      try {
+        if (fs.existsSync(file)) fs.unlinkSync(file);
+      } catch {}
+    }
+  };
+
+  const downloadFile = async (
+    mediaUrl: string,
+    destination: string,
+    headers?: Record<string, string>,
+  ) => {
+    const response = await fetch(mediaUrl, {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36",
+        ...(headers || {}),
+      },
+      redirect: "follow",
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(
+        `Media download failed: HTTP ${response.status}`,
+      );
+    }
+
+    const file = fs.createWriteStream(destination);
+
+    try {
+      const reader = response.body.getReader();
+
+      try {
+        while (true) {
+          const { done, value } =
+            await reader.read();
+
+          if (done) break;
+
+          if (value) {
+            await new Promise<void>(
+              (resolve, reject) => {
+                if (file.write(Buffer.from(value))) {
+                  resolve();
+                } else {
+                  file.once("drain", resolve);
+                  file.once("error", reject);
+                }
+              },
+            );
+          }
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    } finally {
+      await new Promise<void>((resolve) => {
+        file.end(resolve);
+      });
+    }
+
+    const stat = fs.statSync(destination);
+
+    if (
+      !stat.isFile() ||
+      stat.size < 100 * 1024
+    ) {
+      throw new Error(
+        `Downloaded media is invalid or too small: ${stat.size} bytes.`,
+      );
+    }
+  };
+
+  /*
+   * =========================================================
+   * 1. HOSTED DOWNLOADER API
+   * =========================================================
+   */
+  if (hostedApiKey) {
+    cleanup();
+
+    try {
+      console.log(
+        "🎬 Using hosted YouTube downloader API:",
+        hostedApiUrl,
+      );
+
+      const response = await fetch(
+        hostedApiUrl,
+        {
+          method: "POST",
+          headers: {
+            Authorization:
+              `Bearer ${hostedApiKey}`,
+            "Content-Type":
+              "application/json",
+            Accept:
+              "application/json",
+          },
+          body: JSON.stringify({
+            url,
+          }),
+        },
+      );
+
+      const text =
+        await response.text();
+
+      let payload: any;
+
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `Hosted downloader returned invalid JSON (HTTP ${response.status}).`,
+        );
+      }
+
+      if (!response.ok) {
+        const reason =
+          payload?.message ||
+          payload?.msg ||
+          payload?.error?.message ||
+          payload?.error ||
+          `HTTP ${response.status}`;
+
+        throw new Error(
+          `Hosted YouTube downloader failed: ${String(reason)}`,
+        );
+      }
+
+      const media =
+        payload?.data?.media ||
+        payload?.data ||
+        payload?.media ||
+        {};
+
+      const videos =
+        Array.isArray(media.videos)
+          ? media.videos
+          : [];
+
+      const audios =
+        Array.isArray(media.audios)
+          ? media.audios
+          : [];
+
+      const heightOf = (item: any) => {
+        const direct =
+          Number(item?.height);
+
+        if (
+          Number.isFinite(direct) &&
+          direct > 0
+        ) {
+          return direct;
+        }
+
+        const quality =
+          String(
+            item?.quality || "",
+          );
+
+        const match =
+          quality.match(
+            /(\d{3,4})p/i,
+          );
+
+        return match
+          ? Number(match[1])
+          : 0;
+      };
+
+      const usableVideos =
+        videos
+          .filter(
+            (item: any) =>
+              Boolean(
+                String(
+                  item?.url || "",
+                ).trim(),
+              ),
+          )
+          .sort(
+            (a: any, b: any) => {
+              const ah =
+                heightOf(a);
+              const bh =
+                heightOf(b);
+
+              const aa =
+                a?.hasAudio === true
+                  ? 1
+                  : 0;
+              const ba =
+                b?.hasAudio === true
+                  ? 1
+                  : 0;
+
+              if (aa !== ba) {
+                return ba - aa;
+              }
+
+              const aw =
+                ah > 0 &&
+                ah <= targetHeight
+                  ? 1
+                  : 0;
+              const bw =
+                bh > 0 &&
+                bh <= targetHeight
+                  ? 1
+                  : 0;
+
+              if (aw !== bw) {
+                return bw - aw;
+              }
+
+              if (aw && bw) {
+                return bh - ah;
+              }
+
+              return (
+                Math.abs(
+                  ah -
+                    targetHeight,
+                ) -
+                Math.abs(
+                  bh -
+                    targetHeight,
+                )
+              );
+            },
+          );
+
+      const video =
+        usableVideos[0];
+
+      if (!video?.url) {
+        throw new Error(
+          "Hosted downloader returned no usable video format.",
+        );
+      }
+
+      /*
+       * Best case: one MP4 stream already has audio.
+       */
+      if (
+        video.hasAudio === true
+      ) {
+        await downloadFile(
+          String(video.url),
+          outputPath,
+          video.headers,
+        );
+
+        console.log(
+          `✅ Hosted YouTube download complete: ${(
+            fs.statSync(
+              outputPath,
+            ).size /
+            1024 /
+            1024
+          ).toFixed(2)} MB`,
+        );
+
+        return outputPath;
+      }
+
+      /*
+       * Otherwise download video + audio separately and merge.
+       */
+      const audio =
+        audios
+          .filter(
+            (item: any) =>
+              Boolean(
+                String(
+                  item?.url || "",
+                ).trim(),
+              ),
+          )
+          .sort(
+            (a: any, b: any) =>
+              Number(
+                b?.bitrate || 0,
+              ) -
+              Number(
+                a?.bitrate || 0,
+              ),
+          )[0];
+
+      if (!audio?.url) {
+        throw new Error(
+          "Hosted downloader returned video without an audio stream.",
+        );
+      }
+
+      const videoPath =
+        `${outputPath}.video`;
+      const audioPath =
+        `${outputPath}.audio`;
+
+      await downloadFile(
+        String(video.url),
+        videoPath,
+        video.headers,
+      );
+
+      await downloadFile(
+        String(audio.url),
+        audioPath,
+        audio.headers,
+      );
+
+      await new Promise<void>(
+        (resolve, reject) => {
+          ffmpeg(videoPath)
+            .input(audioPath)
+            .outputOptions([
+              "-map",
+              "0:v:0",
+              "-map",
+              "1:a:0",
+              "-c:v",
+              "copy",
+              "-c:a",
+              "aac",
+              "-b:a",
+              "128k",
+              "-movflags",
+              "+faststart",
+              "-y",
+            ])
+            .output(outputPath)
+            .on(
+              "end",
+              () => resolve(),
+            )
+            .on(
+              "error",
+              (error) =>
+                reject(error),
+            )
+            .run();
+        },
+      );
+
+      try {
+        fs.unlinkSync(
+          videoPath,
+        );
+      } catch {}
+
+      try {
+        fs.unlinkSync(
+          audioPath,
+        );
+      } catch {}
+
+      const stat =
+        fs.statSync(outputPath);
+
+      if (
+        !stat.isFile() ||
+        stat.size < 100 * 1024
+      ) {
+        throw new Error(
+          "Merged YouTube output is invalid.",
+        );
+      }
+
+      console.log(
+        `✅ Hosted YouTube download + merge complete: ${(
+          stat.size /
+          1024 /
+          1024
+        ).toFixed(2)} MB`,
+      );
+
+      return outputPath;
+    } catch (error: any) {
+      cleanup();
+
+      /*
+       * Do not silently call yt-dlp after an API failure in
+       * production. This prevents duplicate upstream work and
+       * keeps billing predictable.
+       */
+      throw new Error(
+        error?.message ||
+          "Hosted YouTube downloader failed.",
+      );
+    }
+  }
+
+  /*
+   * =========================================================
+   * 2. LOCAL / SELF-HOSTED yt-dlp FALLBACK
+   * =========================================================
+   */
   const bundledYtDlpPath =
     process.platform === "win32"
       ? path.join(
@@ -1942,39 +2374,36 @@ async function downloadYouTubeVideo(
     YTDLP_PATH_ENV ||
     bundledYtDlpPath;
 
-  // youtube-dl-exec searches this directory automatically for plugin zips.
-  // The explicit variable is useful when a custom yt-dlp binary is supplied.
-  const bundledPluginDir = path.join(
-    path.dirname(ytDlpPath),
-    "yt-dlp-plugins",
-  );
-
-  const configuredPluginDir =
-    YTDLP_PLUGIN_DIR_ENV
-      ? path.resolve(YTDLP_PLUGIN_DIR_ENV)
-      : "";
-
   const pluginDir =
-    configuredPluginDir ||
-    bundledPluginDir;
+    YTDLP_PLUGIN_DIR_ENV
+      ? path.resolve(
+          YTDLP_PLUGIN_DIR_ENV,
+        )
+      : path.join(
+          path.dirname(
+            ytDlpPath,
+          ),
+          "yt-dlp-plugins",
+        );
 
   const pluginDirAvailable =
     fs.existsSync(pluginDir) &&
     fs.statSync(pluginDir).isDirectory();
 
-  if (!fs.existsSync(ytDlpPath)) {
+  if (
+    !fs.existsSync(
+      ytDlpPath,
+    )
+  ) {
     throw new Error(
       [
         "YouTube downloader is not installed correctly.",
         `yt-dlp executable not found: ${ytDlpPath}`,
         "Run: npm install youtube-dl-exec@latest",
+        "For Render production, configure YOUTUBE_DOWNLOAD_API_KEY.",
       ].join("\n"),
     );
   }
-
-  /* ---------------------------------------------------------
-     FFmpeg
-  --------------------------------------------------------- */
 
   if (
     !ffmpegPath ||
@@ -1983,161 +2412,109 @@ async function downloadYouTubeVideo(
   ) {
     throw new Error(
       `FFmpeg executable not found: ${
-        ffmpegPath || "undefined"
+        ffmpegPath ||
+          "undefined"
       }`,
     );
   }
 
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-  console.log("🎬 LumoClip YouTube Downloader");
-  console.log("yt-dlp:", ytDlpPath);
-  console.log("FFmpeg:", ffmpegPath);
-  console.log("JS runtime:", YTDLP_JS_RUNTIME);
-  console.log(
-    "PO token provider:",
-    YOUTUBE_POT_PROVIDER_URL
-      ? YOUTUBE_POT_PROVIDER_URL
-      : "not configured",
-  );
-  console.log(
-    "yt-dlp plugin directory:",
-    pluginDirAvailable
-      ? pluginDir
-      : "not found",
-  );
-  console.log(
-    "Cookies:",
-    youtubeCookiesAvailable
-      ? "enabled"
-      : "disabled",
-  );
-  console.log("URL:", url);
-  console.log(
-    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-  );
-
-  /* ---------------------------------------------------------
-     CLEANUP
-  --------------------------------------------------------- */
-
-  const cleanup = () => {
-    const files = [
-      outputPath,
-      `${outputPath}.part`,
-      `${outputPath}.ytdl`,
-      `${outputPath}.temp`,
-      `${outputPath}.tmp`,
-      `${outputPath}.f360.mp4`,
-      `${outputPath}.f480.mp4`,
-      `${outputPath}.f140.m4a`,
-      `${outputPath}.f251.webm`,
-      `${outputPath}.webm`,
-      `${outputPath}.mp4`,
-    ];
-
-    for (const file of files) {
-      try {
-        if (fs.existsSync(file)) {
-          fs.unlinkSync(file);
-        }
-      } catch {}
-    }
-  };
-
-  cleanup();
-
-  /* ---------------------------------------------------------
-     FORMAT
-
-     Prefer MP4 up to the configured height, then progressively
-     fall back to whatever playable format YouTube exposes.
-  --------------------------------------------------------- */
-
   const format =
-    `bv*[height<=${YOUTUBE_MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
-    `/b[height<=${YOUTUBE_MAX_HEIGHT}][ext=mp4]` +
-    `/bv*[height<=${YOUTUBE_MAX_HEIGHT}]+ba` +
-    `/b[height<=${YOUTUBE_MAX_HEIGHT}]` +
+    `bv*[height<=${targetHeight}][ext=mp4]+ba[ext=m4a]` +
+    `/b[height<=${targetHeight}][ext=mp4]` +
+    `/bv*[height<=${targetHeight}]+ba` +
+    `/b[height<=${targetHeight}]` +
     `/b`;
 
-  console.log("🎯 Format:", format);
-
-  /* ---------------------------------------------------------
-     CURRENT YOUTUBE CLIENT STRATEGIES
-
-     The previous implementation used:
-       visionos -> android -> web
-
-     Current yt-dlp guidance has changed: YouTube is enforcing
-     PO tokens on several clients. We therefore try clients that
-     can avoid the affected GVS/PO-token path first, then use
-     cookies + web as a final fallback when configured.
-  --------------------------------------------------------- */
-
-  type YouTubeStrategy = {
+  type Strategy = {
     name: string;
     playerClient: string;
     useCookies: boolean;
   };
 
-  const strategies: YouTubeStrategy[] = YOUTUBE_POT_PROVIDER_URL
-    ? [
-        // Provider-backed clients first: this is the current yt-dlp guidance.
-        {
-          name: "mweb-with-pot-provider",
-          playerClient: "mweb",
-          useCookies: false,
-        },
-        {
-          name: "web-with-pot-provider",
-          playerClient: "web",
-          useCookies: false,
-        },
-        {
-          name: "web_embedded",
-          playerClient: "web_embedded",
-          useCookies: false,
-        },
-        {
-          name: "tv",
-          playerClient: "tv",
-          useCookies: false,
-        },
-        {
-          name: "web-with-cookies",
-          playerClient: "web",
-          useCookies: youtubeCookiesAvailable,
-        },
-      ]
-    : [
-        {
-          name: "web_embedded",
-          playerClient: "web_embedded",
-          useCookies: false,
-        },
-        {
-          name: "tv",
-          playerClient: "tv",
-          useCookies: false,
-        },
-        {
-          name: "android_vr",
-          playerClient: "android_vr",
-          useCookies: false,
-        },
-        {
-          name: "web_safari",
-          playerClient: "web_safari",
-          useCookies: false,
-        },
-        {
-          name: "web-with-cookies",
-          playerClient: "web",
-          useCookies: youtubeCookiesAvailable,
-        },
-      ];
+  const strategies: Strategy[] =
+    YOUTUBE_POT_PROVIDER_URL
+      ? [
+          {
+            name:
+              "mweb-with-pot",
+            playerClient:
+              "mweb",
+            useCookies:
+              false,
+          },
+          {
+            name:
+              "web-with-pot",
+            playerClient:
+              "web",
+            useCookies:
+              false,
+          },
+          {
+            name:
+              "web-embedded",
+            playerClient:
+              "web_embedded",
+            useCookies:
+              false,
+          },
+          {
+            name: "tv",
+            playerClient:
+              "tv",
+            useCookies:
+              false,
+          },
+          {
+            name:
+              "web-cookies",
+            playerClient:
+              "web",
+            useCookies:
+              youtubeCookiesAvailable,
+          },
+        ]
+      : [
+          {
+            name:
+              "web-embedded",
+            playerClient:
+              "web_embedded",
+            useCookies:
+              false,
+          },
+          {
+            name: "tv",
+            playerClient:
+              "tv",
+            useCookies:
+              false,
+          },
+          {
+            name:
+              "android-vr",
+            playerClient:
+              "android_vr",
+            useCookies:
+              false,
+          },
+          {
+            name:
+              "web-safari",
+            playerClient:
+              "web_safari",
+            useCookies:
+              false,
+          },
+          {
+            name:
+              "web-cookies",
+            playerClient:
+              "web",
+            useCookies:
+              youtubeCookiesAvailable,
+          },
+        ];
 
   let lastError: any = null;
 
@@ -2146,9 +2523,9 @@ async function downloadYouTubeVideo(
     i < strategies.length;
     i++
   ) {
-    const strategy = strategies[i];
+    const strategy =
+      strategies[i];
 
-    // Do not attempt a cookie strategy when no cookie file exists.
     if (
       strategy.useCookies &&
       !youtubeCookiesAvailable
@@ -2158,77 +2535,71 @@ async function downloadYouTubeVideo(
 
     cleanup();
 
-    console.log("");
-    console.log(
-      `▶ YouTube strategy ${i + 1}/${strategies.length}`,
-    );
-    console.log(
-      `🎯 Player client: ${strategy.playerClient}`,
-    );
-    console.log(
-      `🍪 Cookies: ${
-        strategy.useCookies
-          ? "yes"
-          : "no"
-      }`,
-    );
-
     try {
       const ytdlp =
-        youtubedl.create(ytDlpPath);
+        youtubedl.create(
+          ytDlpPath,
+        );
 
       const options: any = {
         output: outputPath,
         format,
-
         noPlaylist: true,
         forceOverwrites: true,
         noPart: true,
         noContinue: true,
-
-        mergeOutputFormat: "mp4",
-        ffmpegLocation: ffmpegPath,
-
-        // Full YouTube extraction now needs an external JS runtime.
-        jsRuntimes: YTDLP_JS_RUNTIME,
+        mergeOutputFormat:
+          "mp4",
+        ffmpegLocation:
+          ffmpegPath,
+        jsRuntimes:
+          YTDLP_JS_RUNTIME,
         remoteComponents:
-          process.env.YTDLP_EJS_REMOTE_COMPONENTS?.trim() ||
+          process.env
+            .YTDLP_EJS_REMOTE_COMPONENTS
+            ?.trim() ||
           "ejs:github",
-
-        ...(YTDLP_PLUGIN_DIR_ENV && pluginDirAvailable
-          ? { pluginDirs: pluginDir }
+        ...(YTDLP_PLUGIN_DIR_ENV &&
+        pluginDirAvailable
+          ? {
+              pluginDirs:
+                pluginDir,
+            }
           : {}),
-
-        // yt-dlp 2026.08.19 rejects --no-verbose; omit the flag when disabled.
-        ...(YTDLP_VERBOSE ? { verbose: true } : {}),
-        restrictFilenames: true,
-
+        ...(YTDLP_VERBOSE
+          ? {
+              verbose: true,
+            }
+          : {}),
+        restrictFilenames:
+          true,
         forceIpv4: true,
-        socketTimeout: 45,
-
+        socketTimeout:
+          45,
         retries: Math.max(
           2,
           YOUTUBE_RETRIES,
         ),
-        fragmentRetries: 5,
-        extractorRetries: 3,
-
-        concurrentFragments: Math.max(
-          1,
-          Math.min(
-            YOUTUBE_CONCURRENT_FRAGMENTS || 2,
-            4,
+        fragmentRetries:
+          5,
+        extractorRetries:
+          3,
+        concurrentFragments:
+          Math.max(
+            1,
+            Math.min(
+              YOUTUBE_CONCURRENT_FRAGMENTS ||
+                2,
+              4,
+            ),
           ),
-        ),
-
-        httpChunkSize: "5M",
-
-        // Normal browser-like request metadata.
-        referer: "https://www.youtube.com/",
+        httpChunkSize:
+          "5M",
+        referer:
+          "https://www.youtube.com/",
         addHeader: [
           "Accept-Language: en-US,en;q=0.9",
         ],
-
         extractorArgs: {
           youtube: {
             player_client:
@@ -2236,10 +2607,11 @@ async function downloadYouTubeVideo(
           },
           ...(YOUTUBE_POT_PROVIDER_URL
             ? {
-                "youtubepot-bgutilhttp": {
-                  base_url:
-                    YOUTUBE_POT_PROVIDER_URL,
-                },
+                "youtubepot-bgutilhttp":
+                  {
+                    base_url:
+                      YOUTUBE_POT_PROVIDER_URL,
+                  },
               }
             : {}),
         },
@@ -2254,7 +2626,7 @@ async function downloadYouTubeVideo(
       }
 
       console.log(
-        "🚀 Starting yt-dlp...",
+        `▶ yt-dlp strategy ${i + 1}/${strategies.length}: ${strategy.playerClient}`,
       );
 
       await ytdlp(
@@ -2262,18 +2634,20 @@ async function downloadYouTubeVideo(
         options,
       );
 
-      /* -----------------------------------------------------
-         VERIFY OUTPUT
-      ----------------------------------------------------- */
-
-      if (!fs.existsSync(outputPath)) {
+      if (
+        !fs.existsSync(
+          outputPath,
+        )
+      ) {
         throw new Error(
           "yt-dlp completed but output file was not created.",
         );
       }
 
       const stat =
-        fs.statSync(outputPath);
+        fs.statSync(
+          outputPath,
+        );
 
       if (
         !stat.isFile() ||
@@ -2284,124 +2658,36 @@ async function downloadYouTubeVideo(
         );
       }
 
-      console.log("");
       console.log(
-        "✅ YouTube download successful!",
-      );
-      console.log(
-        `📦 Size: ${(
+        `✅ yt-dlp download successful: ${(
           stat.size /
           1024 /
           1024
         ).toFixed(2)} MB`,
-      );
-      console.log(
-        `🎯 Client: ${strategy.playerClient}`,
-      );
-      console.log(
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
       );
 
       return outputPath;
     } catch (error: any) {
       lastError = error;
 
-      const stderr =
-        typeof error?.stderr === "string"
-          ? error.stderr
-          : "";
-
-      const stdout =
-        typeof error?.stdout === "string"
-          ? error.stdout
-          : "";
-
-      const message = [
-        stderr,
-        stdout,
-        error?.message,
-      ]
-        .filter(Boolean)
-        .join("\n")
-        .trim();
-
-      const lower =
-        message.toLowerCase();
-
-      console.error("");
       console.error(
-        `❌ Strategy failed: ${strategy.name}`,
+        `❌ yt-dlp strategy failed: ${strategy.name}`,
+        String(
+          error?.stderr ||
+            error?.stdout ||
+            error?.message ||
+            "",
+        ),
       );
-      console.error(
-        message ||
-          "Unknown yt-dlp error.",
-      );
-
-      if (
-        lower.includes(
-          "sign in to confirm you're not a bot",
-        ) ||
-        lower.includes(
-          "sign in to confirm you’re not a bot",
-        ) ||
-        lower.includes(
-          "confirm you're not a bot",
-        )
-      ) {
-        console.warn(
-          "⚠️ YouTube bot verification detected. Trying another public client...",
-        );
-      } else if (
-        lower.includes("403") ||
-        lower.includes("forbidden") ||
-        lower.includes(
-          "proof of origin",
-        ) ||
-        lower.includes(
-          "po token",
-        )
-      ) {
-        console.warn(
-          "⚠️ YouTube access/PO-token restriction detected. Trying another client...",
-        );
-      } else if (
-        lower.includes(
-          "requested format is not available",
-        )
-      ) {
-        console.warn(
-          "⚠️ Requested format unavailable. Trying another client...",
-        );
-      } else if (
-        lower.includes(
-          "javascript",
-        ) ||
-        lower.includes(
-          "ejs",
-        )
-      ) {
-        console.warn(
-          "⚠️ YouTube JavaScript challenge issue detected. Trying another client...",
-        );
-      }
 
       cleanup();
-
-      // Avoid hammering YouTube between client changes.
       await sleep(900);
     }
   }
 
   cleanup();
 
-  /* ---------------------------------------------------------
-     USER-SAFE FINAL ERROR
-
-     Raw yt-dlp diagnostics stay in the server log instead of
-     being shown in the LumoClip dashboard.
-  --------------------------------------------------------- */
-
-  const rawFinalMessage =
+  const finalMessage =
     String(
       lastError?.stderr ||
         lastError?.stdout ||
@@ -2409,43 +2695,35 @@ async function downloadYouTubeVideo(
         "",
     );
 
-  const lowerFinal =
-    rawFinalMessage.toLowerCase();
+  const lower =
+    finalMessage.toLowerCase();
 
   if (
-    lowerFinal.includes(
+    lower.includes(
       "sign in to confirm",
     ) ||
-    lowerFinal.includes(
+    lower.includes(
       "not a bot",
     ) ||
-    lowerFinal.includes(
+    lower.includes(
       "proof of origin",
     ) ||
-    lowerFinal.includes(
+    lower.includes(
       "po token",
     )
   ) {
     throw new Error(
       [
-        "YouTube is currently blocking this download request.",
+        "YouTube is blocking direct server-side extraction.",
         "",
-        "LumoClip tried multiple YouTube clients and automatic JavaScript challenge solving.",
-        "",
-        youtubeCookiesAvailable
-          ? "A server-side YouTube cookies file was also tried."
-          : "No server-side YouTube cookies are configured.",
-        "",
-        YOUTUBE_POT_PROVIDER_URL
-          ? "The PO-token provider was configured, but YouTube may still reject this server IP or video."
-          : "Configure the matching PO-token plugin and YTDLP_POT_PROVIDER_URL on the server.",
-        "Cookies are only a fallback and may expire or be rejected.",
+        "For Render production, set YOUTUBE_DOWNLOAD_API_KEY.",
+        "The yt-dlp fallback cannot reliably overcome a YouTube IP challenge.",
       ].join("\n"),
     );
   }
 
   throw new Error(
-    "YouTube video could not be downloaded right now. Please try again with another public YouTube video.",
+    "YouTube video could not be downloaded right now. Please try another public YouTube video.",
   );
 }
 
