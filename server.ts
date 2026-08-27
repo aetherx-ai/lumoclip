@@ -3974,7 +3974,7 @@ app.post(
           .select("id, user_id, source_type, source_url, status")
           .eq("id", projectId)
           .eq("source_type", "youtube")
-          .eq("status", "processing")
+          .eq("status", "worker_downloading")
           .eq("current_step", "Worker is downloading YouTube video")
           .maybeSingle();
 
@@ -4081,7 +4081,7 @@ app.post("/api/worker/projects/:projectId/fail", async (req, res) => {
       .select("id, user_id, status")
       .eq("id", projectId)
       .eq("source_type", "youtube")
-      .eq("status", "processing")
+      .eq("status", "worker_downloading")
       .eq("current_step", "Worker is downloading YouTube video")
       .maybeSingle();
 
@@ -5065,7 +5065,7 @@ app.listen(
     );
 
     console.log(
-      "Real YouTube processing: ENABLED",
+      "YouTube PC worker processing: ENABLED",
     );
 
     console.log(
