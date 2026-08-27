@@ -109,8 +109,20 @@ const YOUTUBE_COOKIES_PATH_ENV =
 const YOUTUBE_AUTO_UPDATE =
   process.env.YOUTUBE_AUTO_UPDATE === "true";
 
+// Accept both names so existing Render variables keep working.
+// YTDLP_POT_PROVIDER_URL is the canonical deployment variable.
 const YOUTUBE_POT_PROVIDER_URL =
-  process.env.YOUTUBE_POT_PROVIDER_URL?.trim() || "";
+  process.env.YTDLP_POT_PROVIDER_URL?.trim() ||
+  process.env.YOUTUBE_POT_PROVIDER_URL?.trim() ||
+  "";
+
+const YTDLP_PLUGIN_DIR_ENV =
+  process.env.YTDLP_PLUGIN_DIR?.trim() ||
+  "";
+
+const YTDLP_VERBOSE =
+  process.env.YTDLP_VERBOSE === "true";
+
 
 const GEMINI_POLL_MS = Number(
   process.env.GEMINI_POLL_MS || 1500,
@@ -1930,6 +1942,26 @@ async function downloadYouTubeVideo(
     YTDLP_PATH_ENV ||
     bundledYtDlpPath;
 
+  // youtube-dl-exec searches this directory automatically for plugin zips.
+  // The explicit variable is useful when a custom yt-dlp binary is supplied.
+  const bundledPluginDir = path.join(
+    path.dirname(ytDlpPath),
+    "yt-dlp-plugins",
+  );
+
+  const configuredPluginDir =
+    YTDLP_PLUGIN_DIR_ENV
+      ? path.resolve(YTDLP_PLUGIN_DIR_ENV)
+      : "";
+
+  const pluginDir =
+    configuredPluginDir ||
+    bundledPluginDir;
+
+  const pluginDirAvailable =
+    fs.existsSync(pluginDir) &&
+    fs.statSync(pluginDir).isDirectory();
+
   if (!fs.existsSync(ytDlpPath)) {
     throw new Error(
       [
@@ -1968,6 +2000,12 @@ async function downloadYouTubeVideo(
     YOUTUBE_POT_PROVIDER_URL
       ? YOUTUBE_POT_PROVIDER_URL
       : "not configured",
+  );
+  console.log(
+    "yt-dlp plugin directory:",
+    pluginDirAvailable
+      ? pluginDir
+      : "not found",
   );
   console.log(
     "Cookies:",
@@ -2044,33 +2082,62 @@ async function downloadYouTubeVideo(
     useCookies: boolean;
   };
 
-  const strategies: YouTubeStrategy[] = [
-    {
-      name: "tv",
-      playerClient: "tv",
-      useCookies: false,
-    },
-    {
-      name: "web_safari",
-      playerClient: "web_safari",
-      useCookies: false,
-    },
-    {
-      name: "android_vr",
-      playerClient: "android_vr",
-      useCookies: false,
-    },
-    {
-      name: "web_embedded",
-      playerClient: "web_embedded",
-      useCookies: false,
-    },
-    {
-      name: "web-with-cookies",
-      playerClient: "web",
-      useCookies: youtubeCookiesAvailable,
-    },
-  ];
+  const strategies: YouTubeStrategy[] = YOUTUBE_POT_PROVIDER_URL
+    ? [
+        // Provider-backed clients first: this is the current yt-dlp guidance.
+        {
+          name: "mweb-with-pot-provider",
+          playerClient: "mweb",
+          useCookies: false,
+        },
+        {
+          name: "web-with-pot-provider",
+          playerClient: "web",
+          useCookies: false,
+        },
+        {
+          name: "web_embedded",
+          playerClient: "web_embedded",
+          useCookies: false,
+        },
+        {
+          name: "tv",
+          playerClient: "tv",
+          useCookies: false,
+        },
+        {
+          name: "web-with-cookies",
+          playerClient: "web",
+          useCookies: youtubeCookiesAvailable,
+        },
+      ]
+    : [
+        {
+          name: "web_embedded",
+          playerClient: "web_embedded",
+          useCookies: false,
+        },
+        {
+          name: "tv",
+          playerClient: "tv",
+          useCookies: false,
+        },
+        {
+          name: "android_vr",
+          playerClient: "android_vr",
+          useCookies: false,
+        },
+        {
+          name: "web_safari",
+          playerClient: "web_safari",
+          useCookies: false,
+        },
+        {
+          name: "web-with-cookies",
+          playerClient: "web",
+          useCookies: youtubeCookiesAvailable,
+        },
+      ];
 
   let lastError: any = null;
 
@@ -2124,8 +2191,15 @@ async function downloadYouTubeVideo(
 
         // Full YouTube extraction now needs an external JS runtime.
         jsRuntimes: YTDLP_JS_RUNTIME,
-        remoteComponents: "ejs:github",
+        remoteComponents:
+          process.env.YTDLP_EJS_REMOTE_COMPONENTS?.trim() ||
+          "ejs:github",
 
+        ...(YTDLP_PLUGIN_DIR_ENV && pluginDirAvailable
+          ? { pluginDirs: pluginDir }
+          : {}),
+
+        verbose: YTDLP_VERBOSE,
         restrictFilenames: true,
 
         forceIpv4: true,
@@ -2361,7 +2435,10 @@ async function downloadYouTubeVideo(
           ? "A server-side YouTube cookies file was also tried."
           : "No server-side YouTube cookies are configured.",
         "",
-        "Please try another public video. If this happens repeatedly, update yt-dlp and configure a fresh YOUTUBE_COOKIES_B64 secret on the server.",
+        YOUTUBE_POT_PROVIDER_URL
+          ? "The PO-token provider was configured, but YouTube may still reject this server IP or video."
+          : "Configure the matching PO-token plugin and YTDLP_POT_PROVIDER_URL on the server.",
+        "Cookies are only a fallback and may expire or be rejected.",
       ].join("\n"),
     );
   }
@@ -5390,6 +5467,13 @@ app.listen(
 
     console.log(
       "Real YouTube processing: ENABLED",
+    );
+
+    console.log(
+      "PO-token provider:",
+      YOUTUBE_POT_PROVIDER_URL
+        ? "CONFIGURED"
+        : "NOT CONFIGURED",
     );
 
     console.log(
