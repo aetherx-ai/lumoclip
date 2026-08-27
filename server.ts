@@ -812,7 +812,9 @@ console.log(
 
 const fontPath =
   process.env.FFMPEG_FONT_PATH ||
-  "C:\\Windows\\Fonts\\arial.ttf";
+  (process.platform === "win32"
+    ? "C:\\Windows\\Fonts\\arial.ttf"
+    : "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf");
 
 if (!fs.existsSync(fontPath)) {
   console.warn(
@@ -2156,9 +2158,14 @@ async function downloadYouTubeVideo(
    * =========================================================
    */
   if (hostedApiKey) {
-    cleanup();
+    let hostedLastError: any = null;
 
-    try {
+    // EasyDown media URLs are signed/time-limited. Re-parse the original
+    // YouTube URL once when the returned media URL responds with 403/404/410.
+    for (let hostedAttempt = 1; hostedAttempt <= 2; hostedAttempt++) {
+      cleanup();
+
+      try {
       console.log(
         "🎬 Using hosted YouTube downloader API:",
         hostedApiUrl,
@@ -2665,14 +2672,37 @@ if (!hostedResponse.ok) {
       );
 
       return outputPath;
-    } catch (error: any) {
-      cleanup();
+      } catch (error: any) {
+        hostedLastError = error;
+        cleanup();
 
-      throw new Error(
-        error?.message ||
-          "Hosted YouTube downloader failed.",
-      );
+        const message = String(
+          error?.message ||
+            error?.stderr ||
+            error ||
+            "Hosted YouTube downloader failed.",
+        );
+
+        const retryMedia =
+          /HTTP\s+(403|404|410)/i.test(message) ||
+          /signed|expired|forbidden/i.test(message);
+
+        if (retryMedia && hostedAttempt === 1) {
+          console.warn(
+            "⚠️ EasyDown media URL was rejected. Re-parsing YouTube URL for a fresh signed URL...",
+          );
+          await sleep(800);
+          continue;
+        }
+
+        throw new Error(message);
+      }
     }
+
+    throw new Error(
+      hostedLastError?.message ||
+        "Hosted YouTube downloader failed after retry.",
+    );
   }
 
   /*
