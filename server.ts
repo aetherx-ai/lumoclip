@@ -3107,9 +3107,9 @@ if (!hostedResponse.ok) {
   ) {
     throw new Error(
       [
-        "YouTube is blocking direct server-side extraction.",
-        "For Render production, configure YOUTUBE_DOWNLOAD_API_KEY.",
-        "Local yt-dlp works only when YouTube allows the current server/client.",
+        "YouTube requires authentication or is blocking this server request.",
+        "The configured YouTube cookies are missing, expired, invalid, or not accepted by YouTube.",
+        "Refresh the cookies and set YOUTUBE_COOKIES_B64 in Render, or use a working hosted downloader API.",
       ].join("\n"),
     );
   }
