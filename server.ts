@@ -4,7 +4,6 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import youtubedl from "youtube-dl-exec";
 import { createClient } from "@supabase/supabase-js";
 import {
   GoogleGenAI,
@@ -5038,65 +5037,7 @@ process.on(
    START SERVER
 ========================================================= */
 
-async function ensureYtDlpReady() {
-  const bundledYtDlpPath =
-    process.platform === "win32"
-      ? path.join(
-          process.cwd(),
-          "node_modules",
-          "youtube-dl-exec",
-          "bin",
-          "yt-dlp.exe",
-        )
-      : path.join(
-          process.cwd(),
-          "node_modules",
-          "youtube-dl-exec",
-          "bin",
-          "yt-dlp",
-        );
 
-  const binaryPath =
-    YTDLP_PATH_ENV ||
-    bundledYtDlpPath;
-
-  if (!fs.existsSync(binaryPath)) {
-    console.error(
-      "❌ yt-dlp binary missing:",
-      binaryPath,
-    );
-    return;
-  }
-
-  try {
-    const ytdlp =
-      youtubedl.create(
-        binaryPath,
-      );
-
-    const version =
-      await ytdlp("--version");
-
-    console.log(
-      "✅ yt-dlp version:",
-      String(version).trim(),
-    );
-
-    console.log(
-      "✅ yt-dlp binary:",
-      binaryPath,
-    );
-  } catch (error) {
-    console.warn(
-      "⚠️ Could not verify yt-dlp:",
-      error,
-    );
-  }
-}
-
-if (!process.env.RENDER) {
-  void ensureYtDlpReady();
-}
 
 
 /* =========================================================
