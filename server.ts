@@ -40,20 +40,6 @@ Allow: /
 Sitemap: https://lumo-clip.com/sitemap.xml`);
 });
 
-// SEO: sitemap.xml
-app.get("/sitemap.xml", (_req, res) => {
-  res.status(200)
-    .set("Cache-Control", "public, max-age=3600")
-    .type("application/xml; charset=utf-8")
-    .send(`<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://lumo-clip.com/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-</urlset>`);
-});
 
 const PORT = Number(process.env.PORT || 3000);
 
@@ -4854,6 +4840,7 @@ app.delete(
 ========================================================= */
 
 app.get("/sitemap.xml", (_req, res) => {
+  console.log("✅ Sitemap requested: /sitemap.xml");
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 
@@ -5102,10 +5089,12 @@ app.listen(
       "======================================",
     );
 
-    console.log(
+        console.log(
       `🚀 LumoClip AI Server: http://localhost:${PORT}`,
     );
-
+    console.log(
+      `🗺️ Sitemap: ${FRONTEND_URL.replace(/\/$/, "")}/sitemap.xml`,
+    );
     console.log(
       `Gemini model: ${GEMINI_MODEL}`,
     );
