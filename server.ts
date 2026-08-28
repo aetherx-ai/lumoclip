@@ -1944,10 +1944,6 @@ function createClip(
         recursive: true,
       });
 
-      // ---------------------------------------------------------
-      // Validate output directory
-      // ---------------------------------------------------------
-
       if (!fs.existsSync(outputDirectory)) {
         return reject(
           new Error(
@@ -1957,7 +1953,7 @@ function createClip(
       }
 
       // ---------------------------------------------------------
-      // Remove old output if it exists
+      // Remove old output
       // ---------------------------------------------------------
 
       try {
@@ -2010,25 +2006,6 @@ function createClip(
       );
 
       console.log(
-        "Output directory:",
-        outputDirectory,
-      );
-
-      console.log(
-        "Input exists:",
-        fs.existsSync(
-          absoluteInputPath,
-        ),
-      );
-
-      console.log(
-        "Output directory exists:",
-        fs.existsSync(
-          outputDirectory,
-        ),
-      );
-
-      console.log(
         "=================================",
       );
 
@@ -2046,7 +2023,6 @@ function createClip(
               "decrease",
           },
         },
-
         {
           filter: "pad",
           options: {
@@ -2060,14 +2036,7 @@ function createClip(
       ];
 
       // ---------------------------------------------------------
-      // Caption
-      //
-      // IMPORTANT:
-      // For the first successful test, we intentionally DO NOT
-      // use drawtext.
-      //
-      // This removes Windows font/filter escaping as a possible
-      // cause of the FFmpeg -22 error.
+      // Caption disabled for now
       // ---------------------------------------------------------
 
       /*
@@ -2110,13 +2079,19 @@ function createClip(
       const command = ffmpeg(
         absoluteInputPath,
       )
-        // Seek input
+        // -------------------------------------------------------
+        // FAST INPUT SEEK
+        // -------------------------------------------------------
+
         .inputOptions([
           "-ss",
           String(safeStart),
         ])
 
+        // -------------------------------------------------------
         // Output settings
+        // -------------------------------------------------------
+
         .outputOptions([
           "-y",
 
@@ -2129,40 +2104,51 @@ function createClip(
           "-map",
           "0:a:0?",
 
+          // Video encoder
           "-c:v",
           "libx264",
 
+          // Faster encoding
           "-preset",
-          "superfast",
+          "ultrafast",
 
+          // Slightly smaller/lower quality than CRF 24
+          // but much faster to encode
           "-crf",
-          "24",
+          "26",
 
           "-pix_fmt",
           "yuv420p",
 
+          // Keep output compatible
           "-r",
           "30",
 
+          // Audio
           "-c:a",
           "aac",
 
           "-b:a",
-          "128k",
+          "96k",
 
           "-ac",
           "2",
 
+          // Web playback
           "-movflags",
           "+faststart",
         ])
+
+        // -------------------------------------------------------
+        // Video filters
+        // -------------------------------------------------------
 
         .videoFilters(
           videoFilters,
         )
 
         // -------------------------------------------------------
-        // FFmpeg command logging
+        // Command logging
         // -------------------------------------------------------
 
         .on(
