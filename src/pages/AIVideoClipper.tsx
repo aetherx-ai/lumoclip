@@ -1,3 +1,4 @@
+
 import { Link } from "react-router-dom";
 
 export default function AIVideoClipper() {
@@ -5,51 +6,399 @@ export default function AIVideoClipper() {
     <main className="min-h-screen bg-black text-white px-6 py-20">
       <div className="mx-auto max-w-5xl">
 
-        <p className="mb-4 text-sm uppercase tracking-widest text-green-400">
-          LumoClip AI
-        </p>
+        {/* Hero */}
+        <section>
+          <p className="mb-4 text-sm uppercase tracking-[0.25em] text-green-400">
+            LumoClip AI Video Clipper
+          </p>
 
-        <h1 className="text-4xl font-bold md:text-6xl">
-          AI Video Clipper That Finds Your Best Moments
-        </h1>
+          <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
+            AI Video Clipper That Finds Your Best Moments
+          </h1>
 
-        <p className="mt-6 max-w-3xl text-lg text-gray-400">
-          LumoClip is an AI video clipper that automatically finds
-          engaging moments from long videos and turns them into
-          short-form content for YouTube Shorts, TikTok, and Instagram Reels.
-        </p>
+          <p className="mt-6 max-w-3xl text-lg leading-8 text-gray-400">
+            LumoClip is an AI video clipper that analyzes long-form videos,
+            identifies potential highlights, and helps turn them into engaging
+            short-form content for YouTube Shorts, TikTok, and Instagram Reels.
+          </p>
 
-        <div className="mt-8">
-          <Link
-            to="/"
-            className="rounded-xl bg-white px-6 py-3 font-semibold text-black"
-          >
-            Try LumoClip
-          </Link>
-        </div>
+          <div className="mt-8 flex flex-wrap gap-4">
+            <Link
+              to="/"
+              className="rounded-xl bg-white px-6 py-3 font-semibold text-black transition hover:bg-gray-200"
+            >
+              Try LumoClip
+            </Link>
 
-        <section className="mt-20">
-          <h2 className="text-3xl font-bold">
-            Create Short Clips With AI
+            <Link
+              to="/long-video-to-shorts"
+              className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:border-green-400/50"
+            >
+              Long Video to Shorts
+            </Link>
+          </div>
+        </section>
+
+        {/* What is an AI video clipper */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            What Is an AI Video Clipper?
           </h2>
 
-          <p className="mt-4 text-gray-400">
-            Upload a video or provide a supported video URL. LumoClip
-            analyzes the content and helps identify moments that work
-            well as short-form videos.
+          <p className="mt-5 max-w-3xl text-lg leading-8 text-gray-400">
+            An AI video clipper is a tool that uses artificial intelligence
+            to help discover useful moments inside longer videos. Instead of
+            watching an entire recording and manually searching for clips,
+            creators can use an AI-assisted workflow to find potential
+            highlights faster.
+          </p>
+
+          <p className="mt-4 max-w-3xl text-lg leading-8 text-gray-400">
+            LumoClip is built for creators who want to repurpose long-form
+            content into short-form videos without spending hours searching
+            through their recordings.
           </p>
         </section>
 
-        <section className="mt-16">
-          <h2 className="text-3xl font-bold">
-            From Long Videos to Short Clips
+        {/* How LumoClip works */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            How LumoClip's AI Video Clipper Works
           </h2>
 
-          <p className="mt-4 text-gray-400">
-            Turn podcasts, interviews, tutorials, and other long-form
-            videos into short clips without manually searching through
-            the entire video.
+          <div className="mt-10 grid gap-6 md:grid-cols-2">
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="text-sm font-semibold text-green-400">
+                STEP 01
+              </div>
+
+              <h3 className="mt-3 text-xl font-semibold">
+                Add Your Video
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Upload a supported video or provide a supported video URL
+                containing the long-form content you want to repurpose.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="text-sm font-semibold text-green-400">
+                STEP 02
+              </div>
+
+              <h3 className="mt-3 text-xl font-semibold">
+                AI Analyzes the Content
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                LumoClip analyzes the video to understand its content and
+                identify sections that may work well as short-form clips.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="text-sm font-semibold text-green-400">
+                STEP 03
+              </div>
+
+              <h3 className="mt-3 text-xl font-semibold">
+                Discover Potential Highlights
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Review the potential highlights identified from your
+                long-form video and choose the moments you want to use.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="text-sm font-semibold text-green-400">
+                STEP 04
+              </div>
+
+              <h3 className="mt-3 text-xl font-semibold">
+                Create Short Clips
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Turn selected moments into short-form video clips ready for
+                your content workflow.
+              </p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Features */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            AI Video Clipper Features
+          </h2>
+
+          <div className="mt-10 grid gap-6 md:grid-cols-2">
+
+            <div className="rounded-2xl border border-white/10 p-6">
+              <h3 className="text-xl font-semibold">
+                Automatic Highlight Detection
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Find potential interesting sections from long-form videos
+                without manually reviewing the entire recording.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 p-6">
+              <h3 className="text-xl font-semibold">
+                AI-Powered Video Analysis
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Use AI-assisted analysis to understand video content and
+                identify moments suitable for short-form repurposing.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 p-6">
+              <h3 className="text-xl font-semibold">
+                Short-Form Content Creation
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Convert selected moments from long videos into short clips
+                for your content publishing workflow.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 p-6">
+              <h3 className="text-xl font-semibold">
+                AI Captions
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Generate AI-assisted captions for clips to make short-form
+                videos easier to follow and publish.
+              </p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Long form content */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            Turn Long Videos Into Short Clips
+          </h2>
+
+          <p className="mt-5 max-w-3xl text-lg leading-8 text-gray-400">
+            Long-form videos can contain dozens of moments that are useful
+            for short-form content. Podcasts, interviews, tutorials,
+            presentations, educational videos, and YouTube content can all
+            contain sections worth repurposing.
           </p>
+
+          <p className="mt-4 max-w-3xl text-lg leading-8 text-gray-400">
+            LumoClip helps reduce the manual work involved in finding those
+            moments so creators can spend more time reviewing, editing, and
+            publishing their content.
+          </p>
+        </section>
+
+        {/* Who is it for */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            Who Is LumoClip For?
+          </h2>
+
+          <div className="mt-10 grid gap-4 md:grid-cols-3">
+
+            <div className="rounded-xl border border-white/10 p-5">
+              <h3 className="font-semibold">
+                YouTubers
+              </h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Repurpose long YouTube videos into short-form content.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 p-5">
+              <h3 className="font-semibold">
+                Podcasters
+              </h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Discover memorable moments from podcast episodes.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 p-5">
+              <h3 className="font-semibold">
+                Content Creators
+              </h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Create more short-form content from existing videos.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 p-5">
+              <h3 className="font-semibold">
+                Educators
+              </h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Turn longer educational recordings into shorter lessons.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 p-5">
+              <h3 className="font-semibold">
+                Businesses
+              </h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Repurpose webinars, presentations, and interviews.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-white/10 p-5">
+              <h3 className="font-semibold">
+                Social Media Teams
+              </h3>
+              <p className="mt-2 text-sm text-gray-400">
+                Build a faster workflow for short-form video production.
+              </p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Internal links */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            Explore LumoClip
+          </h2>
+
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+
+            <Link
+              to="/long-video-to-shorts"
+              className="rounded-xl border border-white/10 p-6 transition hover:border-green-400/40"
+            >
+              <h3 className="font-semibold">
+                Long Video to Shorts
+              </h3>
+
+              <p className="mt-2 text-sm text-gray-400">
+                Learn how to repurpose long-form videos into Shorts.
+              </p>
+            </Link>
+
+            <Link
+              to="/ai-shorts-generator"
+              className="rounded-xl border border-white/10 p-6 transition hover:border-green-400/40"
+            >
+              <h3 className="font-semibold">
+                AI Shorts Generator
+              </h3>
+
+              <p className="mt-2 text-sm text-gray-400">
+                Generate short-form content with an AI-assisted workflow.
+              </p>
+            </Link>
+
+            <Link
+              to="/youtube-to-shorts"
+              className="rounded-xl border border-white/10 p-6 transition hover:border-green-400/40"
+            >
+              <h3 className="font-semibold">
+                YouTube to Shorts
+              </h3>
+
+              <p className="mt-2 text-sm text-gray-400">
+                Learn about turning YouTube videos into short-form content.
+              </p>
+            </Link>
+
+          </div>
+        </section>
+
+        {/* FAQ */}
+        <section className="mt-24">
+          <h2 className="text-3xl font-bold md:text-4xl">
+            AI Video Clipper FAQ
+          </h2>
+
+          <div className="mt-8 space-y-8">
+
+            <div>
+              <h3 className="text-xl font-semibold">
+                What is an AI video clipper?
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                An AI video clipper is software that uses artificial
+                intelligence to help identify useful moments from longer
+                videos and turn them into shorter clips.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-semibold">
+                Can LumoClip turn long videos into Shorts?
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Yes. LumoClip is designed to help creators discover
+                potential highlights from long-form videos and create
+                short-form clips from selected moments.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-semibold">
+                What types of videos can I clip?
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Podcasts, interviews, tutorials, educational videos,
+                presentations, and other long-form content can be suitable
+                for AI-assisted clipping.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="text-xl font-semibold">
+                Which platforms are supported?
+              </h3>
+
+              <p className="mt-3 leading-7 text-gray-400">
+                Short-form clips can be used for platforms such as YouTube
+                Shorts, TikTok, and Instagram Reels.
+              </p>
+            </div>
+
+          </div>
+        </section>
+
+        {/* Final CTA */}
+        <section className="mt-24 rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center">
+
+          <h2 className="text-3xl font-bold md:text-4xl">
+            Find Your Best Moments With AI
+          </h2>
+
+          <p className="mx-auto mt-4 max-w-2xl text-gray-400">
+            Stop manually searching through hours of video. Use LumoClip
+            to discover potential highlights and build short-form content
+            faster.
+          </p>
+
+          <Link
+            to="/"
+            className="mt-8 inline-block rounded-xl bg-white px-7 py-3 font-semibold text-black transition hover:bg-gray-200"
+          >
+            Try LumoClip Free
+          </Link>
+
         </section>
 
       </div>
