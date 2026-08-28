@@ -4841,9 +4841,9 @@ app.delete(
 
 app.get("/sitemap.xml", (_req, res) => {
   console.log("✅ Sitemap requested: /sitemap.xml");
+
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-
   <url>
     <loc>https://lumo-clip.com/</loc>
     <changefreq>weekly</changefreq>
@@ -4873,17 +4873,35 @@ app.get("/sitemap.xml", (_req, res) => {
     <changefreq>weekly</changefreq>
     <priority>0.9</priority>
   </url>
-
 </urlset>`;
 
   res.status(200);
-  res.type("application/xml");
+  res.set("Content-Type", "application/xml; charset=utf-8");
   res.send(sitemap);
 });
 
 
 /* =========================================================
-   STATIC FRONTEND (Vite build output)
+   ROBOTS.TXT
+========================================================= */
+
+app.get("/robots.txt", (_req, res) => {
+  console.log("✅ robots.txt requested");
+
+  const robots = `User-agent: *
+Allow: /
+
+Sitemap: https://lumo-clip.com/sitemap.xml
+`;
+
+  res.status(200);
+  res.set("Content-Type", "text/plain; charset=utf-8");
+  res.send(robots);
+});
+
+
+/* =========================================================
+   STATIC FRONTEND
 ========================================================= */
 
 const clientDistDir = path.join(
@@ -4896,44 +4914,41 @@ app.use(
 );
 
 
-/*
- * React Router SPA fallback.
- *
- * IMPORTANT:
- * - API routes are already registered above.
- * - sitemap.xml is excluded.
- * - robots.txt is excluded.
- * - Every other GET request gets index.html.
- *
- * This allows:
- *
- * /ai-video-clipper
- * /long-video-to-shorts
- * /ai-shorts-generator
- * /youtube-to-shorts
- *
- * to work on direct navigation and refresh.
- */
+/* =========================================================
+   REACT ROUTER SPA FALLBACK
+========================================================= */
 
-app.get(
-  /^(?!\/api\/)(?!\/robots\.txt$)(?!\/sitemap\.xml$).*/,
-  (_req, res) => {
-    const indexPath = path.join(
-      clientDistDir,
-      "index.html",
-    );
+app.get("*", (req, res, next) => {
+  // Never send index.html for API routes
+  if (req.path.startsWith("/api/")) {
+    return next();
+  }
 
-    if (!fs.existsSync(indexPath)) {
-      return res
-        .status(500)
-        .send(
-          "Frontend build not found. Run `npm run build` first.",
-        );
-    }
+  // Never send index.html for sitemap
+  if (req.path === "/sitemap.xml") {
+    return next();
+  }
 
-    return res.sendFile(indexPath);
-  },
-);
+  // Never send index.html for robots
+  if (req.path === "/robots.txt") {
+    return next();
+  }
+
+  const indexPath = path.join(
+    clientDistDir,
+    "index.html",
+  );
+
+  if (!fs.existsSync(indexPath)) {
+    return res
+      .status(500)
+      .send(
+        "Frontend build not found. Run npm run build first.",
+      );
+  }
+
+  return res.sendFile(indexPath);
+});
 
 
 /* =========================================================
