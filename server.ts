@@ -4849,29 +4849,54 @@ app.delete(
   },
 );
 
-app.get("/sitemap.xml", (req, res) => {
+/* =========================================================
+   SITEMAP
+========================================================= */
+
+app.get("/sitemap.xml", (_req, res) => {
   const sitemap = `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+
   <url>
     <loc>https://lumo-clip.com/</loc>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
   </url>
+
+  <url>
+    <loc>https://lumo-clip.com/ai-video-clipper</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://lumo-clip.com/long-video-to-shorts</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://lumo-clip.com/ai-shorts-generator</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
+  <url>
+    <loc>https://lumo-clip.com/youtube-to-shorts</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+  </url>
+
 </urlset>`;
 
   res.status(200);
   res.type("application/xml");
   res.send(sitemap);
 });
+
+
 /* =========================================================
    STATIC FRONTEND (Vite build output)
-
-   `vite build` writes the compiled React app (index.html +
-   /assets) into `dist/`. This same `dist/` folder also holds
-   the bundled server.cjs, so `process.cwd()` (the folder you
-   run `npm run start` from) plus "dist" is the right path.
-
-   IMPORTANT: this must be registered AFTER every /api/* route
-   above, and BEFORE the error handler below, so API routes are
-   never swallowed by the SPA fallback.
 ========================================================= */
 
 const clientDistDir = path.join(
@@ -4879,27 +4904,50 @@ const clientDistDir = path.join(
   "dist",
 );
 
-app.use(express.static(clientDistDir));
+app.use(
+  express.static(clientDistDir),
+);
 
-// Any GET request that isn't an API route falls back to
-// index.html so client-side routing (React Router, etc.) works
-// on refresh / direct navigation.
-app.get(/^(?!\/api\/)(?!\/robots\.txt$)(?!\/sitemap\.xml$).*/, (req, res) => {
-  const indexPath = path.join(
-    clientDistDir,
-    "index.html",
-  );
 
-  if (!fs.existsSync(indexPath)) {
-    return res
-      .status(500)
-      .send(
-        "Frontend build not found. Run `npm run build` first.",
-      );
-  }
+/*
+ * React Router SPA fallback.
+ *
+ * IMPORTANT:
+ * - API routes are already registered above.
+ * - sitemap.xml is excluded.
+ * - robots.txt is excluded.
+ * - Every other GET request gets index.html.
+ *
+ * This allows:
+ *
+ * /ai-video-clipper
+ * /long-video-to-shorts
+ * /ai-shorts-generator
+ * /youtube-to-shorts
+ *
+ * to work on direct navigation and refresh.
+ */
 
-  res.sendFile(indexPath);
-});
+app.get(
+  /^(?!\/api\/)(?!\/robots\.txt$)(?!\/sitemap\.xml$).*/,
+  (_req, res) => {
+    const indexPath = path.join(
+      clientDistDir,
+      "index.html",
+    );
+
+    if (!fs.existsSync(indexPath)) {
+      return res
+        .status(500)
+        .send(
+          "Frontend build not found. Run `npm run build` first.",
+        );
+    }
+
+    return res.sendFile(indexPath);
+  },
+);
+
 
 /* =========================================================
    ERROR HANDLER
@@ -4951,6 +4999,7 @@ app.use(
   },
 );
 
+
 /* =========================================================
    PROCESS ERROR HANDLERS
 ========================================================= */
@@ -4975,9 +5024,11 @@ process.on(
   },
 );
 
+
 /* =========================================================
    START SERVER
 ========================================================= */
+
 async function ensureYtDlpReady() {
   const bundledYtDlpPath =
     process.platform === "win32"
@@ -5010,7 +5061,9 @@ async function ensureYtDlpReady() {
 
   try {
     const ytdlp =
-      youtubedl.create(binaryPath);
+      youtubedl.create(
+        binaryPath,
+      );
 
     const version =
       await ytdlp("--version");
@@ -5024,7 +5077,6 @@ async function ensureYtDlpReady() {
       "✅ yt-dlp binary:",
       binaryPath,
     );
-
   } catch (error) {
     console.warn(
       "⚠️ Could not verify yt-dlp:",
@@ -5032,9 +5084,15 @@ async function ensureYtDlpReady() {
     );
   }
 }
+
 if (!process.env.RENDER) {
   void ensureYtDlpReady();
 }
+
+
+/* =========================================================
+   LISTEN
+========================================================= */
 
 app.listen(
   PORT,
