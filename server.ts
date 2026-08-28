@@ -745,66 +745,28 @@ console.log(
 ========================================================= */
 
 const packagedFfmpegPath =
-  typeof ffmpegStatic === "string"
+  typeof ffmpegStatic === "string" &&
+  fs.existsSync(ffmpegStatic)
     ? ffmpegStatic
     : undefined;
 
 const packagedFfprobePath =
-  typeof ffprobeStatic?.path === "string"
+  typeof ffprobeStatic?.path === "string" &&
+  fs.existsSync(ffprobeStatic.path)
     ? ffprobeStatic.path
     : undefined;
 
-// Render build copies FFmpeg to dist/bin/ffmpeg.
-const renderFfmpegPath = path.join(
-  process.cwd(),
-  "dist",
-  "bin",
-  "ffmpeg",
-);
-
 const ffmpegPath =
-  process.env.FFMPEG_PATH ||
-  (fs.existsSync(renderFfmpegPath)
-    ? renderFfmpegPath
-    : packagedFfmpegPath &&
-        fs.existsSync(packagedFfmpegPath)
-      ? packagedFfmpegPath
-      : "ffmpeg");
+  process.env.FFMPEG_PATH &&
+  fs.existsSync(process.env.FFMPEG_PATH)
+    ? process.env.FFMPEG_PATH
+    : packagedFfmpegPath || "ffmpeg";
 
 const ffprobePath =
-  process.env.FFPROBE_PATH ||
-  (packagedFfprobePath &&
-  fs.existsSync(packagedFfprobePath)
-    ? packagedFfprobePath
-    : "ffprobe");
-
-if (
-  ffmpegPath !== "ffmpeg" &&
-  !fs.existsSync(ffmpegPath)
-) {
-  console.error(
-    "FFmpeg path does not exist:",
-    ffmpegPath,
-  );
-
-  throw new Error(
-    `FFmpeg not found at: ${ffmpegPath}`,
-  );
-}
-
-if (
-  ffprobePath !== "ffprobe" &&
-  !fs.existsSync(ffprobePath)
-) {
-  console.error(
-    "FFprobe path does not exist:",
-    ffprobePath,
-  );
-
-  throw new Error(
-    `FFprobe not found at: ${ffprobePath}`,
-  );
-}
+  process.env.FFPROBE_PATH &&
+  fs.existsSync(process.env.FFPROBE_PATH)
+    ? process.env.FFPROBE_PATH
+    : packagedFfprobePath || "ffprobe";
 
 if (ffmpegPath !== "ffmpeg") {
   ffmpeg.setFfmpegPath(ffmpegPath);
