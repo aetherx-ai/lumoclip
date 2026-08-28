@@ -8,16 +8,7 @@ import {
   type ComponentType,
 } from "react";
 
-import {
-  Activity,
-  Check,
-  CheckCircle2,
-  Cpu,
-  Database,
-  Layers3,
-  Sparkles,
-  Zap,
-} from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 import { supabase } from "./lib/supabase";
 
@@ -169,525 +160,566 @@ const normalizeYouTubeUrl = (value: string): string => {
 
 function PremiumLoadingScreen() {
   const [progress, setProgress] = useState(8);
-  const [step, setStep] = useState(0);
-
-  const steps = [
-    {
-      label: "AI Engine",
-      text: "Initializing intelligence",
-      icon: Cpu,
-    },
-    {
-      label: "Workspace",
-      text: "Securing your session",
-      icon: Database,
-    },
-    {
-      label: "Projects",
-      text: "Syncing your content",
-      icon: Layers3,
-    },
-    {
-      label: "Ready",
-      text: "Preparing workspace",
-      icon: Sparkles,
-    },
-  ];
 
   useEffect(() => {
-    const progressTimer = window.setInterval(() => {
-      setProgress((value) => {
-        if (value >= 96) return 96;
-
-        if (value < 30) return Math.min(value + 4, 96);
-        if (value < 60) return Math.min(value + 3, 96);
-        if (value < 82) return Math.min(value + 2, 96);
-
-        return Math.min(value + 1, 96);
+    const timer = window.setInterval(() => {
+      setProgress((current) => {
+        if (current >= 96) return 96;
+        return Math.min(current + 1.5, 96);
       });
-    }, 280);
+    }, 120);
 
-    const stepTimer = window.setInterval(() => {
-      setStep((value) =>
-        Math.min(value + 1, steps.length - 1)
-      );
-    }, 1150);
-
-    return () => {
-      window.clearInterval(progressTimer);
-      window.clearInterval(stepTimer);
-    };
+    return () => window.clearInterval(timer);
   }, []);
 
-  const CurrentIcon = steps[step].icon;
-
-  const particles = [
-    ["8%", "18%", "2px", "4s", "0s"],
-    ["17%", "72%", "2px", "5s", "1s"],
-    ["27%", "32%", "1px", "4.5s", "1.5s"],
-    ["39%", "82%", "2px", "5.5s", ".5s"],
-    ["53%", "15%", "2px", "4.2s", "1.2s"],
-    ["67%", "87%", "1px", "5.2s", ".8s"],
-    ["78%", "25%", "2px", "4.8s", "1.7s"],
-    ["91%", "68%", "2px", "5.8s", ".2s"],
-  ];
-
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#030306] px-4 text-white">
+    <div className="lumoclip-loading">
 
-      {/* =====================================================
+      {/* =========================
           BACKGROUND
-      ===================================================== */}
-
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(124,58,237,.13),transparent_34%),radial-gradient(circle_at_10%_20%,rgba(99,102,241,.07),transparent_28%),radial-gradient(circle_at_90%_80%,rgba(139,92,246,.07),transparent_30%)]" />
-
-      {/* Aurora */}
-
-      <div className="pointer-events-none absolute -left-40 -top-40 h-[420px] w-[420px] rounded-full bg-violet-700/[0.08] blur-[60px] animate-[auroraOne_9s_ease-in-out_infinite]" />
-
-      <div className="pointer-events-none absolute -bottom-40 -right-40 h-[440px] w-[440px] rounded-full bg-indigo-600/[0.08] blur-[70px] animate-[auroraTwo_11s_ease-in-out_infinite]" />
-
-      <div className="pointer-events-none absolute left-1/2 top-1/2 h-[360px] w-[360px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/[0.07] blur-[60px] animate-[corePulse_4s_ease-in-out_infinite]" />
-
-      {/* Grid */}
-
-      <div
-        className="pointer-events-none absolute inset-0 opacity-[0.12]"
-        style={{
-          backgroundImage: `
-            linear-gradient(
-              rgba(139,92,246,.12) 1px,
-              transparent 1px
-            ),
-            linear-gradient(
-              90deg,
-              rgba(139,92,246,.12) 1px,
-              transparent 1px
-            )
-          `,
-          backgroundSize: "70px 70px",
-          maskImage:
-            "radial-gradient(ellipse at center, black, transparent 70%)",
-          WebkitMaskImage:
-            "radial-gradient(ellipse at center, black, transparent 70%)",
-        }}
-      />
-
-      {/* Particles */}
-
-      {particles.map(
-        ([left, top, size, duration, delay], index) => (
-          <span
-            key={index}
-            className="pointer-events-none absolute rounded-full bg-violet-300"
-            style={{
-              left,
-              top,
-              width: size,
-              height: size,
-              animation: `particleFloat ${duration} ease-in-out ${delay} infinite`,
-              boxShadow:
-                "0 0 10px rgba(167,139,250,.75)",
-            }}
-          />
-        )
-      )}
-
-      {/* Scanline */}
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/70 to-transparent shadow-[0_0_18px_rgba(139,92,246,.7)] animate-[scanline_5s_linear_infinite]" />
-
-      {/* =====================================================
-          MAIN
-      ===================================================== */}
-
-      <div className="relative z-10 w-full max-w-[390px]">
-
-        {/* ===================================================
-            BRAND
-        =================================================== */}
-
-        <div className="mb-6 text-center">
-
-          <div className="relative mx-auto mb-4 h-[76px] w-[76px]">
-
-            {/* Glow */}
-
-            <div className="absolute -inset-6 rounded-[28px] bg-violet-600/10 blur-2xl animate-[logoGlow_3s_ease-in-out_infinite]" />
-
-            {/* Orbit */}
-
-            <div className="absolute -inset-3 rounded-[25px] border border-violet-400/15 animate-[orbitSpin_8s_linear_infinite]" />
-
-            <div className="absolute -inset-1 rounded-[23px] border border-indigo-300/[0.08] [transform:rotateX(60deg)] animate-[orbitTilt_6s_linear_infinite]" />
-
-            {/* Orbit dot */}
-
-            <span className="absolute left-1/2 top-[-5px] h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-violet-300 shadow-[0_0_12px_rgba(167,139,250,.95)]" />
-
-            {/* Logo */}
-
-            <div className="relative flex h-[70px] w-[70px] items-center justify-center rounded-[22px] border border-white/[0.13] bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-900 shadow-[0_0_55px_rgba(124,58,237,.28),inset_0_1px_0_rgba(255,255,255,.22)] animate-[logoFloat_3.5s_ease-in-out_infinite]">
-
-              {/* Shine */}
-
-              <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-[21px]">
-                <div className="absolute -left-1/2 top-[-30%] h-[160%] w-[38%] rotate-[28deg] bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[logoSweep_3.5s_ease-in-out_infinite]" />
-              </div>
-
-              <div className="relative flex h-9 w-9 items-center justify-center rounded-[13px] border border-white/15 bg-black/20 shadow-inner">
-                <span className="text-xl font-black tracking-[-0.08em] text-white">
-                  L
-                </span>
-              </div>
-
-              {/* Online */}
-
-              <span className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border-2 border-[#030306] bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,.7)]">
-                <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                <span className="absolute h-3 w-3 rounded-full border border-white/60 animate-ping" />
-              </span>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-center gap-1.5">
-            <h1 className="text-[22px] font-black tracking-[-0.055em]">
-              LumoClip
-            </h1>
-
-            <span className="bg-gradient-to-r from-violet-300 via-fuchsia-300 to-indigo-400 bg-clip-text text-[22px] font-black tracking-[-0.055em] text-transparent">
-              AI
-            </span>
-
-            <span className="rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-1.5 py-0.5 text-[6px] font-black uppercase tracking-[0.15em] text-emerald-300/80">
-              Online
-            </span>
-          </div>
-
-          <p className="mt-1.5 text-[10px] font-medium text-zinc-600">
-            AI-powered content repurposing
-          </p>
-        </div>
-
-        {/* ===================================================
-            LOADING CARD
-        =================================================== */}
-
-        <div className="relative rounded-[22px] p-[1px]">
-
-          {/* Animated border */}
-
-          <div className="pointer-events-none absolute inset-0 rounded-[22px] bg-[conic-gradient(from_0deg,transparent,rgba(139,92,246,.7),transparent_25%,transparent_55%,rgba(99,102,241,.55),transparent_80%)] animate-[borderSpin_5s_linear_infinite]" />
-
-          <div className="relative overflow-hidden rounded-[21px] border border-white/[0.07] bg-[#08080d]/95 p-4 shadow-[0_25px_80px_rgba(0,0,0,.55)] backdrop-blur-xl">
-
-            {/* Top beam */}
-
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/70 to-transparent" />
-
-            {/* Card glow */}
-
-            <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-violet-500/10 blur-2xl" />
-
-            {/* Current status */}
-
-            <div className="relative flex items-center gap-3">
-
-              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-violet-400/15 bg-violet-500/[0.08]">
-
-                <div className="absolute inset-0 rounded-[14px] border border-violet-400/10 animate-[iconPulse_2s_ease-in-out_infinite]" />
-
-                <div className="absolute -inset-2 rounded-[18px] bg-violet-500/5 blur-lg" />
-
-                <CurrentIcon
-                  key={step}
-                  className="relative h-[17px] w-[17px] text-violet-300 animate-[iconEnter_.35s_ease-out]"
-                />
-
-                <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(167,139,250,.9)]" />
-              </div>
-
-              <div className="min-w-0 flex-1">
-
-                <div className="flex items-center justify-between gap-3">
-
-                  <div className="min-w-0">
-                    <p
-                      key={step}
-                      className="truncate text-[11px] font-bold text-zinc-100 animate-[textEnter_.3s_ease-out]"
-                    >
-                      {steps[step].text}
-                    </p>
-
-                    <p className="mt-0.5 text-[8px] font-medium text-zinc-600">
-                      {steps[step].label}
-                    </p>
-                  </div>
-
-                  <span className="rounded-md border border-violet-400/10 bg-violet-400/[0.05] px-1.5 py-1 font-mono text-[8px] font-bold text-violet-300">
-                    {progress}%
-                  </span>
-                </div>
-
-                {/* Progress */}
-
-                <div className="relative mt-2.5 h-1 overflow-hidden rounded-full bg-white/[0.05]">
-
-                  <div
-                    className="absolute inset-y-0 left-0 rounded-full bg-violet-500/30 blur-sm transition-all duration-500"
-                    style={{
-                      width: `${progress}%`,
-                    }}
-                  />
-
-                  <div
-                    className="relative h-full rounded-full bg-gradient-to-r from-violet-600 via-fuchsia-500 to-indigo-400 transition-[width] duration-500 ease-out"
-                    style={{
-                      width: `${progress}%`,
-                    }}
-                  >
-                    <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-r from-transparent via-white/60 to-transparent blur-[2px] animate-[progressShine_1.2s_linear_infinite]" />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* =================================================
-                STEPS
-            ================================================= */}
-
-            <div className="mt-4 grid grid-cols-4 gap-1">
-
-              {steps.map((item, index) => {
-                const completed = index < step;
-                const active = index === step;
-
-                const StepIcon = completed
-                  ? Check
-                  : item.icon;
-
-                return (
-                  <div
-                    key={item.label}
-                    className={`rounded-lg border px-1.5 py-2 transition-all duration-500 ${
-                      active
-                        ? "border-violet-400/20 bg-violet-400/[0.07]"
-                        : completed
-                          ? "border-emerald-400/10 bg-emerald-400/[0.025]"
-                          : "border-white/[0.04] bg-white/[0.015]"
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-
-                      <span
-                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded ${
-                          completed
-                            ? "bg-emerald-400/10 text-emerald-300"
-                            : active
-                              ? "bg-violet-400/10 text-violet-300"
-                              : "bg-white/[0.03] text-zinc-700"
-                        }`}
-                      >
-                        <StepIcon className="h-2 w-2" />
-                      </span>
-
-                      <span
-                        className={`truncate text-[6px] font-black uppercase tracking-[0.06em] ${
-                          completed
-                            ? "text-emerald-400/70"
-                            : active
-                              ? "text-violet-300/90"
-                              : "text-zinc-700"
-                        }`}
-                      >
-                        {item.label}
-                      </span>
-                    </div>
-
-                    <div className="mt-1 flex items-center gap-1">
-                      <span
-                        className={`h-1 w-1 rounded-full ${
-                          completed
-                            ? "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,.7)]"
-                            : active
-                              ? "bg-violet-400 shadow-[0_0_6px_rgba(167,139,250,.7)] animate-pulse"
-                              : "bg-zinc-800"
-                        }`}
-                      />
-
-                      <span className="text-[6px] text-zinc-600">
-                        {completed
-                          ? "Done"
-                          : active
-                            ? "Active"
-                            : "Queued"}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* =================================================
-                SYSTEM
-            ================================================= */}
-
-            <div className="mt-3 flex items-center justify-between border-t border-white/[0.045] pt-3">
-
-              <div className="flex items-center gap-1.5">
-
-                <span className="relative flex h-4 w-4 items-center justify-center rounded-full border border-emerald-400/10 bg-emerald-400/[0.04]">
-                  <span className="h-1 w-1 rounded-full bg-emerald-400 shadow-[0_0_7px_rgba(52,211,153,.8)]" />
-                  <span className="absolute inset-0 rounded-full border border-emerald-400/10 animate-ping" />
-                </span>
-
-                <div>
-                  <p className="text-[6px] font-black uppercase tracking-[0.15em] text-zinc-600">
-                    System
-                  </p>
-
-                  <p className="text-[7px] font-semibold text-zinc-400">
-                    All services operational
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1 text-[7px] font-bold text-zinc-700">
-                <Activity className="h-2.5 w-2.5 text-violet-400/60" />
-                Live
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ===================================================
-            FOOTER
-        =================================================== */}
-
-        <div className="mt-4 flex items-center justify-center gap-1.5">
-
-          <Sparkles className="h-3 w-3 text-violet-400 animate-[sparklePulse_2s_ease-in-out_infinite]" />
-
-          <span className="text-[8px] font-medium text-zinc-600">
-            {step === 0
-              ? "Warming up your AI engine"
-              : step === 1
-                ? "Securing your workspace"
-                : step === 2
-                  ? "Syncing your content"
-                  : "Finalizing your workspace"}
-          </span>
-
-          <span className="flex">
-            <span className="animate-bounce text-zinc-600">
-              .
-            </span>
-            <span className="animate-bounce [animation-delay:150ms] text-zinc-600">
-              .
-            </span>
-            <span className="animate-bounce [animation-delay:300ms] text-zinc-600">
-              .
-            </span>
-          </span>
-        </div>
-
-        <div className="mt-3 flex items-center justify-center gap-1.5 text-[6px] font-bold uppercase tracking-[0.2em] text-zinc-800">
-          <Zap className="h-2.5 w-2.5 text-violet-500/50" />
-          Lumo Intelligence
-          <span className="h-0.5 w-0.5 rounded-full bg-zinc-800" />
-          Secure Session
-          <CheckCircle2 className="h-2.5 w-2.5 text-emerald-500/40" />
-        </div>
+      ========================== */}
+
+      <div className="loading-bg-glow glow-1" />
+      <div className="loading-bg-glow glow-2" />
+
+      {/* Stars / particles */}
+      <div className="stars">
+        <span className="star s1" />
+        <span className="star s2" />
+        <span className="star s3" />
+        <span className="star s4" />
+        <span className="star s5" />
+        <span className="star s6" />
+        <span className="star s7" />
+        <span className="star s8" />
+        <span className="star s9" />
+        <span className="star s10" />
       </div>
 
-      {/* =====================================================
-          ANIMATIONS
-      ===================================================== */}
+      {/* =========================
+          NEON RIBBONS
+      ========================== */}
+
+      <div className="neon-ribbon ribbon-top">
+        <div />
+        <div />
+      </div>
+
+      <div className="neon-ribbon ribbon-bottom">
+        <div />
+        <div />
+      </div>
+
+      {/* =========================
+          MAIN CONTENT
+      ========================== */}
+
+      <div className="loading-content">
+
+        {/* Logo area */}
+        <div className="logo-scene">
+
+          {/* Outer atmospheric glow */}
+          <div className="logo-aura" />
+
+          {/* Orbit */}
+          <div className="orbit orbit-one">
+            <span className="orbit-dot purple-dot" />
+          </div>
+
+          <div className="orbit orbit-two">
+            <span className="orbit-dot cyan-dot" />
+          </div>
+
+          {/* Logo */}
+          <div className="logo-holder">
+            <img
+              src="/lumoclip-icon.png"
+              alt="LumoClip"
+              className="loading-logo"
+            />
+          </div>
+
+          {/* Floor reflection */}
+          <div className="logo-reflection" />
+
+        </div>
+
+        {/* =========================
+            BRAND
+        ========================== */}
+
+        <div className="brand-area">
+
+          <div className="brand-name">
+            <span className="brand-lumo">Lumo</span>
+            <span className="brand-clip">Clip</span>
+          </div>
+
+          <div className="brand-subtitle">
+            <span />
+            <p>AI VIDEO CLIPPER</p>
+            <span />
+          </div>
+
+        </div>
+
+        {/* =========================
+            PROGRESS
+        ========================== */}
+
+        <div className="progress-area">
+
+          <div className="progress-track">
+            <div
+              className="progress-fill"
+              style={{
+                width: `${progress}%`,
+              }}
+            />
+
+            <div className="progress-glow" />
+          </div>
+
+          <div className="progress-number">
+            {Math.round(progress)}%
+          </div>
+
+        </div>
+
+        {/* =========================
+            STATUS
+        ========================== */}
+
+        <div className="loading-status">
+
+          <div className="status-dots">
+            <span />
+            <span />
+            <span />
+          </div>
+
+          <p>Preparing your workspace...</p>
+
+        </div>
+
+      </div>
+
+      {/* =========================
+          CSS
+      ========================== */}
 
       <style>{`
-        @keyframes scanline {
-          0% {
-            transform: translateY(-10vh);
-            opacity: 0;
-          }
 
-          10% {
-            opacity: .8;
-          }
-
-          50% {
-            opacity: .5;
-          }
-
-          90% {
-            opacity: .8;
-          }
-
-          100% {
-            transform: translateY(110vh);
-            opacity: 0;
-          }
+        * {
+          box-sizing: border-box;
         }
 
-        @keyframes particleFloat {
+        .lumoclip-loading {
+          position: fixed;
+          inset: 0;
+          z-index: 99999;
+
+          overflow: hidden;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          background:
+            radial-gradient(
+              circle at 50% 42%,
+              rgba(40, 30, 130, 0.18),
+              transparent 32%
+            ),
+            radial-gradient(
+              circle at 50% 70%,
+              rgba(20, 80, 180, 0.07),
+              transparent 35%
+            ),
+            #03040a;
+
+          color: white;
+        }
+
+        /* =========================
+           BACKGROUND GLOW
+        ========================== */
+
+        .loading-bg-glow {
+          position: absolute;
+
+          width: 500px;
+          height: 500px;
+
+          border-radius: 50%;
+
+          filter: blur(120px);
+
+          opacity: 0.12;
+
+          pointer-events: none;
+        }
+
+        .glow-1 {
+          top: -250px;
+          left: -180px;
+
+          background: #5424ff;
+        }
+
+        .glow-2 {
+          right: -220px;
+          bottom: -280px;
+
+          background: #0077ff;
+        }
+
+        /* =========================
+           STARS
+        ========================== */
+
+        .stars {
+          position: absolute;
+          inset: 0;
+
+          pointer-events: none;
+        }
+
+        .star {
+          position: absolute;
+
+          width: 2px;
+          height: 2px;
+
+          border-radius: 50%;
+
+          background: white;
+
+          opacity: 0.55;
+
+          animation: starPulse 3s ease-in-out infinite;
+        }
+
+        .s1 {
+          left: 11%;
+          top: 24%;
+        }
+
+        .s2 {
+          left: 27%;
+          top: 17%;
+          animation-delay: .5s;
+        }
+
+        .s3 {
+          left: 72%;
+          top: 19%;
+          animation-delay: 1s;
+        }
+
+        .s4 {
+          left: 86%;
+          top: 34%;
+          animation-delay: 1.5s;
+        }
+
+        .s5 {
+          left: 17%;
+          top: 61%;
+          animation-delay: .8s;
+        }
+
+        .s6 {
+          left: 79%;
+          top: 67%;
+          animation-delay: 1.8s;
+        }
+
+        .s7 {
+          left: 92%;
+          top: 78%;
+          animation-delay: .2s;
+        }
+
+        .s8 {
+          left: 7%;
+          top: 79%;
+          animation-delay: 1.2s;
+        }
+
+        .s9 {
+          left: 64%;
+          top: 9%;
+          animation-delay: 2s;
+        }
+
+        .s10 {
+          left: 36%;
+          top: 75%;
+          animation-delay: 1.6s;
+        }
+
+        @keyframes starPulse {
           0%,
           100% {
-            transform: translate3d(0, 0, 0) scale(1);
             opacity: .15;
+            transform: scale(.7);
           }
 
           50% {
-            transform: translate3d(8px, -20px, 0) scale(1.4);
-            opacity: .7;
+            opacity: .8;
+            transform: scale(1.8);
           }
         }
 
-        @keyframes auroraOne {
-          0%,
-          100% {
-            transform: translate3d(0, 0, 0) scale(1);
+        /* =========================
+           NEON RIBBONS
+        ========================== */
+
+        .neon-ribbon {
+          position: absolute;
+
+          width: 500px;
+          height: 180px;
+
+          pointer-events: none;
+
+          opacity: .45;
+        }
+
+        .ribbon-top {
+          top: -80px;
+          left: -80px;
+
+          transform: rotate(-18deg);
+        }
+
+        .ribbon-bottom {
+          right: -100px;
+          bottom: -100px;
+
+          transform: rotate(-18deg);
+        }
+
+        .neon-ribbon div {
+          position: absolute;
+
+          width: 100%;
+          height: 35px;
+
+          border-radius: 50%;
+
+          border-top: 2px solid rgba(77, 91, 255, .55);
+
+          box-shadow:
+            0 -8px 20px rgba(43, 58, 255, .25),
+            0 -2px 8px rgba(180, 40, 255, .35);
+        }
+
+        .neon-ribbon div:nth-child(1) {
+          top: 35px;
+          left: 0;
+        }
+
+        .neon-ribbon div:nth-child(2) {
+          top: 75px;
+          left: 20px;
+
+          border-top-color: rgba(210, 50, 255, .5);
+        }
+
+        /* =========================
+           MAIN CONTENT
+        ========================== */
+
+        .loading-content {
+          position: relative;
+          z-index: 5;
+
+          width: min(92vw, 620px);
+
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+
+          animation: contentAppear 1s ease-out both;
+        }
+
+        @keyframes contentAppear {
+          from {
+            opacity: 0;
+            transform: translateY(15px);
           }
 
-          50% {
-            transform: translate3d(40px, 30px, 0) scale(1.1);
+          to {
+            opacity: 1;
+            transform: translateY(0);
           }
         }
 
-        @keyframes auroraTwo {
-          0%,
-          100% {
-            transform: translate3d(0, 0, 0) scale(1);
-          }
+        /* =========================
+           LOGO SCENE
+        ========================== */
 
-          50% {
-            transform: translate3d(-35px, -25px, 0) scale(1.1);
-          }
+        .logo-scene {
+          position: relative;
+
+          width: 300px;
+          height: 280px;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
         }
 
-        @keyframes corePulse {
-          0%,
-          100% {
-            opacity: .45;
-            transform: translate(-50%, -50%) scale(.9);
-          }
+        .logo-aura {
+          position: absolute;
 
-          50% {
-            opacity: .9;
-            transform: translate(-50%, -50%) scale(1.08);
-          }
+          width: 190px;
+          height: 190px;
+
+          border-radius: 50%;
+
+          background:
+            radial-gradient(
+              circle,
+              rgba(80, 70, 255, .28),
+              rgba(180, 30, 255, .12),
+              transparent 70%
+            );
+
+          filter: blur(25px);
+
+          animation: auraPulse 3s ease-in-out infinite;
         }
 
-        @keyframes logoGlow {
+        @keyframes auraPulse {
           0%,
           100% {
-            opacity: .35;
             transform: scale(.9);
+            opacity: .65;
           }
 
           50% {
-            opacity: .85;
-            transform: scale(1.08);
+            transform: scale(1.12);
+            opacity: 1;
           }
+        }
+
+        /* =========================
+           ORBITS
+        ========================== */
+
+        .orbit {
+          position: absolute;
+
+          width: 280px;
+          height: 120px;
+
+          border-radius: 50%;
+
+          border: 1px solid rgba(120, 100, 255, .4);
+
+          transform: rotate(-12deg);
+
+          pointer-events: none;
+        }
+
+        .orbit-one {
+          animation: orbitRotate 7s linear infinite;
+        }
+
+        .orbit-two {
+          width: 250px;
+          height: 105px;
+
+          transform: rotate(42deg);
+
+          border-color: rgba(20, 190, 255, .28);
+
+          animation: orbitRotateReverse 9s linear infinite;
+        }
+
+        @keyframes orbitRotate {
+          from {
+            transform: rotate(-12deg);
+          }
+
+          to {
+            transform: rotate(348deg);
+          }
+        }
+
+        @keyframes orbitRotateReverse {
+          from {
+            transform: rotate(42deg);
+          }
+
+          to {
+            transform: rotate(-318deg);
+          }
+        }
+
+        .orbit-dot {
+          position: absolute;
+
+          width: 9px;
+          height: 9px;
+
+          border-radius: 50%;
+
+          top: 50%;
+          right: -4px;
+
+          transform: translateY(-50%);
+        }
+
+        .purple-dot {
+          background: #d946ff;
+
+          box-shadow:
+            0 0 8px #d946ff,
+            0 0 25px #8b5cf6;
+        }
+
+        .cyan-dot {
+          background: #22d3ee;
+
+          box-shadow:
+            0 0 8px #22d3ee,
+            0 0 25px #06b6d4;
+        }
+
+        /* =========================
+           LOGO
+        ========================== */
+
+        .logo-holder {
+          position: relative;
+          z-index: 4;
+
+          width: 190px;
+          height: 190px;
+
+          display: flex;
+          align-items: center;
+          justify-content: center;
+
+          animation: logoFloat 3.5s ease-in-out infinite;
+        }
+
+        .loading-logo {
+          width: 180px;
+          height: 180px;
+
+          object-fit: contain;
+
+          filter:
+            drop-shadow(0 0 12px rgba(40, 80, 255, .7))
+            drop-shadow(0 0 30px rgba(180, 40, 255, .35));
+
+          animation: logoGlow 2.8s ease-in-out infinite;
         }
 
         @keyframes logoFloat {
@@ -697,133 +729,388 @@ function PremiumLoadingScreen() {
           }
 
           50% {
-            transform: translateY(-4px);
+            transform: translateY(-8px);
           }
         }
 
-        @keyframes logoSweep {
-          0%,
-          25% {
-            transform: translateX(-160%) rotate(28deg);
-            opacity: 0;
-          }
-
-          45% {
-            opacity: .8;
-          }
-
-          75%,
-          100% {
-            transform: translateX(300%) rotate(28deg);
-            opacity: 0;
-          }
-        }
-
-        @keyframes orbitSpin {
-          from {
-            transform: rotate(0deg);
-          }
-
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes orbitTilt {
-          from {
-            transform: rotateX(60deg) rotateZ(0deg);
-          }
-
-          to {
-            transform: rotateX(60deg) rotateZ(360deg);
-          }
-        }
-
-        @keyframes borderSpin {
-          from {
-            transform: rotate(0deg);
-          }
-
-          to {
-            transform: rotate(360deg);
-          }
-        }
-
-        @keyframes iconPulse {
+        @keyframes logoGlow {
           0%,
           100% {
-            opacity: .2;
-            transform: scale(1);
+            filter:
+              drop-shadow(0 0 10px rgba(40, 80, 255, .55))
+              drop-shadow(0 0 25px rgba(180, 40, 255, .25));
           }
 
           50% {
-            opacity: .9;
-            transform: scale(1.08);
+            filter:
+              drop-shadow(0 0 18px rgba(40, 80, 255, .85))
+              drop-shadow(0 0 40px rgba(180, 40, 255, .45));
           }
         }
 
-        @keyframes iconEnter {
-          from {
-            opacity: 0;
-            transform: scale(.65) rotate(-10deg);
+        /* =========================
+           REFLECTION
+        ========================== */
+
+        .logo-reflection {
+          position: absolute;
+
+          bottom: 12px;
+
+          width: 190px;
+          height: 20px;
+
+          border-radius: 50%;
+
+          background:
+            radial-gradient(
+              ellipse,
+              rgba(90, 70, 255, .5),
+              rgba(180, 30, 255, .15),
+              transparent 70%
+            );
+
+          filter: blur(8px);
+
+          animation: reflectionPulse 3s ease-in-out infinite;
+        }
+
+        @keyframes reflectionPulse {
+          0%,
+          100% {
+            transform: scaleX(.75);
+            opacity: .45;
           }
 
-          to {
-            opacity: 1;
-            transform: scale(1) rotate(0);
+          50% {
+            transform: scaleX(1.1);
+            opacity: .8;
           }
         }
 
-        @keyframes textEnter {
-          from {
-            opacity: 0;
-            transform: translateY(3px);
-          }
+        /* =========================
+           BRAND
+        ========================== */
 
-          to {
-            opacity: 1;
-            transform: translateY(0);
-          }
+        .brand-area {
+          margin-top: -8px;
+
+          text-align: center;
+        }
+
+        .brand-name {
+          font-size: clamp(44px, 7vw, 72px);
+
+          line-height: .95;
+
+          font-weight: 900;
+
+          letter-spacing: -4px;
+
+          text-shadow:
+            0 0 20px rgba(255,255,255,.08);
+        }
+
+        .brand-lumo {
+          color: #f5f5f7;
+        }
+
+        .brand-clip {
+          background:
+            linear-gradient(
+              90deg,
+              #ec4899,
+              #9333ea,
+              #3b82f6,
+              #22d3ee
+            );
+
+          -webkit-background-clip: text;
+          background-clip: text;
+
+          color: transparent;
+
+          margin-left: 2px;
+        }
+
+        .brand-subtitle {
+          display: flex;
+
+          align-items: center;
+          justify-content: center;
+
+          gap: 18px;
+
+          margin-top: 16px;
+        }
+
+        .brand-subtitle span {
+          width: 70px;
+          height: 1px;
+
+          background:
+            linear-gradient(
+              90deg,
+              transparent,
+              rgba(100,120,255,.9)
+            );
+
+          box-shadow: 0 0 8px rgba(100,120,255,.7);
+        }
+
+        .brand-subtitle span:last-child {
+          background:
+            linear-gradient(
+              90deg,
+              rgba(100,120,255,.9),
+              transparent
+            );
+        }
+
+        .brand-subtitle p {
+          margin: 0;
+
+          font-size: 10px;
+
+          letter-spacing: .55em;
+
+          color: rgba(220,220,240,.6);
+
+          font-weight: 600;
+        }
+
+        /* =========================
+           PROGRESS
+        ========================== */
+
+        .progress-area {
+          width: min(560px, 85vw);
+
+          display: flex;
+
+          align-items: center;
+
+          gap: 15px;
+
+          margin-top: 58px;
+        }
+
+        .progress-track {
+          position: relative;
+
+          flex: 1;
+
+          height: 12px;
+
+          padding: 2px;
+
+          overflow: hidden;
+
+          border-radius: 999px;
+
+          background: rgba(255,255,255,.035);
+
+          border: 1px solid rgba(100,120,255,.22);
+
+          box-shadow:
+            inset 0 0 15px rgba(0,0,0,.5),
+            0 0 15px rgba(80,70,255,.08);
+        }
+
+        .progress-fill {
+          position: relative;
+
+          height: 100%;
+
+          border-radius: 999px;
+
+          background:
+            linear-gradient(
+              90deg,
+              #ff4ecd,
+              #9b3cff,
+              #4f46e5,
+              #22d3ee
+            );
+
+          box-shadow:
+            0 0 10px rgba(180,50,255,.7),
+            0 0 25px rgba(70,100,255,.35);
+
+          transition: width .25s ease;
+        }
+
+        .progress-glow {
+          position: absolute;
+
+          top: 0;
+          bottom: 0;
+
+          width: 70px;
+
+          background: rgba(255,255,255,.4);
+
+          filter: blur(10px);
+
+          animation: progressShine 1.7s linear infinite;
         }
 
         @keyframes progressShine {
-          0% {
-            transform: translateX(-60px);
-            opacity: 0;
+          from {
+            left: -80px;
           }
 
-          20% {
-            opacity: 1;
-          }
-
-          100% {
-            transform: translateX(100px);
-            opacity: 0;
+          to {
+            left: 100%;
           }
         }
 
-        @keyframes sparklePulse {
+        .progress-number {
+          min-width: 42px;
+
+          font-size: 12px;
+
+          font-weight: 700;
+
+          color: rgba(220,220,255,.7);
+
+          letter-spacing: .05em;
+        }
+
+        /* =========================
+           STATUS
+        ========================== */
+
+        .loading-status {
+          margin-top: 30px;
+
+          display: flex;
+
+          flex-direction: column;
+
+          align-items: center;
+        }
+
+        .status-dots {
+          display: flex;
+
+          gap: 10px;
+
+          margin-bottom: 13px;
+        }
+
+        .status-dots span {
+          width: 7px;
+          height: 7px;
+
+          border-radius: 50%;
+
+          animation: dotBounce 1.4s ease-in-out infinite;
+        }
+
+        .status-dots span:nth-child(1) {
+          background: #6366f1;
+          box-shadow: 0 0 12px #6366f1;
+        }
+
+        .status-dots span:nth-child(2) {
+          background: #ec4899;
+          box-shadow: 0 0 12px #ec4899;
+
+          animation-delay: .2s;
+        }
+
+        .status-dots span:nth-child(3) {
+          background: #22d3ee;
+          box-shadow: 0 0 12px #22d3ee;
+
+          animation-delay: .4s;
+        }
+
+        @keyframes dotBounce {
           0%,
+          60%,
           100% {
-            opacity: .4;
-            transform: scale(.9) rotate(0deg);
+            transform: translateY(0);
+            opacity: .45;
           }
 
-          50% {
+          30% {
+            transform: translateY(-5px);
             opacity: 1;
-            transform: scale(1.15) rotate(8deg);
           }
         }
 
-        @media (prefers-reduced-motion: reduce) {
-          *,
-          *::before,
-          *::after {
-            animation-duration: .01ms !important;
-            animation-iteration-count: 1 !important;
-            scroll-behavior: auto !important;
+        .loading-status p {
+          margin: 0;
+
+          font-size: 12px;
+
+          color: rgba(210,210,225,.58);
+
+          letter-spacing: .12em;
+
+          font-weight: 500;
+        }
+
+        /* =========================
+           MOBILE
+        ========================== */
+
+        @media (max-width: 640px) {
+
+          .logo-scene {
+            width: 260px;
+            height: 235px;
+          }
+
+          .logo-holder {
+            width: 155px;
+            height: 155px;
+          }
+
+          .loading-logo {
+            width: 150px;
+            height: 150px;
+          }
+
+          .orbit {
+            width: 235px;
+            height: 100px;
+          }
+
+          .orbit-two {
+            width: 215px;
+            height: 90px;
+          }
+
+          .brand-name {
+            font-size: 48px;
+            letter-spacing: -3px;
+          }
+
+          .brand-subtitle {
+            gap: 10px;
+          }
+
+          .brand-subtitle span {
+            width: 35px;
+          }
+
+          .brand-subtitle p {
+            font-size: 8px;
+            letter-spacing: .4em;
+          }
+
+          .progress-area {
+            margin-top: 42px;
+          }
+
+          .loading-status p {
+            font-size: 10px;
           }
         }
+
       `}</style>
     </div>
   );
