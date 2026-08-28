@@ -143,7 +143,7 @@ const GEMINI_RETRY_MAX_MS = Number(
 );
 
 const CLIP_CONCURRENCY = Number(
-  process.env.CLIP_CONCURRENCY || 2,
+  process.env.CLIP_CONCURRENCY || 1,
 );
 
 /* =========================================================
@@ -2540,7 +2540,7 @@ async function processVideo(
        Generate clips in small parallel batches.
 
        The previous implementation encoded every clip strictly
-       one-by-one. With CLIP_CONCURRENCY=2, two FFmpeg jobs can
+       one-by-one. With CLIP_CONCURRENCY=1, two FFmpeg jobs can
        overlap without creating an excessive CPU/RAM spike on
        modest Windows machines.
     */
@@ -2742,7 +2742,7 @@ async function processVideo(
         1,
         Math.min(
           CLIP_CONCURRENCY,
-          3,
+          1,
           analysis.clips.length,
         ),
       );
