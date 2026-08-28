@@ -74,7 +74,7 @@ interface ApiResponse {
    CONSTANTS
 ========================================================= */
 
-const MIN_CREDITS = 3;
+const MIN_CREDITS = 10;
 
 const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
@@ -112,7 +112,7 @@ const SAMPLE_VIDEOS = [
     url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
   },
   {
-    id: 3,
+    id: 10,
     tag: "Podcast",
     title: "The Future of Artificial Intelligence — Ep #42",
     description: "AI trends and the creator economy.",
