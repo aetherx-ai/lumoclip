@@ -952,8 +952,61 @@ export function LandingPage({
     onOpenNewProjectWithUrl(normalizedUrl);
   };
 
+  const organizationJsonLd = useMemo(
+    () => ({
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      name: "LumoClip",
+      url: "https://lumo-clip.com/",
+      logo: "https://lumo-clip.com/logo.png",
+      description:
+        "LumoClip is an AI-powered content repurposing workspace that turns long-form video into short-form clips for YouTube, TikTok, and Instagram.",
+      sameAs: [] as string[],
+    }),
+    []
+  );
+
+  const faqJsonLd = useMemo(
+    () => ({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: faqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.q,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: faq.a,
+        },
+      })),
+    }),
+    []
+  );
+
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#040608] text-white">
+      {/* ====================================================================
+          STRUCTURED DATA (SEO)
+          Organization schema anchors "LumoClip" as a brand entity for
+          Google's Knowledge Graph. FAQPage schema makes the FAQ section
+          eligible for rich snippets on brand + informational queries.
+      ==================================================================== */}
+
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(organizationJsonLd),
+        }}
+      />
+
+      <script
+        type="application/ld+json"
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(faqJsonLd),
+        }}
+      />
+
       {/* ====================================================================
           GLOBAL BACKGROUND
       ==================================================================== */}
@@ -1011,6 +1064,7 @@ export function LandingPage({
 
               <Reveal delay={80}>
                 <h1 className="mt-7 text-[52px] font-black leading-[0.88] tracking-[-0.07em] sm:text-[78px] lg:text-[104px]">
+                  <span className="sr-only">LumoClip: </span>
                   Turn Long Videos Into
                   <br />
 
