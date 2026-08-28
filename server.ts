@@ -754,42 +754,29 @@ const packagedFfprobePath =
     ? ffprobeStatic.path
     : undefined;
 
+// Prefer explicit environment variables.
+// Otherwise use bundled binaries when they actually exist.
+// Finally fall back to system PATH.
 const ffmpegPath =
-  process.env.FFMPEG_PATH ||
-  packagedFfmpegPath ||
-  "ffmpeg";
+  process.env.FFMPEG_PATH &&
+  fs.existsSync(process.env.FFMPEG_PATH)
+    ? process.env.FFMPEG_PATH
+    : packagedFfmpegPath &&
+        fs.existsSync(packagedFfmpegPath)
+      ? packagedFfmpegPath
+      : "ffmpeg";
 
 const ffprobePath =
-  process.env.FFPROBE_PATH ||
-  packagedFfprobePath ||
-  "ffprobe";
+  process.env.FFPROBE_PATH &&
+  fs.existsSync(process.env.FFPROBE_PATH)
+    ? process.env.FFPROBE_PATH
+    : packagedFfprobePath &&
+        fs.existsSync(packagedFfprobePath)
+      ? packagedFfprobePath
+      : "ffprobe";
 
-if (
-  ffmpegPath !== "ffmpeg" &&
-  !fs.existsSync(ffmpegPath)
-) {
-  console.error(
-    "FFMPEG_PATH does not exist:",
-    ffmpegPath,
-  );
-  throw new Error(
-    `FFmpeg not found at: ${ffmpegPath}`,
-  );
-}
-
-if (
-  ffprobePath !== "ffprobe" &&
-  !fs.existsSync(ffprobePath)
-) {
-  console.error(
-    "FFPROBE_PATH does not exist:",
-    ffprobePath,
-  );
-  throw new Error(
-    `FFprobe not found at: ${ffprobePath}`,
-  );
-}
-
+// Configure fluent-ffmpeg only when using an actual binary path.
+// If no bundled binary exists, the system PATH is used.
 if (ffmpegPath !== "ffmpeg") {
   ffmpeg.setFfmpegPath(ffmpegPath);
 }
@@ -798,16 +785,29 @@ if (ffprobePath !== "ffprobe") {
   ffmpeg.setFfprobePath(ffprobePath);
 }
 
+console.log("======================================");
 console.log(
   "FFmpeg:",
   ffmpegPath,
 );
-
 console.log(
   "FFprobe:",
   ffprobePath,
 );
 
+if (ffmpegPath === "ffmpeg") {
+  console.log(
+    "⚠️ Bundled FFmpeg not found. Using system FFmpeg from PATH.",
+  );
+}
+
+if (ffprobePath === "ffprobe") {
+  console.log(
+    "⚠️ Bundled FFprobe not found. Using system FFprobe from PATH.",
+  );
+}
+
+console.log("======================================");
 /* =========================================================
    FONT
 ========================================================= */
