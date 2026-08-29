@@ -162,9 +162,7 @@ export default function LongVideoToShorts() {
 
     if (!schema) {
       schema = document.createElement("script");
-
       schema.id = schemaId;
-
       schema.setAttribute(
         "type",
         "application/ld+json"
@@ -233,7 +231,10 @@ export default function LongVideoToShorts() {
     <main className="min-h-screen bg-black text-white px-6 py-20">
       <div className="mx-auto max-w-5xl">
 
-        {/* Hero */}
+        {/* ==========================================
+            Hero
+        ========================================== */}
+
         <section>
           <p className="mb-4 text-sm uppercase tracking-[0.25em] text-green-400">
             LumoClip AI
@@ -267,7 +268,10 @@ export default function LongVideoToShorts() {
           </div>
         </section>
 
-        {/* What is long video to shorts */}
+        {/* ==========================================
+            What is long video to shorts
+        ========================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             What Does Long Video to Shorts Mean?
@@ -287,7 +291,10 @@ export default function LongVideoToShorts() {
           </p>
         </section>
 
-        {/* How it works */}
+        {/* ==========================================
+            How it works
+        ========================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             How to Turn a Long Video Into Shorts
@@ -358,7 +365,10 @@ export default function LongVideoToShorts() {
           </div>
         </section>
 
-        {/* Benefits */}
+        {/* ==========================================
+            Benefits
+        ========================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             Why Turn Long Videos Into Shorts?
@@ -415,7 +425,10 @@ export default function LongVideoToShorts() {
           </div>
         </section>
 
-        {/* Content types */}
+        {/* ==========================================
+            Content types
+        ========================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             What Long Videos Can You Turn Into Shorts?
@@ -456,7 +469,10 @@ export default function LongVideoToShorts() {
           </div>
         </section>
 
-        {/* Internal links */}
+        {/* ==========================================
+            Internal links
+        ========================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             More LumoClip Tools
@@ -506,7 +522,10 @@ export default function LongVideoToShorts() {
           </div>
         </section>
 
-        {/* FAQ */}
+        {/* ==========================================
+            FAQ
+        ========================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             Long Video to Shorts FAQ
@@ -563,7 +582,10 @@ export default function LongVideoToShorts() {
           </div>
         </section>
 
-        {/* Final CTA */}
+        {/* ==========================================
+            Final CTA
+        ========================================== */}
+
         <section className="mt-24 rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center">
 
           <h2 className="text-3xl font-bold md:text-4xl">

@@ -221,7 +221,7 @@ export default function AIShortsGenerator() {
     });
 
     // ==========================================
-    // Cleanup when leaving the page
+    // Cleanup
     // ==========================================
 
     return () => {

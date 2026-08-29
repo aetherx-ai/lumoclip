@@ -32,10 +32,7 @@ export default function AIVideoClipper() {
       element.setAttribute(attribute, value);
     };
 
-    // ==========================================
     // Primary SEO
-    // ==========================================
-
     setMeta(
       'meta[name="description"]',
       "content",
@@ -48,10 +45,7 @@ export default function AIVideoClipper() {
       "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
     );
 
-    // ==========================================
     // Open Graph
-    // ==========================================
-
     setMeta(
       'meta[property="og:type"]',
       "content",
@@ -100,10 +94,7 @@ export default function AIVideoClipper() {
       "en_US"
     );
 
-    // ==========================================
     // Twitter / X
-    // ==========================================
-
     setMeta(
       'meta[name="twitter:card"]',
       "content",
@@ -134,10 +125,7 @@ export default function AIVideoClipper() {
       "LumoClip AI Video Clipper"
     );
 
-    // ==========================================
     // Canonical
-    // ==========================================
-
     let canonicalLink = document.querySelector(
       'link[rel="canonical"]'
     ) as HTMLLinkElement | null;
@@ -150,21 +138,14 @@ export default function AIVideoClipper() {
 
     canonicalLink.href = canonical;
 
-    // ==========================================
     // FAQ Schema
-    // ==========================================
+    const schemaId = "ai-video-clipper-faq-schema";
 
-    const schemaId =
-      "ai-video-clipper-faq-schema";
-
-    let schema =
-      document.getElementById(schemaId);
+    let schema = document.getElementById(schemaId);
 
     if (!schema) {
       schema = document.createElement("script");
-
       schema.id = schemaId;
-
       schema.setAttribute(
         "type",
         "application/ld+json"
@@ -179,8 +160,7 @@ export default function AIVideoClipper() {
       mainEntity: [
         {
           "@type": "Question",
-          name:
-            "What is an AI video clipper?",
+          name: "What is an AI video clipper?",
           acceptedAnswer: {
             "@type": "Answer",
             text:
@@ -189,8 +169,7 @@ export default function AIVideoClipper() {
         },
         {
           "@type": "Question",
-          name:
-            "Can LumoClip turn long videos into Shorts?",
+          name: "Can LumoClip turn long videos into Shorts?",
           acceptedAnswer: {
             "@type": "Answer",
             text:
@@ -199,8 +178,7 @@ export default function AIVideoClipper() {
         },
         {
           "@type": "Question",
-          name:
-            "What types of videos can I clip?",
+          name: "What types of videos can I clip?",
           acceptedAnswer: {
             "@type": "Answer",
             text:
@@ -209,8 +187,7 @@ export default function AIVideoClipper() {
         },
         {
           "@type": "Question",
-          name:
-            "Which platforms are supported?",
+          name: "Which platforms are supported?",
           acceptedAnswer: {
             "@type": "Answer",
             text:
@@ -220,17 +197,13 @@ export default function AIVideoClipper() {
       ]
     });
 
-    // ==========================================
-    // Cleanup
-    // ==========================================
-
     return () => {
       document.getElementById(schemaId)?.remove();
     };
   }, []);
 
   return (
-    <main className="min-h-screen bg-black text-white px-6 py-20">
+    <main className="min-h-screen bg-black px-6 py-20 text-white">
       <div className="mx-auto max-w-5xl">
 
         {/* Hero */}
@@ -287,7 +260,7 @@ export default function AIVideoClipper() {
           </p>
         </section>
 
-        {/* How LumoClip works */}
+        {/* How it works */}
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             How LumoClip's AI Video Clipper Works
@@ -441,65 +414,45 @@ export default function AIVideoClipper() {
 
           <div className="mt-10 grid gap-4 md:grid-cols-3">
 
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                YouTubers
-              </h3>
+            {[
+              [
+                "YouTubers",
+                "Repurpose long YouTube videos into short-form content."
+              ],
+              [
+                "Podcasters",
+                "Discover memorable moments from podcast episodes."
+              ],
+              [
+                "Content Creators",
+                "Create more short-form content from existing videos."
+              ],
+              [
+                "Educators",
+                "Turn longer educational recordings into shorter lessons."
+              ],
+              [
+                "Businesses",
+                "Repurpose webinars, presentations, and interviews."
+              ],
+              [
+                "Social Media Teams",
+                "Build a faster workflow for short-form video production."
+              ]
+            ].map(([title, text]) => (
+              <div
+                key={title}
+                className="rounded-xl border border-white/10 p-5"
+              >
+                <h3 className="font-semibold">
+                  {title}
+                </h3>
 
-              <p className="mt-2 text-sm text-gray-400">
-                Repurpose long YouTube videos into short-form content.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Podcasters
-              </h3>
-
-              <p className="mt-2 text-sm text-gray-400">
-                Discover memorable moments from podcast episodes.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Content Creators
-              </h3>
-
-              <p className="mt-2 text-sm text-gray-400">
-                Create more short-form content from existing videos.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Educators
-              </h3>
-
-              <p className="mt-2 text-sm text-gray-400">
-                Turn longer educational recordings into shorter lessons.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Businesses
-              </h3>
-
-              <p className="mt-2 text-sm text-gray-400">
-                Repurpose webinars, presentations, and interviews.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Social Media Teams
-              </h3>
-
-              <p className="mt-2 text-sm text-gray-400">
-                Build a faster workflow for short-form video production.
-              </p>
-            </div>
+                <p className="mt-2 text-sm text-gray-400">
+                  {text}
+                </p>
+              </div>
+            ))}
 
           </div>
         </section>

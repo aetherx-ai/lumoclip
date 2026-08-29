@@ -29,21 +29,26 @@ export default function YouTubeToShorts() {
       element.setAttribute(attribute, value);
     };
 
-    // Description
+    // ==========================================
+    // Primary SEO
+    // ==========================================
+
     setMeta(
       'meta[name="description"]',
       "content",
       description
     );
 
-    // Robots
     setMeta(
       'meta[name="robots"]',
       "content",
       "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
     );
 
+    // ==========================================
     // Open Graph
+    // ==========================================
+
     setMeta(
       'meta[property="og:type"]',
       "content",
@@ -80,7 +85,22 @@ export default function YouTubeToShorts() {
       "LumoClip YouTube to Shorts AI"
     );
 
+    setMeta(
+      'meta[property="og:site_name"]',
+      "content",
+      "LumoClip"
+    );
+
+    setMeta(
+      'meta[property="og:locale"]',
+      "content",
+      "en_US"
+    );
+
+    // ==========================================
     // Twitter / X
+    // ==========================================
+
     setMeta(
       'meta[name="twitter:card"]',
       "content",
@@ -105,7 +125,16 @@ export default function YouTubeToShorts() {
       image
     );
 
+    setMeta(
+      'meta[name="twitter:image:alt"]',
+      "content",
+      "LumoClip YouTube to Shorts AI"
+    );
+
+    // ==========================================
     // Canonical
+    // ==========================================
+
     let canonicalLink = document.querySelector(
       'link[rel="canonical"]'
     ) as HTMLLinkElement | null;
@@ -118,7 +147,10 @@ export default function YouTubeToShorts() {
 
     canonicalLink.href = canonical;
 
+    // ==========================================
     // FAQ Schema
+    // ==========================================
+
     const schemaId = "youtube-to-shorts-faq-schema";
 
     let schema = document.getElementById(schemaId);
@@ -177,17 +209,23 @@ export default function YouTubeToShorts() {
       ]
     });
 
+    // ==========================================
+    // Cleanup
+    // ==========================================
+
     return () => {
-      // Remove page-specific schema when leaving the page
       document.getElementById(schemaId)?.remove();
     };
   }, []);
 
   return (
-    <main className="min-h-screen bg-black text-white px-6 py-20">
+    <main className="min-h-screen bg-black px-6 py-20 text-white">
       <div className="mx-auto max-w-5xl">
 
-        {/* Hero */}
+        {/* ======================================
+            Hero
+        ====================================== */}
+
         <section>
           <p className="mb-4 text-sm uppercase tracking-[0.25em] text-green-400">
             LumoClip AI
@@ -221,7 +259,10 @@ export default function YouTubeToShorts() {
           </div>
         </section>
 
-        {/* What it does */}
+        {/* ======================================
+            What It Does
+        ====================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             Turn YouTube Content Into Short-Form Videos
@@ -241,7 +282,10 @@ export default function YouTubeToShorts() {
           </p>
         </section>
 
-        {/* How it works */}
+        {/* ======================================
+            How It Works
+        ====================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             How YouTube to Shorts Works
@@ -289,8 +333,8 @@ export default function YouTubeToShorts() {
               </h3>
 
               <p className="mt-3 leading-7 text-gray-400">
-                Review the moments identified by the AI-assisted workflow and
-                choose the clips that fit your content strategy.
+                Review the moments identified by the AI-assisted workflow
+                and choose the clips that fit your content strategy.
               </p>
             </div>
 
@@ -312,7 +356,10 @@ export default function YouTubeToShorts() {
           </div>
         </section>
 
-        {/* Use cases */}
+        {/* ======================================
+            Use Cases
+        ====================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             What YouTube Videos Can You Repurpose?
@@ -327,12 +374,30 @@ export default function YouTubeToShorts() {
           <div className="mt-8 grid gap-4 md:grid-cols-3">
 
             {[
-              ["Podcasts", "Find memorable conversations and discussion moments."],
-              ["Interviews", "Discover useful answers, quotes, and discussion segments."],
-              ["Tutorials", "Turn useful sections of longer tutorials into short clips."],
-              ["Educational Content", "Repurpose explanations and educational moments."],
-              ["Commentary", "Find interesting sections from longer commentary videos."],
-              ["Webinars", "Repurpose useful sections from longer presentations."]
+              [
+                "Podcasts",
+                "Find memorable conversations and discussion moments."
+              ],
+              [
+                "Interviews",
+                "Discover useful answers, quotes, and discussion segments."
+              ],
+              [
+                "Tutorials",
+                "Turn useful sections of longer tutorials into short clips."
+              ],
+              [
+                "Educational Content",
+                "Repurpose explanations and educational moments."
+              ],
+              [
+                "Commentary",
+                "Find interesting sections from longer commentary videos."
+              ],
+              [
+                "Webinars",
+                "Repurpose useful sections from longer presentations."
+              ]
             ].map(([title, description]) => (
               <div
                 key={title}
@@ -351,7 +416,10 @@ export default function YouTubeToShorts() {
           </div>
         </section>
 
-        {/* Benefits */}
+        {/* ======================================
+            Benefits
+        ====================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             Why Convert YouTube Videos Into Shorts?
@@ -394,7 +462,10 @@ export default function YouTubeToShorts() {
           </div>
         </section>
 
-        {/* Internal links */}
+        {/* ======================================
+            Internal Links
+        ====================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             Explore More LumoClip Tools
@@ -444,7 +515,10 @@ export default function YouTubeToShorts() {
           </div>
         </section>
 
-        {/* FAQ */}
+        {/* ======================================
+            FAQ
+        ====================================== */}
+
         <section className="mt-24">
           <h2 className="text-3xl font-bold md:text-4xl">
             YouTube to Shorts FAQ
@@ -481,9 +555,9 @@ export default function YouTubeToShorts() {
               </h3>
 
               <p className="mt-3 leading-7 text-gray-400">
-                Short-form clips can be used as part of your content strategy
-                for platforms such as YouTube Shorts, TikTok, and Instagram
-                Reels.
+                Short-form clips can be used as part of your content
+                strategy for platforms such as YouTube Shorts, TikTok,
+                and Instagram Reels.
               </p>
             </div>
 
@@ -494,15 +568,18 @@ export default function YouTubeToShorts() {
 
               <p className="mt-3 leading-7 text-gray-400">
                 Podcasts, interviews, tutorials, educational videos,
-                webinars, and commentary can all contain sections that may
-                work well as short-form content.
+                webinars, and commentary can all contain sections that
+                may work well as short-form content.
               </p>
             </div>
 
           </div>
         </section>
 
-        {/* Final CTA */}
+        {/* ======================================
+            Final CTA
+        ====================================== */}
+
         <section className="mt-24 rounded-3xl border border-white/10 bg-white/[0.03] p-10 text-center">
 
           <h2 className="text-3xl font-bold md:text-4xl">
@@ -510,8 +587,8 @@ export default function YouTubeToShorts() {
           </h2>
 
           <p className="mx-auto mt-4 max-w-2xl text-gray-400">
-            Discover potential highlights from supported YouTube videos and
-            build your short-form content workflow with LumoClip.
+            Discover potential highlights from supported YouTube videos
+            and build your short-form content workflow with LumoClip.
           </p>
 
           <Link

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { HelmetProvider } from 'react-helmet-async';
 
 import App from './App.tsx';
 
@@ -13,34 +14,36 @@ import './index.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <Routes>
+    <HelmetProvider>
+      <BrowserRouter>
+        <Routes>
 
-        {/* Main LumoClip application */}
-        <Route path="/" element={<App />} />
+          {/* Main LumoClip application */}
+          <Route path="/" element={<App />} />
 
-        {/* SEO Landing Pages */}
-        <Route
-          path="/ai-video-clipper"
-          element={<AIVideoClipper />}
-        />
+          {/* SEO Landing Pages */}
+          <Route
+            path="/ai-video-clipper"
+            element={<AIVideoClipper />}
+          />
 
-        <Route
-          path="/long-video-to-shorts"
-          element={<LongVideoToShorts />}
-        />
+          <Route
+            path="/long-video-to-shorts"
+            element={<LongVideoToShorts />}
+          />
 
-        <Route
-          path="/ai-shorts-generator"
-          element={<AIShortsGenerator />}
-        />
+          <Route
+            path="/ai-shorts-generator"
+            element={<AIShortsGenerator />}
+          />
 
-        <Route
-          path="/youtube-to-shorts"
-          element={<YouTubeToShorts />}
-        />
+          <Route
+            path="/youtube-to-shorts"
+            element={<YouTubeToShorts />}
+          />
 
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+    </HelmetProvider>
   </StrictMode>,
 );
