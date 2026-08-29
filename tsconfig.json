@@ -26,7 +26,7 @@
 
     /* Types & Paths */
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     },
 
     /* Vite 6 + TS 5.4+ recommended */
