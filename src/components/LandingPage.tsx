@@ -13,13 +13,11 @@ import {
   ChevronDown,
   Clock3,
   Command,
-  FileText,
   Film,
   Layers3,
   Link2,
   MessageSquareText,
   Mic2,
-  MousePointer2,
   Play,
   Scissors,
   ShieldCheck,
@@ -43,7 +41,34 @@ type LandingPageProps = {
 };
 
 /* ============================================================================
-   DATA (module-level constants so they are not re-created on every render)
+   SEO CONSTANTS
+============================================================================ */
+
+const SITE_URL = "https://lumo-clip.com";
+const SITE_NAME = "LumoClip";
+
+const SEO_TITLE =
+  "LumoClip – AI Video Clipper | Turn Long Videos Into Shorts";
+
+const SEO_DESCRIPTION =
+  "LumoClip is an AI video clipper that finds the best moments in long videos and turns them into engaging short-form content for YouTube Shorts, TikTok, and Instagram.";
+
+const SEO_KEYWORDS = [
+  "LumoClip",
+  "Lumo Clip",
+  "AI video clipper",
+  "AI video clipping",
+  "AI clip generator",
+  "long video to shorts",
+  "video to shorts",
+  "AI shorts generator",
+  "YouTube Shorts maker",
+  "TikTok clip generator",
+  "Instagram Reels maker",
+].join(", ");
+
+/* ============================================================================
+   DATA
 ============================================================================ */
 
 const features = [
@@ -88,11 +113,11 @@ const features = [
 const faqs = [
   {
     q: "What is LumoClip?",
-    a: "LumoClip is an AI-powered content repurposing workspace designed to transform long-form content into short-form assets and publishing-ready content.",
+    a: "LumoClip is an AI video clipper and content repurposing workspace designed to transform long-form videos into short-form clips and publishing-ready content.",
   },
   {
     q: "Can I upload my own video?",
-    a: "Yes. Upload supported video files directly from the landing page and send them into your project workflow.",
+    a: "Yes. Upload supported video files directly from the LumoClip landing page and send them into your project workflow.",
   },
   {
     q: "Can I use a YouTube URL?",
@@ -100,11 +125,11 @@ const faqs = [
   },
   {
     q: "Does LumoClip automatically find clips?",
-    a: "Yes. The AI workflow analyzes your source and identifies strong moments so you do not have to manually search through the entire video.",
+    a: "Yes. LumoClip analyzes your source video and identifies strong moments so you do not have to manually search through the entire video.",
   },
   {
-    q: "Can it generate captions and hooks?",
-    a: "Yes. Your AI workflow can generate titles, hooks, captions, descriptions and hashtags alongside the generated content.",
+    q: "Can LumoClip generate captions and hooks?",
+    a: "Yes. LumoClip can generate titles, hooks, captions, descriptions and content directions alongside generated short-form content.",
   },
 ];
 
@@ -136,9 +161,10 @@ const outputCards = [
   },
 ] as const;
 
-/* Applied to below-the-fold sections so the browser can skip rendering work
-   for content that is not yet on screen (big win for Lighthouse's initial
-   render/layout cost, no visual change). */
+/* ============================================================================
+   PERFORMANCE
+============================================================================ */
+
 const lazySectionStyle: React.CSSProperties = {
   contentVisibility: "auto",
   containIntrinsicSize: "1px 900px",
@@ -175,7 +201,10 @@ function SectionLabel({
         <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-300" />
       </span>
 
-      <Icon className="h-3 w-3 text-cyan-300" />
+      <Icon
+        aria-hidden="true"
+        className="h-3 w-3 text-cyan-300"
+      />
 
       <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-200">
         {children}
@@ -240,7 +269,7 @@ function Reveal({
 }
 
 /* ============================================================================
-   MAGNETIC BUTTON
+   BUTTON
 ============================================================================ */
 
 function PremiumButton({
@@ -271,14 +300,17 @@ function PremiumButton({
       <span className="relative">{children}</span>
 
       {icon && (
-        <ArrowRight className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+        <ArrowRight
+          aria-hidden="true"
+          className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+        />
       )}
     </button>
   );
 }
 
 /* ============================================================================
-   FLOATING AI SIGNAL
+   FLOATING SIGNAL
 ============================================================================ */
 
 function FloatingSignal({
@@ -298,7 +330,11 @@ function FloatingSignal({
     >
       <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.07]">
         <div className="absolute inset-0 rounded-xl bg-cyan-400/[0.08] blur-lg" />
-        <Icon className="relative h-4 w-4 text-cyan-300" />
+
+        <Icon
+          aria-hidden="true"
+          className="relative h-4 w-4 text-cyan-300"
+        />
       </div>
 
       <div className="min-w-0">
@@ -316,22 +352,18 @@ function FloatingSignal({
 
 /* ============================================================================
    AI ORB
-   NOTE: previously this drove a `rotation` state via setInterval(35ms) forever,
-   which meant a re-render roughly every 35ms for the entire lifetime of the
-   page (a major Total Blocking Time / scripting cost during the Lighthouse
-   trace). Rotation is now pure CSS (`spinCW` / `spinCCW` keyframes defined in
-   the <style> block below), so there is zero JS timer and zero re-render —
-   the browser compositor handles the animation off the main thread.
 ============================================================================ */
 
 const AIOrb = React.memo(function AIOrb() {
   return (
-    <div className="relative mx-auto h-[330px] w-[330px] sm:h-[460px] sm:w-[460px]">
-      {/* ambient aura */}
+    <div
+      className="relative mx-auto h-[330px] w-[330px] sm:h-[460px] sm:w-[460px]"
+      aria-hidden="true"
+    >
       <div className="absolute inset-[18%] rounded-full bg-cyan-400/[0.10] blur-[70px]" />
+
       <div className="absolute inset-[25%] rounded-full bg-blue-500/[0.07] blur-[70px]" />
 
-      {/* outer rings */}
       <div className="absolute inset-[4%] rounded-full border border-white/[0.035]" />
 
       <div className="absolute inset-[10%] rounded-full border border-cyan-300/[0.08] animate-[spinCW_18s_linear_infinite] [will-change:transform]" />
@@ -340,49 +372,38 @@ const AIOrb = React.memo(function AIOrb() {
 
       <div className="absolute inset-[25%] rounded-full border border-cyan-300/[0.08] animate-[spinCW_9s_linear_infinite] [will-change:transform]" />
 
-      {/* orbit particles */}
-      <div
-        className="absolute left-[5%] top-[42%] h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_30px_rgba(34,211,238,1)]"
-      />
+      <div className="absolute left-[5%] top-[42%] h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_30px_rgba(34,211,238,1)]" />
 
-      <div
-        className="absolute right-[11%] top-[25%] h-1.5 w-1.5 rounded-full bg-blue-300 shadow-[0_0_25px_rgba(96,165,250,1)]"
-      />
+      <div className="absolute right-[11%] top-[25%] h-1.5 w-1.5 rounded-full bg-blue-300 shadow-[0_0_25px_rgba(96,165,250,1)]" />
 
-      <div
-        className="absolute bottom-[16%] left-[22%] h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_25px_rgba(103,232,249,1)]"
-      />
+      <div className="absolute bottom-[16%] left-[22%] h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_25px_rgba(103,232,249,1)]" />
 
-      {/* glass core */}
       <div className="absolute inset-[24%] rounded-full bg-gradient-to-br from-cyan-300/20 via-blue-500/10 to-transparent p-px shadow-[0_0_100px_rgba(34,211,238,0.18)]">
         <div className="relative h-full w-full overflow-hidden rounded-full border border-white/[0.09] bg-[#06090e] shadow-[inset_0_0_70px_rgba(34,211,238,0.04)]">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(34,211,238,0.22),transparent_38%),radial-gradient(circle_at_75%_75%,rgba(59,130,246,0.19),transparent_44%)]" />
 
-          {/* liquid blobs */}
           <div className="absolute left-[20%] top-[25%] h-24 w-24 rounded-full bg-cyan-400/[0.09] blur-2xl animate-[orbFloat_5s_ease-in-out_infinite]" />
 
           <div className="absolute bottom-[18%] right-[18%] h-20 w-20 rounded-full bg-blue-500/[0.10] blur-2xl animate-[orbFloat2_6s_ease-in-out_infinite]" />
 
-          {/* center */}
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="relative">
               <div className="absolute -inset-10 rounded-full bg-cyan-400/[0.08] blur-3xl" />
 
               <div className="relative flex h-24 w-24 items-center justify-center rounded-[30px] border border-cyan-300/10 bg-gradient-to-br from-cyan-400/[0.10] to-blue-500/[0.08] shadow-[0_0_70px_rgba(34,211,238,0.12)] backdrop-blur-xl">
                 <div className="absolute inset-2 rounded-[24px] border border-white/[0.04]" />
+
                 <Sparkles className="relative h-10 w-10 text-cyan-200" />
               </div>
             </div>
           </div>
 
-          {/* scanning lines */}
           <div className="absolute left-0 right-0 top-[28%] h-px bg-gradient-to-r from-transparent via-cyan-300/30 to-transparent animate-pulse" />
 
-          <div className="absolute left-0 right-0 bottom-[30%] h-px bg-gradient-to-r from-transparent via-blue-300/20 to-transparent" />
+          <div className="absolute bottom-[30%] left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-300/20 to-transparent" />
         </div>
       </div>
 
-      {/* floating UI */}
       <div className="absolute -left-4 top-[18%] hidden animate-[floatA_5s_ease-in-out_infinite] sm:block">
         <FloatingSignal
           icon={Sparkles}
@@ -412,22 +433,17 @@ const AIOrb = React.memo(function AIOrb() {
 
 /* ============================================================================
    PROCESSING VISUAL
-   NOTE: the progress bar is now pure CSS (`progressLoop` keyframes) instead
-   of a setInterval firing every 180ms. The `active` index still uses a
-   timer (it drives conditional icon/border/opacity swaps across React
-   state, which isn't practical to fully replace with CSS), but the timer
-   only starts once this section actually scrolls into view and stops the
-   moment it scrolls out — so it costs nothing during initial page load or
-   while the user is elsewhere on the page.
 ============================================================================ */
 
 const ProcessingVisual = React.memo(function ProcessingVisual() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
   const [visible, setVisible] = useState(false);
   const [active, setActive] = useState(0);
 
   useEffect(() => {
     const node = containerRef.current;
+
     if (!node) return;
 
     const observer = new IntersectionObserver(
@@ -436,6 +452,7 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
     );
 
     observer.observe(node);
+
     return () => observer.disconnect();
   }, []);
 
@@ -453,10 +470,10 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
     <div
       ref={containerRef}
       className="relative overflow-hidden rounded-[32px] border border-white/[0.08] bg-[#080b10]/90 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+      aria-label="LumoClip AI video analysis preview"
     >
       <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent" />
 
-      {/* header */}
       <div className="flex items-center justify-between border-b border-white/[0.05] px-5 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
@@ -484,18 +501,21 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
       </div>
 
       <div className="p-5 sm:p-6">
-        {/* fake video */}
         <div className="relative aspect-[16/8] overflow-hidden rounded-[22px] border border-white/[0.06] bg-gradient-to-br from-[#0e1820] via-[#090c12] to-[#06080d]">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_35%,rgba(34,211,238,0.12),transparent_30%),radial-gradient(circle_at_80%_65%,rgba(59,130,246,0.10),transparent_34%)]" />
 
           <div className="absolute inset-0 opacity-30">
             <div className="absolute left-[10%] top-[25%] h-24 w-24 rounded-full border border-cyan-300/10" />
-            <div className="absolute right-[14%] bottom-[18%] h-28 w-28 rounded-full border border-blue-300/10" />
+
+            <div className="absolute bottom-[18%] right-[14%] h-28 w-28 rounded-full border border-blue-300/10" />
           </div>
 
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl">
-              <Play className="ml-0.5 h-4 w-4 fill-white text-white" />
+              <Play
+                aria-hidden="true"
+                className="ml-0.5 h-4 w-4 fill-white text-white"
+              />
             </div>
           </div>
 
@@ -516,10 +536,10 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
           </div>
         </div>
 
-        {/* waveform */}
         <div className="relative mt-5 flex h-20 items-center gap-[3px] overflow-hidden rounded-2xl border border-white/[0.045] bg-black/20 px-4">
           {Array.from({ length: 74 }).map((_, i) => {
             const height = 15 + ((i * 43 + 17) % 70);
+
             const highlight =
               i >= active * 17 &&
               i < active * 17 + 18;
@@ -540,10 +560,9 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
             );
           })}
 
-          <div className="absolute bottom-0 top-0 left-[38%] w-px bg-cyan-300/30 shadow-[0_0_20px_rgba(34,211,238,0.4)]" />
+          <div className="absolute bottom-0 left-[38%] top-0 w-px bg-cyan-300/30 shadow-[0_0_20px_rgba(34,211,238,0.4)]" />
         </div>
 
-        {/* signals */}
         <div className="mt-5 space-y-2">
           {processingSignals.map(([title, score], index) => (
             <div
@@ -596,18 +615,18 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
 });
 
 /* ============================================================================
-   OUTPUT CARDS
-   NOTE: same visibility-gated timer pattern as ProcessingVisual — the cycle
-   only runs while the cards are actually on screen.
+   OUTPUT PREVIEW
 ============================================================================ */
 
 const OutputPreview = React.memo(function OutputPreview() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+
   const [visible, setVisible] = useState(false);
   const [active, setActive] = useState(0);
 
   useEffect(() => {
     const node = containerRef.current;
+
     if (!node) return;
 
     const observer = new IntersectionObserver(
@@ -616,6 +635,7 @@ const OutputPreview = React.memo(function OutputPreview() {
     );
 
     observer.observe(node);
+
     return () => observer.disconnect();
   }, []);
 
@@ -630,12 +650,15 @@ const OutputPreview = React.memo(function OutputPreview() {
   }, [visible]);
 
   return (
-    <div ref={containerRef} className="grid gap-4 sm:grid-cols-3">
+    <div
+      ref={containerRef}
+      className="grid gap-4 sm:grid-cols-3"
+    >
       {outputCards.map((output, index) => {
         const selected = active === index;
 
         return (
-          <div
+          <article
             key={output.title}
             className={`group relative overflow-hidden rounded-[24px] border p-3 transition-all duration-500 ${
               selected
@@ -651,7 +674,7 @@ const OutputPreview = React.memo(function OutputPreview() {
                 <div className="mt-2 h-1 w-24 rounded-full bg-white/10" />
               </div>
 
-              <div className="absolute inset-x-4 bottom-7">
+              <div className="absolute bottom-7 left-4 right-4">
                 <div className="rounded-xl border border-white/[0.07] bg-black/30 p-2 backdrop-blur-md">
                   <div className="flex gap-1">
                     {Array.from({ length: 20 }).map((_, i) => (
@@ -691,7 +714,7 @@ const OutputPreview = React.memo(function OutputPreview() {
                 </span>
               </div>
             </div>
-          </div>
+          </article>
         );
       })}
     </div>
@@ -713,7 +736,7 @@ const FeatureCard = React.memo(function FeatureCard({
 
   return (
     <Reveal delay={index * 60}>
-      <div className="group relative h-full overflow-hidden rounded-[28px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-cyan-300/15 hover:bg-white/[0.025] hover:shadow-[0_25px_80px_rgba(0,0,0,0.22)]">
+      <article className="group relative h-full overflow-hidden rounded-[28px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-cyan-300/15 hover:bg-white/[0.025] hover:shadow-[0_25px_80px_rgba(0,0,0,0.22)]">
         <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-cyan-400/[0.035] blur-3xl transition duration-500 group-hover:bg-cyan-400/[0.09]" />
 
         <div className="absolute bottom-0 left-0 h-px w-0 bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500 group-hover:w-full" />
@@ -743,10 +766,11 @@ const FeatureCard = React.memo(function FeatureCard({
 
           <div className="mt-6 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.17em] text-zinc-800 transition group-hover:text-cyan-300">
             Explore capability
+
             <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
           </div>
         </div>
-      </div>
+      </article>
     </Reveal>
   );
 });
@@ -792,7 +816,7 @@ const Workflow = React.memo(function Workflow() {
 
         return (
           <Reveal key={item.no} delay={index * 80}>
-            <div className="group relative h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/15 hover:bg-white/[0.025]">
+            <article className="group relative h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/15 hover:bg-white/[0.025]">
               <div className="relative z-10">
                 <div className="flex items-center justify-between">
                   <span className="font-mono text-[10px] text-cyan-300">
@@ -812,7 +836,7 @@ const Workflow = React.memo(function Workflow() {
                   {item.text}
                 </p>
               </div>
-            </div>
+            </article>
           </Reveal>
         );
       })}
@@ -871,20 +895,281 @@ export function LandingPage({
 
   const [scrolled, setScrolled] = useState(false);
 
-  // Cursor-following spotlight is now driven by direct DOM mutation via a
-  // ref + rAF throttle instead of React state. The old version called
-  // setMouse() on *every* mousemove event, which re-rendered the entire
-  // LandingPage tree (hundreds of nodes) dozens of times per second — one
-  // of the biggest contributors to main-thread scripting cost. Now it never
-  // triggers React at all.
-  const spotlightRef = useRef<HTMLDivElement | null>(null);
-  const latestPointer = useRef({ x: 50, y: 15 });
+  const spotlightRef =
+    useRef<HTMLDivElement | null>(null);
+
+  const latestPointer = useRef({
+    x: 50,
+    y: 15,
+  });
+
   const pointerRaf = useRef<number | null>(null);
 
   const normalizedUrl = useMemo(
     () => url.trim(),
     [url]
   );
+
+  /* ==========================================================================
+     SEO HEAD
+  ========================================================================== */
+
+  useEffect(() => {
+    document.title = SEO_TITLE;
+
+    const setMeta = (
+      name: string,
+      content: string
+    ) => {
+      let meta = document.head.querySelector(
+        `meta[name="${name}"]`
+      ) as HTMLMetaElement | null;
+
+      if (!meta) {
+        meta = document.createElement("meta");
+        meta.name = name;
+        document.head.appendChild(meta);
+      }
+
+      meta.content = content;
+    };
+
+    const setProperty = (
+      property: string,
+      content: string
+    ) => {
+      let meta = document.head.querySelector(
+        `meta[property="${property}"]`
+      ) as HTMLMetaElement | null;
+
+      if (!meta) {
+        meta = document.createElement("meta");
+        meta.setAttribute("property", property);
+        document.head.appendChild(meta);
+      }
+
+      meta.setAttribute("content", content);
+    };
+
+    setMeta("description", SEO_DESCRIPTION);
+
+    setMeta(
+      "keywords",
+      SEO_KEYWORDS
+    );
+
+    setMeta(
+      "robots",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    );
+
+    setMeta(
+      "googlebot",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    );
+
+    setMeta(
+      "author",
+      "LumoClip"
+    );
+
+    setMeta(
+      "application-name",
+      SITE_NAME
+    );
+
+    setMeta(
+      "theme-color",
+      "#040608"
+    );
+
+    setProperty(
+      "og:type",
+      "website"
+    );
+
+    setProperty(
+      "og:site_name",
+      SITE_NAME
+    );
+
+    setProperty(
+      "og:title",
+      SEO_TITLE
+    );
+
+    setProperty(
+      "og:description",
+      SEO_DESCRIPTION
+    );
+
+    setProperty(
+      "og:url",
+      `${SITE_URL}/`
+    );
+
+    setProperty(
+      "og:image",
+      `${SITE_URL}/og-image.png`
+    );
+
+    setProperty(
+      "og:image:alt",
+      "LumoClip AI Video Clipper"
+    );
+
+    setProperty(
+      "og:locale",
+      "en_US"
+    );
+
+    setMeta(
+      "twitter:card",
+      "summary_large_image"
+    );
+
+    setMeta(
+      "twitter:title",
+      SEO_TITLE
+    );
+
+    setMeta(
+      "twitter:description",
+      SEO_DESCRIPTION
+    );
+
+    setMeta(
+      "twitter:image",
+      `${SITE_URL}/og-image.png`
+    );
+
+    setMeta(
+      "twitter:image:alt",
+      "LumoClip AI Video Clipper"
+    );
+
+    let canonical =
+      document.head.querySelector(
+        'link[rel="canonical"]'
+      ) as HTMLLinkElement | null;
+
+    if (!canonical) {
+      canonical = document.createElement("link");
+      canonical.rel = "canonical";
+      document.head.appendChild(canonical);
+    }
+
+    canonical.href = `${SITE_URL}/`;
+
+    let icon =
+      document.head.querySelector(
+        'link[rel="icon"]'
+      ) as HTMLLinkElement | null;
+
+    if (!icon) {
+      icon = document.createElement("link");
+      icon.rel = "icon";
+      document.head.appendChild(icon);
+    }
+
+    icon.href = "/favicon.ico";
+
+    return () => {
+      /* Keep global SEO metadata intact.
+         The landing page is the canonical homepage. */
+    };
+  }, []);
+
+  /* ==========================================================================
+     STRUCTURED DATA
+  ========================================================================== */
+
+  const organizationJsonLd = useMemo(
+    () => ({
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "@id": `${SITE_URL}/#organization`,
+      name: "LumoClip",
+      alternateName: "Lumo Clip",
+      url: `${SITE_URL}/`,
+      logo: {
+        "@type": "ImageObject",
+        url: `${SITE_URL}/logo.png`,
+        width: 512,
+        height: 512,
+      },
+      description: SEO_DESCRIPTION,
+    }),
+    []
+  );
+
+  const websiteJsonLd = useMemo(
+    () => ({
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "@id": `${SITE_URL}/#website`,
+      url: `${SITE_URL}/`,
+      name: "LumoClip",
+      alternateName: "Lumo Clip",
+      description: SEO_DESCRIPTION,
+      publisher: {
+        "@id": `${SITE_URL}/#organization`,
+      },
+      inLanguage: "en-US",
+    }),
+    []
+  );
+
+  const softwareJsonLd = useMemo(
+    () => ({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "@id": `${SITE_URL}/#software`,
+      name: "LumoClip",
+      alternateName: "Lumo Clip",
+      applicationCategory: "MultimediaApplication",
+      applicationSubCategory:
+        "AI Video Editing Software",
+      operatingSystem: "Web",
+      url: `${SITE_URL}/`,
+      description:
+        "LumoClip is an AI video clipper that turns long-form videos into engaging short-form content.",
+      image: `${SITE_URL}/logo.png`,
+      publisher: {
+        "@id": `${SITE_URL}/#organization`,
+      },
+      offers: {
+        "@type": "Offer",
+        url: `${SITE_URL}/`,
+        price: "0",
+        priceCurrency: "USD",
+        availability:
+          "https://schema.org/InStock",
+      },
+    }),
+    []
+  );
+
+  const faqJsonLd = useMemo(
+    () => ({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "@id": `${SITE_URL}/#faq`,
+      mainEntity: faqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.q,
+        acceptedAnswer: {
+          "@type": "Answer",
+          text: faq.a,
+        },
+      })),
+    }),
+    []
+  );
+
+  /* ==========================================================================
+     INTERACTION / PERFORMANCE
+  ========================================================================== */
 
   useEffect(() => {
     const move = (event: MouseEvent) => {
@@ -901,44 +1186,67 @@ export function LandingPage({
 
       if (pointerRaf.current !== null) return;
 
-      pointerRaf.current = window.requestAnimationFrame(() => {
-        pointerRaf.current = null;
-        const node = spotlightRef.current;
-        if (!node) return;
-        node.style.left = `${latestPointer.current.x}%`;
-        node.style.top = `${latestPointer.current.y}%`;
-      });
+      pointerRaf.current =
+        window.requestAnimationFrame(() => {
+          pointerRaf.current = null;
+
+          const node = spotlightRef.current;
+
+          if (!node) return;
+
+          node.style.left = `${latestPointer.current.x}%`;
+          node.style.top = `${latestPointer.current.y}%`;
+        });
     };
 
-    // Scroll toggling is throttled to one check per animation frame instead
-    // of running setState synchronously on every scroll event.
     let scrollTicking = false;
 
     const scroll = () => {
       if (scrollTicking) return;
+
       scrollTicking = true;
 
       window.requestAnimationFrame(() => {
         scrollTicking = false;
-        const next = window.scrollY > 300;
-        setScrolled((prev) => (prev === next ? prev : next));
+
+        const next =
+          window.scrollY > 300;
+
+        setScrolled((prev) =>
+          prev === next ? prev : next
+        );
       });
     };
 
-    window.addEventListener("mousemove", move, {
-      passive: true,
-    });
+    window.addEventListener(
+      "mousemove",
+      move,
+      { passive: true }
+    );
 
-    window.addEventListener("scroll", scroll, {
-      passive: true,
-    });
+    window.addEventListener(
+      "scroll",
+      scroll,
+      { passive: true }
+    );
 
     return () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("scroll", scroll);
+      window.removeEventListener(
+        "mousemove",
+        move
+      );
 
-      if (pointerRaf.current !== null) {
-        window.cancelAnimationFrame(pointerRaf.current);
+      window.removeEventListener(
+        "scroll",
+        scroll
+      );
+
+      if (
+        pointerRaf.current !== null
+      ) {
+        window.cancelAnimationFrame(
+          pointerRaf.current
+        );
       }
     };
   }, []);
@@ -949,61 +1257,54 @@ export function LandingPage({
       return;
     }
 
-    onOpenNewProjectWithUrl(normalizedUrl);
+    onOpenNewProjectWithUrl(
+      normalizedUrl
+    );
   };
-
-  const organizationJsonLd = useMemo(
-    () => ({
-      "@context": "https://schema.org",
-      "@type": "Organization",
-      name: "LumoClip",
-      url: "https://lumo-clip.com/",
-      logo: "https://lumo-clip.com/logo.png",
-      description:
-        "LumoClip is an AI-powered content repurposing workspace that turns long-form video into short-form clips for YouTube, TikTok, and Instagram.",
-      sameAs: [] as string[],
-    }),
-    []
-  );
-
-  const faqJsonLd = useMemo(
-    () => ({
-      "@context": "https://schema.org",
-      "@type": "FAQPage",
-      mainEntity: faqs.map((faq) => ({
-        "@type": "Question",
-        name: faq.q,
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: faq.a,
-        },
-      })),
-    }),
-    []
-  );
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#040608] text-white">
       {/* ====================================================================
-          STRUCTURED DATA (SEO)
-          Organization schema anchors "LumoClip" as a brand entity for
-          Google's Knowledge Graph. FAQPage schema makes the FAQ section
-          eligible for rich snippets on brand + informational queries.
+          STRUCTURED DATA
       ==================================================================== */}
 
       <script
         type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(organizationJsonLd),
+          __html:
+            JSON.stringify(
+              organizationJsonLd
+            ),
         }}
       />
 
       <script
         type="application/ld+json"
-        // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{
-          __html: JSON.stringify(faqJsonLd),
+          __html:
+            JSON.stringify(
+              websiteJsonLd
+            ),
+        }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html:
+            JSON.stringify(
+              softwareJsonLd
+            ),
+        }}
+      />
+
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html:
+            JSON.stringify(
+              faqJsonLd
+            ),
         }}
       />
 
@@ -1037,14 +1338,21 @@ export function LandingPage({
       </div>
 
       {/* ====================================================================
-          HERO
+          MAIN
       ==================================================================== */}
 
       <main id="top">
-        <section className="relative min-h-screen overflow-hidden">
-          {/* mouse light — position updated via ref, not React state */}
+        {/* ==================================================================
+            HERO
+        ================================================================== */}
+
+        <section
+          aria-labelledby="hero-title"
+          className="relative min-h-screen overflow-hidden"
+        >
           <div
             ref={spotlightRef}
+            aria-hidden="true"
             className="pointer-events-none absolute h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/[0.035] blur-[70px] transition-all duration-1000"
             style={{
               left: "50%",
@@ -1058,13 +1366,19 @@ export function LandingPage({
             <div className="mx-auto max-w-5xl text-center">
               <Reveal>
                 <SectionLabel>
-                  AI CONTENT ENGINE
+                  AI VIDEO CLIPPER
                 </SectionLabel>
               </Reveal>
 
               <Reveal delay={80}>
-                <h1 className="mt-7 text-[52px] font-black leading-[0.88] tracking-[-0.07em] sm:text-[78px] lg:text-[104px]">
-                  <span className="sr-only">LumoClip: </span>
+                <h1
+                  id="hero-title"
+                  className="mt-7 text-[52px] font-black leading-[0.88] tracking-[-0.07em] sm:text-[78px] lg:text-[104px]"
+                >
+                  <span className="sr-only">
+                    LumoClip: AI Video Clipper.{" "}
+                  </span>
+
                   Turn Long Videos Into
                   <br />
 
@@ -1076,12 +1390,17 @@ export function LandingPage({
 
               <Reveal delay={150}>
                 <p className="mx-auto mt-8 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base sm:leading-8">
-                LumoClip finds the best moments from your long videos and turns them into engaging short-form content for YouTube, TikTok, and Instagram.
-                  
-                  </p>
-                  </Reveal>
+                  LumoClip is an AI video clipper
+                  that finds the best moments from
+                  your long videos and turns them
+                  into engaging short-form content
+                  for YouTube Shorts, TikTok, and
+                  Instagram Reels.
+                </p>
+              </Reveal>
 
-              {/* source box */}
+              {/* SOURCE BOX */}
+
               <Reveal
                 delay={220}
                 className="mx-auto mt-10 max-w-[800px]"
@@ -1090,36 +1409,59 @@ export function LandingPage({
                   <div className="absolute -inset-4 rounded-[38px] bg-gradient-to-r from-cyan-400/[0.09] via-blue-500/[0.07] to-cyan-400/[0.09] blur-2xl" />
 
                   <div className="relative rounded-[30px] border border-white/[0.09] bg-[#080b10]/90 p-2 shadow-[0_40px_140px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
-                    {/* url row */}
                     <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                       <div className="flex min-w-0 items-center gap-3 rounded-[21px] border border-white/[0.055] bg-white/[0.018] px-3 transition focus-within:border-cyan-300/20">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
-                          <Link2 className="h-4 w-4 text-cyan-300" />
+                          <Link2
+                            aria-hidden="true"
+                            className="h-4 w-4 text-cyan-300"
+                          />
                         </div>
 
+                        <label
+                          htmlFor="youtube-url"
+                          className="sr-only"
+                        >
+                          YouTube video URL
+                        </label>
+
                         <input
+                          id="youtube-url"
                           value={url}
                           onChange={(e) => {
-                            setUrl(e.target.value);
+                            setUrl(
+                              e.target.value
+                            );
 
-                            if (selectedFile) {
-                              setSelectedFile(null);
+                            if (
+                              selectedFile
+                            ) {
+                              setSelectedFile(
+                                null
+                              );
                             }
                           }}
                           onKeyDown={(e) => {
-                            if (e.key === "Enter") {
+                            if (
+                              e.key ===
+                              "Enter"
+                            ) {
                               submit();
                             }
                           }}
                           placeholder="Paste a YouTube URL..."
+                          autoComplete="url"
+                          inputMode="url"
                           className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-zinc-700"
                         />
 
                         {url && (
                           <button
                             type="button"
-                            aria-label="Clear URL"
-                            onClick={() => setUrl("")}
+                            aria-label="Clear YouTube URL"
+                            onClick={() =>
+                              setUrl("")
+                            }
                             className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-700 transition hover:bg-white/[0.04] hover:text-white"
                           >
                             <X className="h-4 w-4" />
@@ -1135,7 +1477,6 @@ export function LandingPage({
                       </PremiumButton>
                     </div>
 
-                    {/* divider */}
                     <div className="my-2 flex items-center gap-3 px-2">
                       <div className="h-px flex-1 bg-white/[0.045]" />
 
@@ -1146,7 +1487,6 @@ export function LandingPage({
                       <div className="h-px flex-1 bg-white/[0.045]" />
                     </div>
 
-                    {/* upload */}
                     <label className="group flex cursor-pointer items-center justify-between gap-4 rounded-[21px] border border-dashed border-cyan-300/10 bg-cyan-400/[0.018] px-4 py-3.5 transition-all duration-300 hover:border-cyan-300/25 hover:bg-cyan-400/[0.04]">
                       <input
                         type="file"
@@ -1158,10 +1498,15 @@ export function LandingPage({
 
                           if (!file) return;
 
-                          setSelectedFile(file);
+                          setSelectedFile(
+                            file
+                          );
+
                           setUrl("");
 
-                          onUploadFile?.(file);
+                          onUploadFile?.(
+                            file
+                          );
                         }}
                       />
 
@@ -1212,6 +1557,7 @@ export function LandingPage({
                       className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-800"
                     >
                       <Check className="h-3 w-3 text-emerald-400/70" />
+
                       {item}
                     </span>
                   ))}
@@ -1219,7 +1565,8 @@ export function LandingPage({
               </Reveal>
             </div>
 
-            {/* hero intelligence */}
+            {/* HERO INTELLIGENCE */}
+
             <Reveal
               delay={300}
               className="relative mx-auto mt-20 max-w-[1120px]"
@@ -1227,7 +1574,7 @@ export function LandingPage({
               <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
                 <div className="order-2 lg:order-1">
                   <SectionLabel icon={WandSparkles}>
-                    Intelligence layer
+                    AI video intelligence
                   </SectionLabel>
 
                   <h2 className="mt-7 text-3xl font-black tracking-[-0.055em] text-white sm:text-5xl">
@@ -1240,10 +1587,10 @@ export function LandingPage({
                   </h2>
 
                   <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">
-                    Instead of blindly cutting a timeline,
-                    LumoClip analyzes what is being said,
-                    what matters and what could become
-                    compelling content.
+                    LumoClip analyzes what is
+                    being said, what matters and
+                    what could become compelling
+                    short-form content.
                   </p>
 
                   <div className="mt-7 grid gap-2 sm:grid-cols-2">
@@ -1295,6 +1642,7 @@ export function LandingPage({
         ================================================================== */}
 
         <section
+          aria-labelledby="outputs-title"
           className="relative border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1304,10 +1652,13 @@ export function LandingPage({
             <div className="grid items-center gap-12 lg:grid-cols-[0.75fr_1.25fr]">
               <Reveal>
                 <SectionLabel icon={Film}>
-                  From one video
+                  AI video repurposing
                 </SectionLabel>
 
-                <h2 className="mt-7 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                <h2
+                  id="outputs-title"
+                  className="mt-7 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                >
                   One source.
                   <br />
 
@@ -1317,13 +1668,14 @@ export function LandingPage({
                 </h2>
 
                 <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">
-                  LumoClip helps transform one long-form
-                  source into a complete content system.
+                  Transform one long-form video
+                  into short-form clips, AI hooks,
+                  captions and content directions.
                 </p>
 
                 <div className="mt-7 space-y-3">
                   {[
-                    "Short-form clips",
+                    "AI short-form clips",
                     "AI hooks & titles",
                     "Captions & descriptions",
                     "Content directions",
@@ -1351,14 +1703,13 @@ export function LandingPage({
           </div>
         </section>
 
-      
-
         {/* ==================================================================
             FEATURES
         ================================================================== */}
 
         <section
           id="features"
+          aria-labelledby="features-title"
           className="scroll-mt-20 py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1366,10 +1717,13 @@ export function LandingPage({
             <Reveal>
               <div className="mx-auto max-w-2xl text-center">
                 <SectionLabel>
-                  Built around intelligence
+                  AI video clipping features
                 </SectionLabel>
 
-                <h2 className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                <h2
+                  id="features-title"
+                  className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                >
                   Everything you need to
                   <br />
 
@@ -1379,21 +1733,24 @@ export function LandingPage({
                 </h2>
 
                 <p className="mt-5 text-sm leading-7 text-zinc-700">
-                  A single workspace for discovering,
-                  generating and organizing your next content
-                  ideas.
+                  A single AI workspace for
+                  discovering, generating and
+                  organizing your next short-form
+                  content ideas.
                 </p>
               </div>
             </Reveal>
 
             <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {features.map((item, index) => (
-                <FeatureCard
-                  key={item.title}
-                  item={item}
-                  index={index}
-                />
-              ))}
+              {features.map(
+                (item, index) => (
+                  <FeatureCard
+                    key={item.title}
+                    item={item}
+                    index={index}
+                  />
+                )
+              )}
             </div>
           </div>
         </section>
@@ -1403,6 +1760,7 @@ export function LandingPage({
         ================================================================== */}
 
         <section
+          aria-labelledby="intelligence-title"
           className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1415,7 +1773,10 @@ export function LandingPage({
                   Lumo Intelligence
                 </SectionLabel>
 
-                <h2 className="mt-7 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                <h2
+                  id="intelligence-title"
+                  className="mt-7 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                >
                   Not just
                   <br />
 
@@ -1431,8 +1792,9 @@ export function LandingPage({
                 </h2>
 
                 <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">
-                  The goal is not to create more random clips.
-                  It is to find content worth publishing.
+                  LumoClip is designed to find
+                  content worth publishing instead
+                  of creating random clips.
                 </p>
 
                 <div className="mt-7 space-y-3">
@@ -1490,12 +1852,15 @@ export function LandingPage({
             </h2>
 
             <p className="mx-auto mt-7 max-w-2xl text-sm leading-7 text-zinc-700 sm:text-base">
-              Your time should go into ideas, storytelling
-              and creativity — not endless timeline scrubbing.
+              Your time should go into ideas,
+              storytelling and creativity — not
+              endless timeline scrubbing.
             </p>
 
             <div className="mt-9">
-              <PremiumButton onClick={onGetStarted}>
+              <PremiumButton
+                onClick={onGetStarted}
+              >
                 Build your content engine
               </PremiumButton>
             </div>
@@ -1508,6 +1873,7 @@ export function LandingPage({
 
         <section
           id="workflow"
+          aria-labelledby="workflow-title"
           className="scroll-mt-20 border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1516,10 +1882,13 @@ export function LandingPage({
               <div className="mb-14 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <SectionLabel icon={Command}>
-                    Simple workflow
+                    Simple AI workflow
                   </SectionLabel>
 
-                  <h2 className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                  <h2
+                    id="workflow-title"
+                    className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                  >
                     Source.
                     <span className="text-zinc-700">
                       {" "}
@@ -1534,8 +1903,10 @@ export function LandingPage({
                 </div>
 
                 <p className="max-w-md text-sm leading-6 text-zinc-700">
-                  Designed to remove repetitive work while
-                  keeping you in control of what gets published.
+                  Designed to remove repetitive
+                  video editing work while keeping
+                  you in control of what gets
+                  published.
                 </p>
               </div>
             </Reveal>
@@ -1548,11 +1919,15 @@ export function LandingPage({
             CAPABILITY GRID
         ================================================================== */}
 
-        <section className="py-24 sm:py-32" style={lazySectionStyle}>
+        <section
+          aria-labelledby="capability-title"
+          className="py-24 sm:py-32"
+          style={lazySectionStyle}
+        >
           <div className="mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
             <div className="grid gap-4 lg:grid-cols-2">
               <Reveal>
-                <div className="group relative h-full overflow-hidden rounded-[32px] border border-white/[0.07] bg-gradient-to-br from-cyan-400/[0.055] via-white/[0.012] to-transparent p-8 sm:p-10">
+                <article className="group relative h-full overflow-hidden rounded-[32px] border border-white/[0.07] bg-gradient-to-br from-cyan-400/[0.055] via-white/[0.012] to-transparent p-8 sm:p-10">
                   <Glow className="right-[-130px] top-[-130px] h-80 w-80 bg-cyan-400/[0.07]" />
 
                   <div className="relative">
@@ -1560,22 +1935,26 @@ export function LandingPage({
                       <Sparkles className="h-5 w-5 text-cyan-300" />
                     </div>
 
-                    <h3 className="mt-7 text-2xl font-black tracking-tight sm:text-3xl">
+                    <h2
+                      id="capability-title"
+                      className="mt-7 text-2xl font-black tracking-tight sm:text-3xl"
+                    >
                       One source.
                       <br />
                       Many possibilities.
-                    </h3>
+                    </h2>
 
                     <p className="mt-4 max-w-lg text-sm leading-7 text-zinc-700">
-                      Turn one piece of long-form content into
-                      multiple directions without rebuilding
+                      Turn one long-form video
+                      into multiple short-form
+                      directions without rebuilding
                       your workflow every time.
                     </p>
 
                     <div className="mt-8 flex flex-wrap gap-2">
                       {[
                         "Short clips",
-                        "Hooks",
+                        "AI hooks",
                         "Captions",
                         "Hashtags",
                         "Titles",
@@ -1590,7 +1969,7 @@ export function LandingPage({
                       ))}
                     </div>
                   </div>
-                </div>
+                </article>
               </Reveal>
 
               <div className="grid gap-4 sm:grid-cols-2">
@@ -1598,47 +1977,50 @@ export function LandingPage({
                   [
                     Clock3,
                     "Save creative time",
-                    "Automate repetitive discovery tasks.",
+                    "Automate repetitive video discovery tasks.",
                   ],
                   [
                     Layers3,
                     "Centralized workspace",
-                    "Keep projects and assets organized.",
+                    "Keep projects and video assets organized.",
                   ],
                   [
                     Command,
                     "Fast iteration",
-                    "Explore more content directions.",
+                    "Explore more short-form content directions.",
                   ],
                   [
                     Film,
                     "Short-form ready",
                     "Designed around vertical-first content.",
                   ],
-                ].map(([Icon, title, text], index) => {
-                  const I = Icon as React.ElementType;
+                ].map(
+                  ([Icon, title, text], index) => {
+                    const I =
+                      Icon as React.ElementType;
 
-                  return (
-                    <Reveal
-                      key={String(title)}
-                      delay={index * 70}
-                    >
-                      <div className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/10 hover:bg-white/[0.022]">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.035]">
-                          <I className="h-4 w-4 text-zinc-600 transition group-hover:text-cyan-300" />
-                        </div>
+                    return (
+                      <Reveal
+                        key={String(title)}
+                        delay={index * 70}
+                      >
+                        <article className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/10 hover:bg-white/[0.022]">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.035]">
+                            <I className="h-4 w-4 text-zinc-600 transition group-hover:text-cyan-300" />
+                          </div>
 
-                        <h3 className="mt-5 text-sm font-bold text-white">
-                          {String(title)}
-                        </h3>
+                          <h3 className="mt-5 text-sm font-bold text-white">
+                            {String(title)}
+                          </h3>
 
-                        <p className="mt-2 text-xs leading-5 text-zinc-700">
-                          {String(text)}
-                        </p>
-                      </div>
-                    </Reveal>
-                  );
-                })}
+                          <p className="mt-2 text-xs leading-5 text-zinc-700">
+                            {String(text)}
+                          </p>
+                        </article>
+                      </Reveal>
+                    );
+                  }
+                )}
               </div>
             </div>
           </div>
@@ -1650,6 +2032,7 @@ export function LandingPage({
 
         <section
           id="pricing"
+          aria-labelledby="cta-title"
           className="scroll-mt-20 py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1666,10 +2049,13 @@ export function LandingPage({
                   </div>
 
                   <p className="mt-6 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-300">
-                    Your content engine starts here
+                    Your AI video content engine
                   </p>
 
-                  <h2 className="mt-4 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                  <h2
+                    id="cta-title"
+                    className="mt-4 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                  >
                     Make every video
                     <br />
 
@@ -1679,12 +2065,15 @@ export function LandingPage({
                   </h2>
 
                   <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-zinc-700">
-                    Bring your content into LumoClip and let
-                    intelligence handle the repetitive work.
+                    Bring your content into LumoClip
+                    and let AI handle the repetitive
+                    work.
                   </p>
 
                   <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
-                    <PremiumButton onClick={onGetStarted}>
+                    <PremiumButton
+                      onClick={onGetStarted}
+                    >
                       Start creating
                     </PremiumButton>
 
@@ -1707,6 +2096,8 @@ export function LandingPage({
         ================================================================== */}
 
         <section
+          id="faq"
+          aria-labelledby="faq-title"
           className="border-t border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1714,75 +2105,91 @@ export function LandingPage({
             <Reveal>
               <div className="text-center">
                 <SectionLabel icon={MessageSquareText}>
-                  Questions
+                  LumoClip FAQ
                 </SectionLabel>
 
-                <h2 className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                <h2
+                  id="faq-title"
+                  className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                >
                   Frequently asked
+                  questions
                 </h2>
 
                 <p className="mt-4 text-sm text-zinc-700">
-                  Everything you need to know before getting
-                  started.
+                  Learn more about LumoClip,
+                  AI video clipping and
+                  short-form content creation.
                 </p>
               </div>
             </Reveal>
 
             <div className="mt-12 space-y-3">
-              {faqs.map((faq, index) => {
-                const open = openFaq === index;
+              {faqs.map(
+                (faq, index) => {
+                  const open =
+                    openFaq === index;
 
-                return (
-                  <Reveal
-                    key={faq.q}
-                    delay={index * 50}
-                  >
-                    <div
-                      className={`overflow-hidden rounded-2xl border transition-all duration-300 ${
-                        open
-                          ? "border-cyan-300/15 bg-cyan-400/[0.025] shadow-[0_15px_50px_rgba(34,211,238,0.035)]"
-                          : "border-white/[0.06] bg-white/[0.012]"
-                      }`}
+                  return (
+                    <Reveal
+                      key={faq.q}
+                      delay={index * 50}
                     >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setOpenFaq(
-                            open ? null : index
-                          )
-                        }
-                        className="flex w-full items-center justify-between gap-5 px-5 py-5 text-left"
-                      >
-                        <span className="text-sm font-semibold text-zinc-300">
-                          {faq.q}
-                        </span>
-
-                        <ChevronDown
-                          className={`h-4 w-4 shrink-0 transition ${
-                            open
-                              ? "rotate-180 text-cyan-300"
-                              : "text-zinc-700"
-                          }`}
-                        />
-                      </button>
-
-                      <div
-                        className={`grid transition-all duration-300 ${
+                      <article
+                        className={`overflow-hidden rounded-2xl border transition-all duration-300 ${
                           open
-                            ? "grid-rows-[1fr] opacity-100"
-                            : "grid-rows-[0fr] opacity-0"
+                            ? "border-cyan-300/15 bg-cyan-400/[0.025] shadow-[0_15px_50px_rgba(34,211,238,0.035)]"
+                            : "border-white/[0.06] bg-white/[0.012]"
                         }`}
                       >
-                        <div className="overflow-hidden">
-                          <p className="px-5 pb-5 text-sm leading-6 text-zinc-700">
-                            {faq.a}
-                          </p>
+                        <button
+                          type="button"
+                          aria-expanded={
+                            open
+                          }
+                          aria-controls={`faq-answer-${index}`}
+                          onClick={() =>
+                            setOpenFaq(
+                              open
+                                ? null
+                                : index
+                            )
+                          }
+                          className="flex w-full items-center justify-between gap-5 px-5 py-5 text-left"
+                        >
+                          <span className="text-sm font-semibold text-zinc-300">
+                            {faq.q}
+                          </span>
+
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={`h-4 w-4 shrink-0 transition ${
+                              open
+                                ? "rotate-180 text-cyan-300"
+                                : "text-zinc-700"
+                            }`}
+                          />
+                        </button>
+
+                        <div
+                          id={`faq-answer-${index}`}
+                          className={`grid transition-all duration-300 ${
+                            open
+                              ? "grid-rows-[1fr] opacity-100"
+                              : "grid-rows-[0fr] opacity-0"
+                          }`}
+                        >
+                          <div className="overflow-hidden">
+                            <p className="px-5 pb-5 text-sm leading-6 text-zinc-700">
+                              {faq.a}
+                            </p>
+                          </div>
                         </div>
-                      </div>
-                    </div>
-                  </Reveal>
-                );
-              })}
+                      </article>
+                    </Reveal>
+                  );
+                }
+              )}
             </div>
           </div>
         </section>
@@ -1792,6 +2199,7 @@ export function LandingPage({
         ================================================================== */}
 
         <section
+          aria-labelledby="final-cta-title"
           className="relative overflow-hidden py-24 sm:py-32"
           style={lazySectionStyle}
         >
@@ -1806,7 +2214,10 @@ export function LandingPage({
               </div>
             </div>
 
-            <h2 className="mt-7 text-4xl font-black tracking-[-0.065em] sm:text-6xl">
+            <h2
+              id="final-cta-title"
+              className="mt-7 text-4xl font-black tracking-[-0.065em] sm:text-6xl"
+            >
               Your content has
               <br />
 
@@ -1816,12 +2227,15 @@ export function LandingPage({
             </h2>
 
             <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-zinc-700">
-              Let LumoClip help you discover it, shape it and
-              turn it into content.
+              Let LumoClip help you discover it,
+              shape it and turn it into short-form
+              content.
             </p>
 
             <div className="mt-8">
-              <PremiumButton onClick={onGetStarted}>
+              <PremiumButton
+                onClick={onGetStarted}
+              >
                 Get started with LumoClip
               </PremiumButton>
             </div>
@@ -1851,9 +2265,15 @@ export function LandingPage({
           </div>
 
           <div className="flex items-center gap-5 text-[8px] font-bold uppercase tracking-[0.18em] text-zinc-800">
-            <span>AI content engine</span>
+            <span>
+              LumoClip AI video clipper
+            </span>
+
             <span>•</span>
-            <span>Built for creators</span>
+
+            <span>
+              Built for creators
+            </span>
           </div>
         </div>
       </footer>
@@ -1877,7 +2297,10 @@ export function LandingPage({
             : "pointer-events-none translate-y-3 opacity-0"
         }`}
       >
-        <ArrowRight className="h-4 w-4 -rotate-90" />
+        <ArrowRight
+          aria-hidden="true"
+          className="h-4 w-4 -rotate-90"
+        />
       </button>
 
       {/* ====================================================================
@@ -1938,18 +2361,6 @@ export function LandingPage({
           }
         }
 
-        @keyframes shimmer {
-          0% {
-            transform: translateX(-120%);
-          }
-
-          100% {
-            transform: translateX(120%);
-          }
-        }
-
-        /* Replaces the old JS-driven rotation state (setInterval every
-           35ms) for the AI orb rings — handled entirely by the compositor. */
         @keyframes spinCW {
           from {
             transform: rotate(0deg);
@@ -1970,8 +2381,6 @@ export function LandingPage({
           }
         }
 
-        /* Replaces the old JS-driven progress bar state (setInterval every
-           180ms) in ProcessingVisual. */
         @keyframes progressLoop {
           0% {
             width: 61%;

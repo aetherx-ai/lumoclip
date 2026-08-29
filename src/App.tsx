@@ -9,7 +9,6 @@ import {
 } from "react";
 
 import { Sparkles } from "lucide-react";
-
 import { supabase } from "./lib/supabase";
 
 import type {
@@ -28,6 +27,11 @@ import {
 } from "./services/api.js";
 
 import { Navbar } from "./components/Navbar.js";
+
+/* =========================================================
+   LAZY COMPONENTS
+========================================================= */
+
 const LandingPage = lazy(() =>
   import("./components/LandingPage.js").then((m) => ({
     default: m.LandingPage,
@@ -57,6 +61,7 @@ const SettingsView = lazy(() =>
     default: m.SettingsView,
   })),
 );
+
 const AuthModal = lazy(() =>
   import("./components/AuthModal.js").then((m) => ({
     default: m.AuthModal,
@@ -93,10 +98,85 @@ type ActiveTab =
   | "settings";
 
 /* =========================================================
+   BRAND / SEO CONFIG
+========================================================= */
+
+const SITE_URL = "https://lumo-clip.com";
+const SITE_NAME = "LumoClip";
+const SITE_TITLE =
+  "LumoClip – AI Video Clipper & Repurposing Tool";
+
+const SITE_DESCRIPTION =
+  "LumoClip is an AI-powered video clipping and repurposing tool that turns long videos, podcasts, and YouTube content into engaging short-form clips.";
+
+const SITE_KEYWORDS =
+  "LumoClip, LumoClip AI, AI video clipper, AI video clipping, video repurposing, YouTube clipper, podcast clips, short video maker, AI shorts generator";
+
+const LOGO_URL = `${SITE_URL}/lumoclip-icon.png`;
+/* =========================================================
+   SEO / STRUCTURED DATA
+========================================================= */
+
+const updateMetaTag = (
+  attribute: "name" | "property",
+  key: string,
+  content: string,
+) => {
+  let element = document.head.querySelector<HTMLMetaElement>(
+    `meta[${attribute}="${key}"]`,
+  );
+
+  if (!element) {
+    element = document.createElement("meta");
+    element.setAttribute(attribute, key);
+    document.head.appendChild(element);
+  }
+
+  element.setAttribute("content", content);
+};
+
+const updateLinkTag = (
+  rel: string,
+  href: string,
+) => {
+  let element = document.head.querySelector<HTMLLinkElement>(
+    `link[rel="${rel}"]`,
+  );
+
+  if (!element) {
+    element = document.createElement("link");
+    element.setAttribute("rel", rel);
+    document.head.appendChild(element);
+  }
+
+  element.setAttribute("href", href);
+};
+
+const updateStructuredData = (
+  id: string,
+  data: Record<string, unknown>,
+) => {
+  let element = document.getElementById(
+    id,
+  ) as HTMLScriptElement | null;
+
+  if (!element) {
+    element = document.createElement("script");
+    element.id = id;
+    element.type = "application/ld+json";
+    document.head.appendChild(element);
+  }
+
+  element.textContent = JSON.stringify(data);
+};
+
+/* =========================================================
    YOUTUBE URL NORMALIZER
 ========================================================= */
 
-const normalizeYouTubeUrl = (value: string): string => {
+const normalizeYouTubeUrl = (
+  value: string,
+): string => {
   const raw = value.trim();
 
   if (!raw) {
@@ -111,6 +191,10 @@ const normalizeYouTubeUrl = (value: string): string => {
       .replace(/^www\./, "")
       .replace(/^m\./, "");
 
+    /* -----------------------------------------
+       youtu.be/VIDEO_ID
+    ----------------------------------------- */
+
     if (host === "youtu.be") {
       const videoId = url.pathname
         .replace(/^\/+/, "")
@@ -121,27 +205,39 @@ const normalizeYouTubeUrl = (value: string): string => {
       }
     }
 
+    /* -----------------------------------------
+       youtube.com
+    ----------------------------------------- */
+
     if (
       host === "youtube.com" ||
       host === "youtube-nocookie.com"
     ) {
+      /* Normal watch URL */
+
       const videoId = url.searchParams.get("v");
 
       if (videoId) {
         return `https://www.youtube.com/watch?v=${videoId}`;
       }
 
-      const shortsMatch = url.pathname.match(
-        /^\/shorts\/([^/?#]+)/
-      );
+      /* Shorts */
+
+      const shortsMatch =
+        url.pathname.match(
+          /^\/shorts\/([^/?#]+)/,
+        );
 
       if (shortsMatch?.[1]) {
         return `https://www.youtube.com/watch?v=${shortsMatch[1]}`;
       }
 
-      const embedMatch = url.pathname.match(
-        /^\/embed\/([^/?#]+)/
-      );
+      /* Embed */
+
+      const embedMatch =
+        url.pathname.match(
+          /^\/embed\/([^/?#]+)/,
+        );
 
       if (embedMatch?.[1]) {
         return `https://www.youtube.com/watch?v=${embedMatch[1]}`;
@@ -153,6 +249,10 @@ const normalizeYouTubeUrl = (value: string): string => {
     return raw;
   }
 };
+
+/* =========================================================
+   MAIN APP
+========================================================= */
 
 export default function App() {
   /* =======================================================
@@ -207,13 +307,276 @@ export default function App() {
     useRef<Record<string, boolean>>({});
 
   /* =======================================================
+     SEO
+  ======================================================= */
+
+  useEffect(() => {
+    let title = SITE_TITLE;
+    let description = SITE_DESCRIPTION;
+
+    switch (activeTab) {
+      case "dashboard":
+        title = `Dashboard – ${SITE_NAME}`;
+        description =
+          "Manage your AI video clipping projects with LumoClip.";
+        break;
+
+      case "projects":
+        title = `Projects – ${SITE_NAME}`;
+        description =
+          "View and manage your video clips and AI video projects in LumoClip.";
+        break;
+
+      case "pricing":
+        title = `Pricing – ${SITE_NAME}`;
+        description =
+          "Explore LumoClip plans and AI video clipping features.";
+        break;
+
+      case "settings":
+        title = `Settings – ${SITE_NAME}`;
+        description =
+          "Manage your LumoClip account and preferences.";
+        break;
+
+      case "landing":
+      default:
+        title = SITE_TITLE;
+        description = SITE_DESCRIPTION;
+        break;
+    }
+
+    document.title = title;
+
+    /* Basic SEO */
+
+    updateMetaTag(
+      "name",
+      "description",
+      description,
+    );
+
+    updateMetaTag(
+      "name",
+      "keywords",
+      SITE_KEYWORDS,
+    );
+
+    updateMetaTag(
+      "name",
+      "author",
+      SITE_NAME,
+    );
+
+    updateMetaTag(
+      "name",
+      "application-name",
+      SITE_NAME,
+    );
+
+    updateMetaTag(
+      "name",
+      "robots",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1",
+    );
+
+    /* Canonical */
+
+    updateLinkTag(
+      "canonical",
+      SITE_URL,
+    );
+
+    /* Open Graph */
+
+    updateMetaTag(
+      "property",
+      "og:type",
+      "website",
+    );
+
+    updateMetaTag(
+      "property",
+      "og:site_name",
+      SITE_NAME,
+    );
+
+    updateMetaTag(
+      "property",
+      "og:title",
+      title,
+    );
+
+    updateMetaTag(
+      "property",
+      "og:description",
+      description,
+    );
+
+    updateMetaTag(
+      "property",
+      "og:url",
+      SITE_URL,
+    );
+
+    updateMetaTag(
+      "property",
+      "og:image",
+      LOGO_URL,
+    );
+
+    updateMetaTag(
+      "property",
+      "og:image:alt",
+      "LumoClip – AI Video Clipper",
+    );
+
+    updateMetaTag(
+      "property",
+      "og:locale",
+      "en_US",
+    );
+
+    /* Twitter / X */
+
+    updateMetaTag(
+      "name",
+      "twitter:card",
+      "summary_large_image",
+    );
+
+    updateMetaTag(
+      "name",
+      "twitter:title",
+      title,
+    );
+
+    updateMetaTag(
+      "name",
+      "twitter:description",
+      description,
+    );
+
+    updateMetaTag(
+      "name",
+      "twitter:image",
+      LOGO_URL,
+    );
+
+    updateMetaTag(
+      "name",
+      "twitter:image:alt",
+      "LumoClip – AI Video Clipper",
+    );
+
+    /* =====================================================
+       WEBSITE SCHEMA
+    ===================================================== */
+
+    updateStructuredData(
+      "lumoclip-website-schema",
+      {
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        "@id": `${SITE_URL}/#website`,
+        name: SITE_NAME,
+        alternateName: [
+          "LumoClip AI",
+          "LumoClip Video Clipper",
+        ],
+        url: SITE_URL,
+        description: SITE_DESCRIPTION,
+        publisher: {
+          "@id": `${SITE_URL}/#organization`,
+        },
+      },
+    );
+
+    /* =====================================================
+       ORGANIZATION SCHEMA
+    ===================================================== */
+
+    updateStructuredData(
+      "lumoclip-organization-schema",
+      {
+        "@context": "https://schema.org",
+        "@type": "Organization",
+        "@id": `${SITE_URL}/#organization`,
+        name: SITE_NAME,
+        alternateName: "LumoClip AI",
+        url: SITE_URL,
+        logo: {
+          "@type": "ImageObject",
+          url: LOGO_URL,
+        },
+        description: SITE_DESCRIPTION,
+      },
+    );
+
+    /* =====================================================
+       SOFTWARE APPLICATION SCHEMA
+    ===================================================== */
+
+    updateStructuredData(
+      "lumoclip-software-schema",
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        name: SITE_NAME,
+        alternateName:
+          "LumoClip AI Video Clipper",
+        applicationCategory:
+          "MultimediaApplication",
+        applicationSubCategory:
+          "Video Editing",
+        operatingSystem: "Web",
+        url: SITE_URL,
+        image: LOGO_URL,
+        description: SITE_DESCRIPTION,
+        brand: {
+          "@type": "Brand",
+          name: SITE_NAME,
+          logo: LOGO_URL,
+        },
+        offers: {
+          "@type": "Offer",
+          url: `${SITE_URL}/`,
+          price: "0",
+          priceCurrency: "USD",
+          availability:
+            "https://schema.org/OnlineOnly",
+        },
+      },
+    );
+
+    /* =====================================================
+       BRAND SCHEMA
+    ===================================================== */
+
+    updateStructuredData(
+      "lumoclip-brand-schema",
+      {
+        "@context": "https://schema.org",
+        "@type": "Brand",
+        "@id": `${SITE_URL}/#brand`,
+        name: SITE_NAME,
+        url: SITE_URL,
+        logo: LOGO_URL,
+        description:
+          "LumoClip is an AI-powered video clipping and repurposing platform.",
+      },
+    );
+  }, [activeTab]);
+
+  /* =======================================================
      LOAD AUTHENTICATED USER
   ======================================================= */
 
   const loadAuthenticatedUser =
     async (): Promise<boolean> => {
       try {
-        const authRes = await fetchMe();
+        const authRes =
+          await fetchMe();
 
         if (!authRes?.user) {
           setUser(null);
@@ -229,21 +592,22 @@ export default function App() {
         setUser(authRes.user);
 
         setSubscription(
-          authRes.subscription ?? null
+          authRes.subscription ?? null,
         );
 
         try {
-          const list = await fetchProjects();
+          const list =
+            await fetchProjects();
 
           setProjects(
             Array.isArray(list)
               ? list
-              : []
+              : [],
           );
         } catch (error) {
           console.error(
             "Failed to load projects:",
-            error
+            error,
           );
 
           setProjects([]);
@@ -253,7 +617,7 @@ export default function App() {
       } catch (error) {
         console.error(
           "Failed to load authenticated user:",
-          error
+          error,
         );
 
         setUser(null);
@@ -273,7 +637,8 @@ export default function App() {
 
   const stopProjectPolling =
     (projectId: string) => {
-      pollingActive.current[projectId] = false;
+      pollingActive.current[projectId] =
+        false;
 
       const timer =
         pollingTimers.current[projectId];
@@ -292,7 +657,7 @@ export default function App() {
 
   const stopAllPolling = () => {
     Object.keys(
-      pollingActive.current
+      pollingActive.current,
     ).forEach((projectId) => {
       stopProjectPolling(projectId);
     });
@@ -310,10 +675,10 @@ export default function App() {
         return;
       }
 
-      pollingActive.current[projectId] = true;
+      pollingActive.current[projectId] =
+        true;
 
       const MAX_ATTEMPTS = 600;
-
       let attempts = 0;
 
       const poll = async () => {
@@ -325,7 +690,9 @@ export default function App() {
 
         try {
           const details =
-            await fetchProjectDetails(projectId);
+            await fetchProjectDetails(
+              projectId,
+            );
 
           if (
             !pollingActive.current[projectId]
@@ -335,7 +702,7 @@ export default function App() {
 
           if (!details?.project) {
             throw new Error(
-              "Project details unavailable"
+              "Project details unavailable",
             );
           }
 
@@ -348,11 +715,11 @@ export default function App() {
               : [];
 
           setSelectedProject(
-            updatedProject
+            updatedProject,
           );
 
           setSelectedClips(
-            updatedClips
+            updatedClips,
           );
 
           setProjects(
@@ -364,70 +731,86 @@ export default function App() {
                         ...project,
                         ...updatedProject,
                       }
-                    : project
-              )
+                    : project,
+              ),
           );
 
+          /* -----------------------------------------
+             COMPLETED
+          ----------------------------------------- */
+
           if (
-            String(updatedProject.status) ===
-            "completed"
+            String(
+              updatedProject.status,
+            ) === "completed"
           ) {
             try {
               const latestProjects =
                 await fetchProjects();
 
               if (
-                Array.isArray(latestProjects)
+                Array.isArray(
+                  latestProjects,
+                )
               ) {
                 setProjects(
-                  latestProjects
+                  latestProjects,
                 );
               }
             } catch (error) {
               console.warn(
                 "Final project list refresh failed:",
-                error
+                error,
               );
             }
 
             try {
               const finalDetails =
                 await fetchProjectDetails(
-                  projectId
+                  projectId,
                 );
 
               setSelectedProject(
-                finalDetails.project
+                finalDetails.project,
               );
 
               setSelectedClips(
                 Array.isArray(
-                  finalDetails.clips
+                  finalDetails.clips,
                 )
                   ? finalDetails.clips
-                  : []
+                  : [],
               );
             } catch (error) {
               console.warn(
                 "Final detail refresh failed:",
-                error
+                error,
               );
             }
 
             setActiveTab("projects");
 
-            stopProjectPolling(projectId);
+            stopProjectPolling(
+              projectId,
+            );
 
             return;
           }
 
+          /* -----------------------------------------
+             FAILED
+          ----------------------------------------- */
+
           if (
-            String(updatedProject.status) ===
-            "failed"
+            String(
+              updatedProject.status,
+            ) === "failed"
           ) {
             setActiveTab("projects");
 
-            stopProjectPolling(projectId);
+            stopProjectPolling(
+              projectId,
+            );
 
             return;
           }
@@ -437,19 +820,23 @@ export default function App() {
           if (
             attempts >= MAX_ATTEMPTS
           ) {
-            stopProjectPolling(projectId);
+            stopProjectPolling(
+              projectId,
+            );
+
             return;
           }
 
-          pollingTimers.current[projectId] =
-            window.setTimeout(
-              poll,
-              1500
-            );
+          pollingTimers.current[
+            projectId
+          ] = window.setTimeout(
+            poll,
+            1500,
+          );
         } catch (error) {
           console.error(
             "Project polling failed:",
-            error
+            error,
           );
 
           attempts++;
@@ -457,15 +844,19 @@ export default function App() {
           if (
             attempts >= MAX_ATTEMPTS
           ) {
-            stopProjectPolling(projectId);
+            stopProjectPolling(
+              projectId,
+            );
+
             return;
           }
 
-          pollingTimers.current[projectId] =
-            window.setTimeout(
-              poll,
-              2000
-            );
+          pollingTimers.current[
+            projectId
+          ] = window.setTimeout(
+            poll,
+            2000,
+          );
         }
       };
 
@@ -514,21 +905,21 @@ export default function App() {
                   .filter(
                     (project) =>
                       String(
-                        project.status
-                      ) === "processing"
+                        project.status,
+                      ) === "processing",
                   )
                   .forEach(
                     (project) => {
                       pollProjectProcessing(
-                        project.id
+                        project.id,
                       );
-                    }
+                    },
                   );
               }
             } catch (error) {
               console.warn(
                 "Failed to check processing projects:",
-                error
+                error,
               );
             }
           } else {
@@ -542,7 +933,7 @@ export default function App() {
         } catch (error) {
           console.error(
             "Initial app load failed:",
-            error
+            error,
           );
 
           if (mounted) {
@@ -555,7 +946,8 @@ export default function App() {
           }
         } finally {
           if (mounted) {
-            appInitialized.current = true;
+            appInitialized.current =
+              true;
           }
         }
       };
@@ -571,11 +963,15 @@ export default function App() {
       supabase.auth.onAuthStateChange(
         async (
           event,
-          session
+          session,
         ) => {
           if (!mounted) {
             return;
           }
+
+          /* -----------------------------------------
+             SIGNED IN
+          ----------------------------------------- */
 
           if (
             event === "SIGNED_IN" &&
@@ -602,11 +998,11 @@ export default function App() {
 
             if (pendingUrl) {
               setNewProjectInitialUrl(
-                pendingUrl
+                pendingUrl,
               );
 
               setIsNewProjectModalOpen(
-                true
+                true,
               );
 
               pendingProjectUrlRef.current =
@@ -622,12 +1018,20 @@ export default function App() {
             return;
           }
 
+          /* -----------------------------------------
+             INITIAL SESSION
+          ----------------------------------------- */
+
           if (
             event ===
             "INITIAL_SESSION"
           ) {
             return;
           }
+
+          /* -----------------------------------------
+             TOKEN REFRESH
+          ----------------------------------------- */
 
           if (
             event ===
@@ -636,6 +1040,10 @@ export default function App() {
           ) {
             return;
           }
+
+          /* -----------------------------------------
+             SIGNED OUT
+          ----------------------------------------- */
 
           if (
             event === "SIGNED_OUT"
@@ -650,7 +1058,7 @@ export default function App() {
             setActiveTab("landing");
 
             setIsNewProjectModalOpen(
-              false
+              false,
             );
 
             setIsAuthModalOpen(false);
@@ -660,7 +1068,7 @@ export default function App() {
             pendingProjectUrlRef.current =
               "";
           }
-        }
+        },
       );
 
     return () => {
@@ -678,31 +1086,31 @@ export default function App() {
 
   const handleSelectProject =
     async (
-      project: Project
+      project: Project,
     ) => {
       try {
         const details =
           await fetchProjectDetails(
-            project.id
+            project.id,
           );
 
         setSelectedProject(
-          details.project
+          details.project,
         );
 
         setSelectedClips(
           Array.isArray(
-            details.clips
+            details.clips,
           )
             ? details.clips
-            : []
+            : [],
         );
 
         setActiveTab("projects");
 
         const status =
           String(
-            details.project.status
+            details.project.status,
           );
 
         if (
@@ -710,13 +1118,13 @@ export default function App() {
           status !== "failed"
         ) {
           pollProjectProcessing(
-            project.id
+            project.id,
           );
         }
       } catch (error) {
         console.error(
           "Failed to open project:",
-          error
+          error,
         );
       }
     };
@@ -736,8 +1144,8 @@ export default function App() {
           (previous) =>
             previous.filter(
               (project) =>
-                project.id !== id
-            )
+                project.id !== id,
+            ),
         );
 
         if (
@@ -750,7 +1158,7 @@ export default function App() {
       } catch (error) {
         console.error(
           "Delete project failed:",
-          error
+          error,
         );
       }
     };
@@ -770,7 +1178,7 @@ export default function App() {
         if (error) {
           console.error(
             "Logout failed:",
-            error
+            error,
           );
 
           return;
@@ -784,7 +1192,7 @@ export default function App() {
         setActiveTab("landing");
 
         setIsNewProjectModalOpen(
-          false
+          false,
         );
 
         setIsAuthModalOpen(false);
@@ -796,7 +1204,7 @@ export default function App() {
       } catch (error) {
         console.error(
           "Logout error:",
-          error
+          error,
         );
       }
     };
@@ -812,7 +1220,7 @@ export default function App() {
 
       if (!cleanUrl) {
         throw new Error(
-          "Please enter a YouTube URL."
+          "Please enter a YouTube URL.",
         );
       }
 
@@ -834,18 +1242,18 @@ export default function App() {
 
             return (
               normalizeYouTubeUrl(
-                projectUrl
+                projectUrl,
               ) === cleanUrl &&
               String(
-                project.status
+                project.status,
               ) === "processing"
             );
-          }
+          },
         );
 
       if (duplicateProject) {
         setSelectedProject(
-          duplicateProject
+          duplicateProject,
         );
 
         setSelectedClips([]);
@@ -853,7 +1261,7 @@ export default function App() {
         setActiveTab("projects");
 
         pollProjectProcessing(
-          duplicateProject.id
+          duplicateProject.id,
         );
 
         return;
@@ -869,7 +1277,7 @@ export default function App() {
 
         if (!data?.project) {
           throw new Error(
-            "Project was not created."
+            "Project was not created.",
           );
         }
 
@@ -882,9 +1290,9 @@ export default function App() {
             ...previous.filter(
               (item) =>
                 item.id !==
-                project.id
+                project.id,
             ),
-          ]
+          ],
         );
 
         if (data.user) {
@@ -892,7 +1300,7 @@ export default function App() {
         }
 
         setSelectedProject(
-          project
+          project,
         );
 
         setSelectedClips([]);
@@ -900,12 +1308,12 @@ export default function App() {
         setActiveTab("projects");
 
         pollProjectProcessing(
-          project.id
+          project.id,
         );
       } catch (error) {
         console.error(
           "Direct YouTube processing failed:",
-          error
+          error,
         );
 
         throw error;
@@ -928,7 +1336,7 @@ export default function App() {
           "";
 
         setIsNewProjectModalOpen(
-          true
+          true,
         );
 
         return;
@@ -952,18 +1360,18 @@ export default function App() {
 
             return (
               normalizeYouTubeUrl(
-                projectUrl
+                projectUrl,
               ) === cleanUrl &&
               String(
-                project.status
+                project.status,
               ) === "processing"
             );
-          }
+          },
         );
 
       if (duplicateProject) {
         setSelectedProject(
-          duplicateProject
+          duplicateProject,
         );
 
         setSelectedClips([]);
@@ -971,14 +1379,14 @@ export default function App() {
         setActiveTab("projects");
 
         pollProjectProcessing(
-          duplicateProject.id
+          duplicateProject.id,
         );
 
         return;
       }
 
       setNewProjectInitialUrl(
-        cleanUrl
+        cleanUrl,
       );
 
       if (!user) {
@@ -993,7 +1401,9 @@ export default function App() {
       pendingProjectUrlRef.current =
         "";
 
-      setIsNewProjectModalOpen(true);
+      setIsNewProjectModalOpen(
+        true,
+      );
     };
 
   /* =======================================================
@@ -1002,7 +1412,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#050507] text-white">
-
       {/* =====================================================
           NAVBAR
       ===================================================== */}
@@ -1017,7 +1426,7 @@ export default function App() {
           }
 
           setActiveTab(
-            tab as ActiveTab
+            tab as ActiveTab,
           );
         }}
         onOpenNewProject={() => {
@@ -1034,111 +1443,150 @@ export default function App() {
       ===================================================== */}
 
       <main className="flex-1 animate-[appEnter_0.6s_ease-out]">
-
-        {/* LANDING */}
+        {/* =================================================
+            LANDING
+        ================================================= */}
 
         {activeTab === "landing" && (
-          <LandingPage
-            onGetStarted={() => {
-              openNewProject();
-            }}
-            onOpenPricing={() => {
-              setActiveTab("pricing");
-            }}
-            onOpenNewProjectWithUrl={(
-              url: string
-            ) => {
-              openNewProject(url);
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="min-h-[60vh]" />
+            }
+          >
+            <LandingPage
+              onGetStarted={() => {
+                openNewProject();
+              }}
+              onOpenPricing={() => {
+                setActiveTab("pricing");
+              }}
+              onOpenNewProjectWithUrl={(
+                url: string,
+              ) => {
+                openNewProject(url);
+              }}
+            />
+          </Suspense>
         )}
 
-        {/* DASHBOARD */}
+        {/* =================================================
+            DASHBOARD
+        ================================================= */}
 
         {activeTab === "dashboard" && (
-          <DashboardView
-            user={user}
-            projects={projects}
-            onSelectProject={
-              handleSelectProject
+          <Suspense
+            fallback={
+              <div className="min-h-[60vh]" />
             }
-            onOpenNewProject={() => {
-              openNewProject();
-            }}
-            onProcessYouTube={
-              handleProcessYouTube
-            }
-            onDeleteProject={
-              handleDeleteProject
-            }
-            onOpenPricing={() => {
-              setActiveTab("pricing");
-            }}
-          />
-        )}
-
-        {/* PROJECT DETAILS */}
-
-        {activeTab === "projects" &&
-          selectedProject && (
-            <ProjectDetailView
-              project={
-                selectedProject
+          >
+            <DashboardView
+              user={user}
+              projects={projects}
+              onSelectProject={
+                handleSelectProject
               }
-              clips={selectedClips}
-              onBack={() => {
-                setSelectedProject(
-                  null
-                );
-
-                setSelectedClips([]);
-
-                setActiveTab(
-                  "dashboard"
-                );
+              onOpenNewProject={() => {
+                openNewProject();
               }}
+              onProcessYouTube={
+                handleProcessYouTube
+              }
               onDeleteProject={
                 handleDeleteProject
               }
+              onOpenPricing={() => {
+                setActiveTab("pricing");
+              }}
             />
-          )}
-
-        {/* PRICING */}
-
-        {activeTab === "pricing" && (
-          <PricingView
-            user={user}
-            subscription={
-              subscription
-            }
-            onUpgradeSuccess={(
-              updatedUser,
-              updatedSubscription
-            ) => {
-              setUser(
-                updatedUser
-              );
-
-              setSubscription(
-                updatedSubscription
-              );
-            }}
-          />
+          </Suspense>
         )}
 
-        {/* SETTINGS */}
+        {/* =================================================
+            PROJECT DETAILS
+        ================================================= */}
+
+        {activeTab === "projects" &&
+          selectedProject && (
+            <Suspense
+              fallback={
+                <div className="min-h-[60vh]" />
+              }
+            >
+              <ProjectDetailView
+                project={
+                  selectedProject
+                }
+                clips={selectedClips}
+                onBack={() => {
+                  setSelectedProject(
+                    null,
+                  );
+
+                  setSelectedClips([]);
+
+                  setActiveTab(
+                    "dashboard",
+                  );
+                }}
+                onDeleteProject={
+                  handleDeleteProject
+                }
+              />
+            </Suspense>
+          )}
+
+        {/* =================================================
+            PRICING
+        ================================================= */}
+
+        {activeTab === "pricing" && (
+          <Suspense
+            fallback={
+              <div className="min-h-[60vh]" />
+            }
+          >
+            <PricingView
+              user={user}
+              subscription={
+                subscription
+              }
+              onUpgradeSuccess={(
+                updatedUser,
+                updatedSubscription,
+              ) => {
+                setUser(
+                  updatedUser,
+                );
+
+                setSubscription(
+                  updatedSubscription,
+                );
+              }}
+            />
+          </Suspense>
+        )}
+
+        {/* =================================================
+            SETTINGS
+        ================================================= */}
 
         {activeTab === "settings" && (
-          <SettingsView
-            user={user}
-            onUserUpdated={(
-              updatedUser
-            ) => {
-              setUser(
-                updatedUser
-              );
-            }}
-          />
+          <Suspense
+            fallback={
+              <div className="min-h-[60vh]" />
+            }
+          >
+            <SettingsView
+              user={user}
+              onUserUpdated={(
+                updatedUser,
+              ) => {
+                setUser(
+                  updatedUser,
+                );
+              }}
+            />
+          </Suspense>
         )}
       </main>
 
@@ -1147,32 +1595,27 @@ export default function App() {
       ===================================================== */}
 
       <footer className="border-t border-white/[0.06] bg-[#050507] py-8">
-
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 px-4 text-xs text-zinc-500 sm:flex-row sm:px-6 lg:px-8">
-
           <div className="flex items-center gap-2">
-
             <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-violet-600/20">
               <Sparkles className="h-3.5 w-3.5 text-violet-400" />
             </div>
 
             <span>
               <span className="font-bold text-zinc-300">
-                LumoClip AI
+                LumoClip
               </span>{" "}
-              • Turn Long Videos
-              into Viral 9:16
-              Short Clips
+              • AI Video Clipper &
+              Repurposing Tool
             </span>
           </div>
 
           <div className="flex gap-6">
-
             <button
               type="button"
               onClick={() =>
                 setActiveTab(
-                  "landing"
+                  "landing",
                 )
               }
               className="transition hover:text-white"
@@ -1184,7 +1627,7 @@ export default function App() {
               type="button"
               onClick={() =>
                 setActiveTab(
-                  "dashboard"
+                  "dashboard",
                 )
               }
               className="transition hover:text-white"
@@ -1196,7 +1639,7 @@ export default function App() {
               type="button"
               onClick={() =>
                 setActiveTab(
-                  "pricing"
+                  "pricing",
                 )
               }
               className="transition hover:text-white"
@@ -1208,7 +1651,7 @@ export default function App() {
               type="button"
               onClick={() =>
                 setActiveTab(
-                  "settings"
+                  "settings",
                 )
               }
               className="transition hover:text-white"
@@ -1223,89 +1666,102 @@ export default function App() {
           AUTH MODAL
       ===================================================== */}
 
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => {
-          setIsAuthModalOpen(false);
-        }}
-      />
+      <Suspense fallback={null}>
+        <AuthModal
+          isOpen={
+            isAuthModalOpen
+          }
+          onClose={() => {
+            setIsAuthModalOpen(
+              false,
+            );
+          }}
+        />
+      </Suspense>
 
       {/* =====================================================
           NEW PROJECT MODAL
       ===================================================== */}
 
-      <NewProjectModalWithInitialUrl
-        isOpen={
-          isNewProjectModalOpen
-        }
-        onClose={() => {
-          setIsNewProjectModalOpen(
-            false
-          );
+      <Suspense fallback={null}>
+        <NewProjectModalWithInitialUrl
+          isOpen={
+            isNewProjectModalOpen
+          }
+          onClose={() => {
+            setIsNewProjectModalOpen(
+              false,
+            );
 
-          setNewProjectInitialUrl("");
+            setNewProjectInitialUrl(
+              "",
+            );
 
-          pendingProjectUrlRef.current =
-            "";
-        }}
-        credits={
-          user?.credits ?? 0
-        }
-        initialUrl={
-          newProjectInitialUrl
-        }
-        onSuccess={(data: any) => {
+            pendingProjectUrlRef.current =
+              "";
+          }}
+          credits={
+            user?.credits ?? 0
+          }
+          initialUrl={
+            newProjectInitialUrl
+          }
+          onSuccess={(data: any) => {
+            if (data?.project) {
+              const project =
+                data.project;
 
-          if (data?.project) {
-            const project =
-              data.project;
+              setProjects(
+                (previous) => [
+                  project,
+                  ...previous.filter(
+                    (p) =>
+                      p.id !==
+                      project.id,
+                  ),
+                ],
+              );
 
-            setProjects(
-              (previous) => [
+              setSelectedProject(
                 project,
-                ...previous.filter(
-                  (p) =>
-                    p.id !==
-                    project.id
-                ),
-              ]
+              );
+
+              setSelectedClips(
+                Array.isArray(
+                  data.clips,
+                )
+                  ? data.clips
+                  : [],
+              );
+
+              setActiveTab(
+                "projects",
+              );
+
+              pollProjectProcessing(
+                project.id,
+              );
+            }
+
+            if (data?.user) {
+              setUser(
+                data.user,
+              );
+            }
+
+            setNewProjectInitialUrl(
+              "",
             );
 
-            setSelectedProject(
-              project
+            pendingProjectUrlRef.current =
+              "";
+
+            setIsNewProjectModalOpen(
+              false,
             );
-
-            setSelectedClips(
-              Array.isArray(
-                data.clips
-              )
-                ? data.clips
-                : []
-            );
-
-            setActiveTab(
-              "projects"
-            );
-
-            pollProjectProcessing(
-              project.id
-            );
-          }
-
-          if (data?.user) {
-            setUser(data.user);
-          }
-
-          setNewProjectInitialUrl("");
-
-          pendingProjectUrlRef.current =
-            "";
-
-          setIsNewProjectModalOpen(
-            false
-          );
-        }}
-      />
+          }}
+        />
+      </Suspense>
 
       {/* =====================================================
           APP ANIMATION
