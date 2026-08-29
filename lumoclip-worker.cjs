@@ -492,55 +492,38 @@ async function downloadVideo(
     `/b[height<=${MAX_HEIGHT}][ext=mp4]` +
     `/b`;
 
-  const options = {
-    output: outputPath,
+const options = {
+  output: outputPath,
+  format,
 
-    format,
+  noPlaylist: true,
+  forceOverwrites: true,
 
-    noPlaylist: true,
+  mergeOutputFormat: "mp4",
 
-    forceOverwrites: true,
+  retries: 5,
+  fragmentRetries: 10,
+  extractorRetries: 5,
+  socketTimeout: 60,
+  forceIpv4: true,
+  concurrentFragments: 2,
+  restrictFilenames: true,
+  noWarnings: false,
+  newline: true,
+  progress: true,
 
-    noPart: false,
+  downloaderArgs: {
+    http: [
+      "timeout=60",
+    ],
+  },
 
-    noContinue: false,
-
-    mergeOutputFormat: "mp4",
-
-    retries: 5,
-
-    fragmentRetries: 10,
-
-    extractorRetries: 5,
-
-    socketTimeout: 60,
-
-    forceIpv4: true,
-
-    concurrentFragments: 2,
-
-    restrictFilenames: true,
-
-    noWarnings: false,
-
-    newline: true,
-
-    progress: true,
-
-    // Give yt-dlp more time for slow connections.
-    downloaderArgs: {
-      http: [
-        "timeout=60",
-      ],
-    },
-
-    ...(process.env.FFMPEG_PATH
-      ? {
-          ffmpegLocation:
-            process.env.FFMPEG_PATH,
-        }
-      : {}),
-  };
+  ...(process.env.FFMPEG_PATH
+    ? {
+        ffmpegLocation: process.env.FFMPEG_PATH,
+      }
+    : {}),
+};
 
   console.log(
     `\n[worker] Downloading: ${sourceUrl}`
