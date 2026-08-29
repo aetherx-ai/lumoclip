@@ -58,6 +58,10 @@
          THEME
     ====================================================== -->
 
+    <meta
+      name="theme-color"
+      content="#050816"
+    />
 
     <meta
       name="color-scheme"
@@ -146,7 +150,7 @@
 
     <meta
       property="og:image:alt"
-      content="LumoClip AI Video Clipper"
+      content="LumoClip - AI Video Clipper"
     />
 
     <meta
@@ -180,50 +184,58 @@
 
     <meta
       name="twitter:image:alt"
-      content="LumoClip AI Video Clipper"
+      content="LumoClip - AI Video Clipper"
     />
 
     <!-- =====================================================
-         ORGANIZATION SCHEMA
+         ORGANIZATION + WEBSITE GRAPH
     ====================================================== -->
 
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "Organization",
-        "@id": "https://lumo-clip.com/#organization",
-        "name": "LumoClip",
-        "alternateName": "LumoClip AI",
-        "url": "https://lumo-clip.com/",
-        "logo": {
-          "@type": "ImageObject",
-          "url": "https://lumo-clip.com/lumoclip-icon.png"
-        },
-        "description": "LumoClip is an AI-powered video clipping and repurposing platform."
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://lumo-clip.com/#organization",
+            "name": "LumoClip",
+            "alternateName": "LumoClip AI",
+            "url": "https://lumo-clip.com/",
+            "logo": {
+              "@type": "ImageObject",
+              "@id": "https://lumo-clip.com/#logo",
+              "url": "https://lumo-clip.com/lumoclip-icon.png",
+              "width": 512,
+              "height": 512
+            },
+            "description": "LumoClip is an AI-powered video clipping and repurposing platform.",
+            "sameAs": [
+              "https://twitter.com/lumoclip",
+              "https://www.linkedin.com/company/lumoclip",
+              "https://www.producthunt.com/products/lumoclip"
+            ]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://lumo-clip.com/#website",
+            "url": "https://lumo-clip.com/",
+            "name": "LumoClip",
+            "alternateName": [
+              "LumoClip AI",
+              "Lumo Clip"
+            ],
+            "description": "LumoClip is an AI-powered video clipping and repurposing platform.",
+            "publisher": {
+              "@id": "https://lumo-clip.com/#organization"
+            },
+            "inLanguage": "en"
+          }
+        ]
       }
     </script>
 
     <!-- =====================================================
-         WEBSITE SCHEMA
-    ====================================================== -->
-
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        "@id": "https://lumo-clip.com/#website",
-        "name": "LumoClip",
-        "alternateName": "LumoClip AI",
-        "url": "https://lumo-clip.com/",
-        "description": "AI-powered video clipping and repurposing platform.",
-        "publisher": {
-          "@id": "https://lumo-clip.com/#organization"
-        }
-      }
-    </script>
-
-    <!-- =====================================================
-         SOFTWARE APPLICATION SCHEMA
+         SOFTWARE APPLICATION
     ====================================================== -->
 
     <script type="application/ld+json">
@@ -234,7 +246,7 @@
         "name": "LumoClip",
         "alternateName": "LumoClip AI Video Clipper",
         "url": "https://lumo-clip.com/",
-        "description": "LumoClip is an AI video clipper and video repurposing tool that turns long-form videos into engaging short-form content.",
+        "description": "LumoClip is an AI video clipping and repurposing tool that turns long-form videos into engaging short-form content.",
         "applicationCategory": "MultimediaApplication",
         "applicationSubCategory": "Video Editing Software",
         "operatingSystem": "Web",
@@ -242,6 +254,9 @@
         "brand": {
           "@type": "Brand",
           "name": "LumoClip"
+        },
+        "publisher": {
+          "@id": "https://lumo-clip.com/#organization"
         },
         "featureList": [
           "AI video clipping",
