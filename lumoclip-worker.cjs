@@ -1,7 +1,6 @@
 /*
   LumoClip PC Worker
-
-  Run on your Windows PC.
+  Windows PC Worker
 
   Requirements:
     npm install youtube-dl-exec
@@ -50,7 +49,7 @@ const DOWNLOAD_DIR = path.resolve(
     "./lumoclip-worker-downloads"
 );
 
-// Network configuration
+// Network
 const API_TIMEOUT_MS = 30000;
 const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -65,10 +64,7 @@ const RETRY_MAX_MS = 15000;
 // ============================================================
 
 if (!WORKER_TOKEN) {
-  console.error(
-    "ERROR: LUMO_WORKER_TOKEN is missing."
-  );
-
+  console.error("[worker] ERROR: LUMO_WORKER_TOKEN is missing.");
   process.exit(1);
 }
 
@@ -81,9 +77,7 @@ fs.mkdirSync(DOWNLOAD_DIR, {
 // ============================================================
 
 function sleep(ms) {
-  return new Promise((resolve) =>
-    setTimeout(resolve, ms)
-  );
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function retryDelay(attempt) {
@@ -104,7 +98,7 @@ function getErrorMessage(error) {
 function isRetryableError(error) {
   const message = getErrorMessage(error).toLowerCase();
 
-  const retryablePatterns = [
+  const patterns = [
     "fetch failed",
     "network",
     "socket",
@@ -121,7 +115,7 @@ function isRetryableError(error) {
     "429",
   ];
 
-  return retryablePatterns.some((pattern) =>
+  return patterns.some((pattern) =>
     message.includes(pattern)
   );
 }
@@ -163,19 +157,15 @@ async function apiJson(
 
       const response = await fetch(url, {
         method,
-
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
-          "x-lumo-worker-token":
-            WORKER_TOKEN,
+          "x-lumo-worker-token": WORKER_TOKEN,
         },
-
         body:
           body === undefined
             ? undefined
             : JSON.stringify(body),
-
         signal: controller.signal,
       });
 
@@ -184,14 +174,11 @@ async function apiJson(
       let data = null;
 
       try {
-        data = text
-          ? JSON.parse(text)
-          : null;
+        data = text ? JSON.parse(text) : null;
       } catch {
         data = {
           error:
-            text ||
-            `HTTP ${response.status}`,
+            text || `HTTP ${response.status}`,
         };
       }
 
@@ -240,194 +227,150 @@ async function apiJson(
 }
 
 // ============================================================
-// UPLOAD FILE
+// UPLOAD
 // ============================================================
 
-function uploadFileOnce(
-  route,
-  filePath
-) {
-  return new Promise(
-    (resolve, reject) => {
-      const url = new URL(
-        route,
-        API_URL
-      );
+function uploadFileOnce(route, filePath) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(route, API_URL);
 
-      const stat =
-        fs.statSync(filePath);
+    const stat = fs.statSync(filePath);
 
-      const boundary =
-        "LUMOCLIP_BOUNDARY";
+    const boundary = "LUMOCLIP_BOUNDARY";
 
-      const fileName =
-        path
-          .basename(filePath)
-          .replace(/"/g, "");
+    const fileName = path
+      .basename(filePath)
+      .replace(/"/g, "");
 
-      const preamble =
-        Buffer.from(
-          `--${boundary}\r\n` +
-          `Content-Disposition: form-data; name="video"; filename="${fileName}"\r\n` +
-          `Content-Type: video/mp4\r\n\r\n`,
-          "utf8"
-        );
+    const preamble = Buffer.from(
+      `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="video"; filename="${fileName}"\r\n` +
+        `Content-Type: video/mp4\r\n\r\n`,
+      "utf8"
+    );
 
-      const ending =
-        Buffer.from(
-          `\r\n--${boundary}--\r\n`,
-          "utf8"
-        );
+    const ending = Buffer.from(
+      `\r\n--${boundary}--\r\n`,
+      "utf8"
+    );
 
-      const headers = {
-        "Content-Type":
-          `multipart/form-data; boundary=${boundary}`,
+    const headers = {
+      "Content-Type":
+        `multipart/form-data; boundary=${boundary}`,
 
-        "Content-Length":
-          preamble.length +
-          stat.size +
-          ending.length,
+      "Content-Length":
+        preamble.length +
+        stat.size +
+        ending.length,
 
-        "x-lumo-worker-token":
-          WORKER_TOKEN,
+      "x-lumo-worker-token":
+        WORKER_TOKEN,
 
-        Accept:
-          "application/json",
-      };
+      Accept: "application/json",
+    };
 
-      const client =
-        url.protocol === "https:"
-          ? https
-          : http;
+    const client =
+      url.protocol === "https:"
+        ? https
+        : http;
 
-      let finished = false;
+    let finished = false;
 
-      const fail = (error) => {
-        if (finished) return;
+    const fail = (error) => {
+      if (finished) return;
 
-        finished = true;
+      finished = true;
+      reject(error);
+    };
 
-        reject(error);
-      };
+    const succeed = (data) => {
+      if (finished) return;
 
-      const succeed = (data) => {
-        if (finished) return;
+      finished = true;
+      resolve(data);
+    };
 
-        finished = true;
+    const req = client.request(
+      url,
+      {
+        method: "POST",
+        headers,
+        timeout: UPLOAD_TIMEOUT_MS,
+      },
+      (res) => {
+        let text = "";
 
-        resolve(data);
-      };
+        res.setEncoding("utf8");
 
-      const req =
-        client.request(
-          url,
-          {
-            method: "POST",
-            headers,
+        res.on("data", (chunk) => {
+          text += chunk;
+        });
 
-            timeout:
-              UPLOAD_TIMEOUT_MS,
-          },
+        res.on("end", () => {
+          let data;
 
-          (res) => {
-            let text = "";
+          try {
+            data = text
+              ? JSON.parse(text)
+              : null;
+          } catch {
+            data = {
+              error:
+                text ||
+                `HTTP ${res.statusCode}`,
+            };
+          }
 
-            res.setEncoding("utf8");
-
-            res.on(
-              "data",
-              (chunk) => {
-                text += chunk;
-              }
+          if (
+            res.statusCode >= 200 &&
+            res.statusCode < 300
+          ) {
+            succeed(data);
+          } else {
+            const error = new Error(
+              data?.error ||
+                `Upload failed: HTTP ${res.statusCode}`
             );
 
-            res.on(
-              "end",
-              () => {
-                let data;
+            error.status =
+              res.statusCode;
 
-                try {
-                  data = text
-                    ? JSON.parse(text)
-                    : null;
-                } catch {
-                  data = {
-                    error:
-                      text ||
-                      `HTTP ${res.statusCode}`,
-                  };
-                }
-
-                if (
-                  res.statusCode >= 200 &&
-                  res.statusCode < 300
-                ) {
-                  succeed(data);
-                } else {
-                  const error =
-                    new Error(
-                      data?.error ||
-                        `Upload failed: HTTP ${res.statusCode}`
-                    );
-
-                  error.status =
-                    res.statusCode;
-
-                  fail(error);
-                }
-              }
-            );
+            fail(error);
           }
-        );
+        });
+      }
+    );
 
-      req.on(
-        "timeout",
-        () => {
-          req.destroy(
-            new Error(
-              "Upload request timed out."
-            )
-          );
-        }
+    req.on("timeout", () => {
+      req.destroy(
+        new Error(
+          "Upload request timed out."
+        )
       );
+    });
 
-      req.on(
-        "error",
-        fail
-      );
+    req.on("error", fail);
 
-      req.write(preamble);
+    req.write(preamble);
 
-      const stream =
-        fs.createReadStream(
-          filePath
-        );
+    const stream =
+      fs.createReadStream(filePath);
 
-      stream.on(
-        "error",
-        fail
-      );
+    stream.on("error", fail);
 
-      stream.on(
-        "end",
-        () => {
-          if (!finished) {
-            req.end(ending);
-          }
-        }
-      );
+    stream.on("end", () => {
+      if (!finished) {
+        req.end(ending);
+      }
+    });
 
-      stream.pipe(req, {
-        end: false,
-      });
-    }
-  );
+    stream.pipe(req, {
+      end: false,
+    });
+  });
 }
 
-async function uploadFile(
-  route,
-  filePath
-) {
+async function uploadFile(route, filePath) {
   let lastError;
 
   for (
@@ -476,6 +419,35 @@ async function uploadFile(
 }
 
 // ============================================================
+// DOWNLOAD PROGRESS
+// ============================================================
+
+function showDownloadProgress(line) {
+  const match = String(line).match(
+    /\[download\]\s+(\d+(?:\.\d+)?)%.*?at\s+([^\s]+).*?ETA\s+([^\s]+)/i
+  );
+
+  if (match) {
+    const percent = match[1];
+    const speed = match[2];
+    const eta = match[3];
+
+    process.stdout.write(
+      `\r[worker] Download ${percent}% | ${speed} | ETA ${eta}      `
+    );
+
+    return;
+  }
+
+  if (
+    String(line).includes("[Merger]") ||
+    String(line).includes("has already been downloaded")
+  ) {
+    console.log(`\n[worker] ${String(line).trim()}`);
+  }
+}
+
+// ============================================================
 // DOWNLOAD VIDEO
 // ============================================================
 
@@ -506,15 +478,18 @@ async function downloadVideo(
     );
   }
 
-  const yt =
-    youtubedl.create(
-      bundled
-    );
+  const yt = youtubedl.create(bundled);
 
+  /*
+    Prefer a single MP4 <= 480p when available.
+    This avoids unnecessary video/audio merging.
+    If unavailable, fallback to separate video+audio.
+  */
   const format =
-    `bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
+    `best[height<=${MAX_HEIGHT}][ext=mp4]` +
+    `/best[height<=${MAX_HEIGHT}]` +
+    `/bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
     `/b[height<=${MAX_HEIGHT}][ext=mp4]` +
-    `/b[height<=${MAX_HEIGHT}]` +
     `/b`;
 
   const options = {
@@ -526,11 +501,38 @@ async function downloadVideo(
 
     forceOverwrites: true,
 
-    noPart: true,
+    noPart: false,
 
-    noContinue: true,
+    noContinue: false,
 
     mergeOutputFormat: "mp4",
+
+    retries: 5,
+
+    fragmentRetries: 10,
+
+    extractorRetries: 5,
+
+    socketTimeout: 60,
+
+    forceIpv4: true,
+
+    concurrentFragments: 2,
+
+    restrictFilenames: true,
+
+    noWarnings: false,
+
+    newline: true,
+
+    progress: true,
+
+    // Give yt-dlp more time for slow connections.
+    downloaderArgs: {
+      http: [
+        "timeout=60",
+      ],
+    },
 
     ...(process.env.FFMPEG_PATH
       ? {
@@ -538,34 +540,100 @@ async function downloadVideo(
             process.env.FFMPEG_PATH,
         }
       : {}),
-
-    retries: 3,
-
-    fragmentRetries: 5,
-
-    extractorRetries: 3,
-
-    socketTimeout: 45,
-
-    forceIpv4: true,
-
-    concurrentFragments: 2,
-
-    restrictFilenames: true,
   };
 
   console.log(
-    `[worker] Downloading: ${sourceUrl}`
+    `\n[worker] Downloading: ${sourceUrl}`
   );
 
-  await yt(
-    sourceUrl,
-    options
+  console.log(
+    `[worker] Target quality: <= ${MAX_HEIGHT}p`
   );
+
+  console.log(
+    `[worker] yt-dlp: ${bundled}`
+  );
+
+  console.log(
+    `[worker] Download directory: ${DOWNLOAD_DIR}`
+  );
+
+  try {
+    const subprocess = yt(
+      sourceUrl,
+      options
+    );
+
+    /*
+      youtube-dl-exec returns a child process.
+      Listen to stdout/stderr so progress is visible.
+    */
+
+    if (subprocess.stdout) {
+      let buffer = "";
+
+      subprocess.stdout.on(
+        "data",
+        (chunk) => {
+          buffer += chunk.toString();
+
+          const lines =
+            buffer.split(/\r?\n/);
+
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.trim()) {
+              showDownloadProgress(line);
+            }
+          }
+        }
+      );
+    }
+
+    if (subprocess.stderr) {
+      subprocess.stderr.on(
+        "data",
+        (chunk) => {
+          const text =
+            chunk.toString();
+
+          /*
+            yt-dlp often writes progress to stderr.
+          */
+
+          const lines =
+            text.split(/\r?\n/);
+
+          for (const line of lines) {
+            if (line.trim()) {
+              showDownloadProgress(line);
+            }
+          }
+        }
+      );
+    }
+
+    await subprocess;
+
+    console.log(
+      "\n[worker] yt-dlp process completed."
+    );
+  } catch (error) {
+    console.error(
+      "\n[worker] yt-dlp download error:"
+    );
+
+    console.error(
+      getErrorMessage(error)
+    );
+
+    throw error;
+  }
 
   if (!fs.existsSync(outputPath)) {
     throw new Error(
-      "yt-dlp finished but no output file was created."
+      "yt-dlp finished but no final output file was created."
     );
   }
 
@@ -591,13 +659,11 @@ async function downloadVideo(
 // ============================================================
 
 async function handleJob(job) {
-  const projectId =
-    job.id;
+  const projectId = job.id;
 
-  const sourceUrl =
-    String(
-      job.source_url || ""
-    ).trim();
+  const sourceUrl = String(
+    job.source_url || ""
+  ).trim();
 
   if (!sourceUrl) {
     throw new Error(
@@ -612,12 +678,9 @@ async function handleJob(job) {
     );
 
   try {
-    if (
-      fs.existsSync(outputPath)
-    ) {
-      fs.unlinkSync(
-        outputPath
-      );
+    // Remove previous final file.
+    if (fs.existsSync(outputPath)) {
+      fs.unlinkSync(outputPath);
     }
 
     // --------------------------------------------------------
@@ -647,7 +710,6 @@ async function handleJob(job) {
     console.log(
       `[worker] Project ${projectId} sent to Render successfully.`
     );
-
   } catch (error) {
     const message =
       getErrorMessage(error);
@@ -663,19 +725,13 @@ async function handleJob(job) {
     try {
       await apiJson(
         "POST",
-
         `/api/worker/projects/${encodeURIComponent(
           projectId
         )}/fail`,
-
         {
           error:
-            message.slice(
-              0,
-              1000
-            ),
+            message.slice(0, 1000),
         },
-
         {
           retries: 3,
           timeoutMs: 30000,
@@ -685,48 +741,70 @@ async function handleJob(job) {
       console.log(
         `[worker] Failure reported for ${projectId}.`
       );
-
     } catch (failError) {
       console.error(
         "[worker] Failed to report failure:",
-        getErrorMessage(
-          failError
-        )
+        getErrorMessage(failError)
       );
     }
-
   } finally {
     // --------------------------------------------------------
-    // CLEANUP
+    // CLEANUP FINAL FILE
     // --------------------------------------------------------
 
     try {
-      if (
-        fs.existsSync(
-          outputPath
-        )
-      ) {
-        fs.unlinkSync(
-          outputPath
-        );
+      if (fs.existsSync(outputPath)) {
+        fs.unlinkSync(outputPath);
 
         console.log(
           `[worker] Cleaned up ${outputPath}`
         );
       }
+
+      /*
+        Also remove stale yt-dlp temporary files
+        for this project.
+      */
+
+      const files =
+        fs.readdirSync(
+          DOWNLOAD_DIR
+        );
+
+      for (const file of files) {
+        if (
+          file.startsWith(
+            `${projectId}.`
+          )
+        ) {
+          const tempPath =
+            path.join(
+              DOWNLOAD_DIR,
+              file
+            );
+
+          try {
+            fs.unlinkSync(tempPath);
+
+            console.log(
+              `[worker] Cleaned temp file: ${file}`
+            );
+          } catch {
+            // Ignore individual cleanup errors.
+          }
+        }
+      }
     } catch (cleanupError) {
       console.error(
         "[worker] Cleanup failed:",
-        getErrorMessage(
-          cleanupError
-        )
+        getErrorMessage(cleanupError)
       );
     }
   }
 }
 
 // ============================================================
-// MAIN WORKER LOOP
+// MAIN LOOP
 // ============================================================
 
 async function main() {
@@ -763,6 +841,10 @@ async function main() {
   );
 
   console.log(
+    `Download directory: ${DOWNLOAD_DIR}`
+  );
+
+  console.log(
     "========================================"
   );
 
@@ -776,14 +858,13 @@ async function main() {
 
       if (result?.job) {
         console.log(
-          `[worker] Job claimed: ${result.job.id}`
+          `\n[worker] Job claimed: ${result.job.id}`
         );
 
         await handleJob(
           result.job
         );
       }
-
     } catch (error) {
       console.error(
         "[worker] Poll error:",
@@ -795,9 +876,7 @@ async function main() {
       );
     }
 
-    await sleep(
-      POLL_MS
-    );
+    await sleep(POLL_MS);
   }
 }
 
@@ -805,13 +884,11 @@ async function main() {
 // START
 // ============================================================
 
-main().catch(
-  (error) => {
-    console.error(
-      "[worker] Fatal error:",
-      error
-    );
+main().catch((error) => {
+  console.error(
+    "[worker] Fatal error:",
+    error
+  );
 
-    process.exit(1);
-  }
-);
+  process.exit(1);
+});
