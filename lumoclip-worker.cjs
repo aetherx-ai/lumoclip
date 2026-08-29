@@ -3,13 +3,17 @@
   Windows PC Worker
 
   Requirements:
-    npm install youtube-dl-exec
+    npm install youtube-dl-exec ffmpeg-static ffprobe-static
 
   Environment:
     LUMOCLIP_API_URL=https://lumo-clip.com
     LUMO_WORKER_TOKEN=YOUR_SECRET
     WORKER_POLL_MS=5000
     WORKER_MAX_HEIGHT=480
+
+  Optional:
+    FFMPEG_PATH=C:\path\to\ffmpeg.exe
+    WORKER_DOWNLOAD_DIR=C:\path\to\downloads
 */
 
 const fs = require("node:fs");
@@ -17,7 +21,10 @@ const path = require("node:path");
 const http = require("node:http");
 const https = require("node:https");
 const { URL } = require("node:url");
+
 const youtubedl = require("youtube-dl-exec");
+const ffmpegStatic = require("ffmpeg-static");
+const ffprobeStatic = require("ffprobe-static");
 
 // ============================================================
 // CONFIG
@@ -60,12 +67,50 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 15000;
 
 // ============================================================
+// FFMPEG PATH
+// ============================================================
+
+const FFMPEG_PATH =
+  process.env.FFMPEG_PATH ||
+  ffmpegStatic ||
+  null;
+
+const FFPROBE_PATH =
+  ffprobeStatic?.path ||
+  null;
+
+// ============================================================
 // VALIDATION
 // ============================================================
 
 if (!WORKER_TOKEN) {
-  console.error("[worker] ERROR: LUMO_WORKER_TOKEN is missing.");
+  console.error(
+    "[worker] ERROR: LUMO_WORKER_TOKEN is missing."
+  );
   process.exit(1);
+}
+
+if (!FFMPEG_PATH) {
+  console.error(
+    "[worker] ERROR: FFmpeg executable was not found."
+  );
+  console.error(
+    "[worker] Install ffmpeg-static or set FFMPEG_PATH."
+  );
+  process.exit(1);
+}
+
+if (!fs.existsSync(FFMPEG_PATH)) {
+  console.error(
+    `[worker] ERROR: FFmpeg does not exist: ${FFMPEG_PATH}`
+  );
+  process.exit(1);
+}
+
+if (FFPROBE_PATH && !fs.existsSync(FFPROBE_PATH)) {
+  console.warn(
+    `[worker] WARNING: FFprobe path does not exist: ${FFPROBE_PATH}`
+  );
 }
 
 fs.mkdirSync(DOWNLOAD_DIR, {
@@ -157,15 +202,18 @@ async function apiJson(
 
       const response = await fetch(url, {
         method,
+
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
           "x-lumo-worker-token": WORKER_TOKEN,
         },
+
         body:
           body === undefined
             ? undefined
             : JSON.stringify(body),
+
         signal: controller.signal,
       });
 
@@ -178,7 +226,8 @@ async function apiJson(
       } catch {
         data = {
           error:
-            text || `HTTP ${response.status}`,
+            text ||
+            `HTTP ${response.status}`,
         };
       }
 
@@ -195,10 +244,12 @@ async function apiJson(
       }
 
       return data;
+
     } catch (error) {
       lastError = error;
 
-      const message = getErrorMessage(error);
+      const message =
+        getErrorMessage(error);
 
       console.error(
         `[worker] API request failed: ${message}`
@@ -218,6 +269,7 @@ async function apiJson(
       );
 
       await sleep(delay);
+
     } finally {
       clearTimeout(timeout);
     }
@@ -236,7 +288,8 @@ function uploadFileOnce(route, filePath) {
 
     const stat = fs.statSync(filePath);
 
-    const boundary = "LUMOCLIP_BOUNDARY";
+    const boundary =
+      "LUMOCLIP_BOUNDARY";
 
     const fileName = path
       .basename(filePath)
@@ -280,6 +333,7 @@ function uploadFileOnce(route, filePath) {
       if (finished) return;
 
       finished = true;
+
       reject(error);
     };
 
@@ -287,6 +341,7 @@ function uploadFileOnce(route, filePath) {
       if (finished) return;
 
       finished = true;
+
       resolve(data);
     };
 
@@ -297,6 +352,7 @@ function uploadFileOnce(route, filePath) {
         headers,
         timeout: UPLOAD_TIMEOUT_MS,
       },
+
       (res) => {
         let text = "";
 
@@ -370,7 +426,10 @@ function uploadFileOnce(route, filePath) {
   });
 }
 
-async function uploadFile(route, filePath) {
+async function uploadFile(
+  route,
+  filePath
+) {
   let lastError;
 
   for (
@@ -387,6 +446,7 @@ async function uploadFile(route, filePath) {
         route,
         filePath
       );
+
     } catch (error) {
       lastError = error;
 
@@ -423,7 +483,9 @@ async function uploadFile(route, filePath) {
 // ============================================================
 
 function showDownloadProgress(line) {
-  const match = String(line).match(
+  const text = String(line);
+
+  const match = text.match(
     /\[download\]\s+(\d+(?:\.\d+)?)%.*?at\s+([^\s]+).*?ETA\s+([^\s]+)/i
   );
 
@@ -433,17 +495,21 @@ function showDownloadProgress(line) {
     const eta = match[3];
 
     process.stdout.write(
-      `\r[worker] Download ${percent}% | ${speed} | ETA ${eta}      `
+      `\r[worker] Download ${percent}% | ${speed} | ETA ${eta}       `
     );
 
     return;
   }
 
   if (
-    String(line).includes("[Merger]") ||
-    String(line).includes("has already been downloaded")
+    text.includes("[Merger]") ||
+    text.includes("has already been downloaded") ||
+    text.includes("[ExtractAudio]") ||
+    text.includes("[ffmpeg]")
   ) {
-    console.log(`\n[worker] ${String(line).trim()}`);
+    console.log(
+      `\n[worker] ${text.trim()}`
+    );
   }
 }
 
@@ -478,51 +544,80 @@ async function downloadVideo(
     );
   }
 
-  const yt = youtubedl.create(bundled);
+  const yt =
+    youtubedl.create(bundled);
 
   /*
-    Prefer a single MP4 <= 480p when available.
-    This avoids unnecessary video/audio merging.
-    If unavailable, fallback to separate video+audio.
+    Prefer MP4 video + M4A audio.
+
+    Maximum video height is controlled by
+    WORKER_MAX_HEIGHT.
+
+    FFmpeg is explicitly provided so that
+    yt-dlp can merge separate video/audio streams.
   */
+
   const format =
     `best[height<=${MAX_HEIGHT}][ext=mp4]` +
-    `/best[height<=${MAX_HEIGHT}]` +
     `/bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
+    `/best[height<=${MAX_HEIGHT}]` +
     `/b[height<=${MAX_HEIGHT}][ext=mp4]` +
     `/b`;
 
-const options = {
-  output: outputPath,
-  format,
+  const options = {
+    output: outputPath,
 
-  noPlaylist: true,
-  forceOverwrites: true,
+    format,
 
-  mergeOutputFormat: "mp4",
+    noPlaylist: true,
 
-  retries: 5,
-  fragmentRetries: 10,
-  extractorRetries: 5,
-  socketTimeout: 60,
-  forceIpv4: true,
-  concurrentFragments: 2,
-  restrictFilenames: true,
-  newline: true,
-  progress: true,
+    forceOverwrites: true,
 
-  downloaderArgs: {
-    http: [
-      "timeout=60",
-    ],
-  },
+    mergeOutputFormat: "mp4",
 
-  ...(process.env.FFMPEG_PATH
-    ? {
-        ffmpegLocation: process.env.FFMPEG_PATH,
-      }
-    : {}),
-};
+    /*
+      IMPORTANT:
+      Do not use:
+        noPart: false
+        noContinue: false
+        noWarnings: false
+
+      youtube-dl-exec can turn those into invalid
+      flags such as --no-no-part.
+    */
+
+    retries: 5,
+
+    fragmentRetries: 10,
+
+    extractorRetries: 5,
+
+    socketTimeout: 60,
+
+    forceIpv4: true,
+
+    concurrentFragments: 2,
+
+    restrictFilenames: true,
+
+    newline: true,
+
+    progress: true,
+
+    downloaderArgs: {
+      http: [
+        "timeout=60",
+      ],
+    },
+
+    /*
+      Use bundled FFmpeg.
+      This does NOT require FFmpeg to be in
+      the Windows PATH.
+    */
+
+    ffmpegLocation: FFMPEG_PATH,
+  };
 
   console.log(
     `\n[worker] Downloading: ${sourceUrl}`
@@ -537,6 +632,16 @@ const options = {
   );
 
   console.log(
+    `[worker] FFmpeg: ${FFMPEG_PATH}`
+  );
+
+  if (FFPROBE_PATH) {
+    console.log(
+      `[worker] FFprobe: ${FFPROBE_PATH}`
+    );
+  }
+
+  console.log(
     `[worker] Download directory: ${DOWNLOAD_DIR}`
   );
 
@@ -548,7 +653,8 @@ const options = {
 
     /*
       youtube-dl-exec returns a child process.
-      Listen to stdout/stderr so progress is visible.
+      Listen to stdout/stderr so progress
+      remains visible in PowerShell.
     */
 
     if (subprocess.stdout) {
@@ -562,7 +668,8 @@ const options = {
           const lines =
             buffer.split(/\r?\n/);
 
-          buffer = lines.pop() || "";
+          buffer =
+            lines.pop() || "";
 
           for (const line of lines) {
             if (line.trim()) {
@@ -579,10 +686,6 @@ const options = {
         (chunk) => {
           const text =
             chunk.toString();
-
-          /*
-            yt-dlp often writes progress to stderr.
-          */
 
           const lines =
             text.split(/\r?\n/);
@@ -601,6 +704,7 @@ const options = {
     console.log(
       "\n[worker] yt-dlp process completed."
     );
+
   } catch (error) {
     console.error(
       "\n[worker] yt-dlp download error:"
@@ -612,6 +716,14 @@ const options = {
 
     throw error;
   }
+
+  /*
+    yt-dlp may leave separate files if the
+    merge fails.
+
+    We only continue when the final output
+    actually exists.
+  */
 
   if (!fs.existsSync(outputPath)) {
     throw new Error(
@@ -660,7 +772,10 @@ async function handleJob(job) {
     );
 
   try {
-    // Remove previous final file.
+    // --------------------------------------------------------
+    // REMOVE PREVIOUS FINAL FILE
+    // --------------------------------------------------------
+
     if (fs.existsSync(outputPath)) {
       fs.unlinkSync(outputPath);
     }
@@ -692,6 +807,7 @@ async function handleJob(job) {
     console.log(
       `[worker] Project ${projectId} sent to Render successfully.`
     );
+
   } catch (error) {
     const message =
       getErrorMessage(error);
@@ -707,13 +823,16 @@ async function handleJob(job) {
     try {
       await apiJson(
         "POST",
+
         `/api/worker/projects/${encodeURIComponent(
           projectId
         )}/fail`,
+
         {
           error:
             message.slice(0, 1000),
         },
+
         {
           retries: 3,
           timeoutMs: 30000,
@@ -723,18 +842,24 @@ async function handleJob(job) {
       console.log(
         `[worker] Failure reported for ${projectId}.`
       );
+
     } catch (failError) {
       console.error(
         "[worker] Failed to report failure:",
         getErrorMessage(failError)
       );
     }
+
   } finally {
     // --------------------------------------------------------
-    // CLEANUP FINAL FILE
+    // CLEANUP
     // --------------------------------------------------------
 
     try {
+      /*
+        Remove final file.
+      */
+
       if (fs.existsSync(outputPath)) {
         fs.unlinkSync(outputPath);
 
@@ -744,7 +869,7 @@ async function handleJob(job) {
       }
 
       /*
-        Also remove stale yt-dlp temporary files
+        Remove stale yt-dlp temporary files
         for this project.
       */
 
@@ -766,16 +891,20 @@ async function handleJob(job) {
             );
 
           try {
-            fs.unlinkSync(tempPath);
+            fs.unlinkSync(
+              tempPath
+            );
 
             console.log(
               `[worker] Cleaned temp file: ${file}`
             );
+
           } catch {
             // Ignore individual cleanup errors.
           }
         }
       }
+
     } catch (cleanupError) {
       console.error(
         "[worker] Cleanup failed:",
@@ -827,6 +956,16 @@ async function main() {
   );
 
   console.log(
+    `FFmpeg: ${FFMPEG_PATH}`
+  );
+
+  if (FFPROBE_PATH) {
+    console.log(
+      `FFprobe: ${FFPROBE_PATH}`
+    );
+  }
+
+  console.log(
     "========================================"
   );
 
@@ -847,6 +986,7 @@ async function main() {
           result.job
         );
       }
+
     } catch (error) {
       console.error(
         "[worker] Poll error:",
