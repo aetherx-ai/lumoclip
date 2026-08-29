@@ -508,7 +508,6 @@ const options = {
   forceIpv4: true,
   concurrentFragments: 2,
   restrictFilenames: true,
-  noWarnings: false,
   newline: true,
   progress: true,
 
