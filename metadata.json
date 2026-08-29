@@ -1,0 +1,6 @@
+{
+  "name": "LumoClip",
+  "description": "AI-powered video content repurposing SaaS platform to turn long videos into viral short-form clips.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
