@@ -27,16 +27,11 @@ import {
 } from "./services/api.js";
 
 import { Navbar } from "./components/Navbar.js";
+import LandingPage from "./components/LandingPage.js";
 
 /* =========================================================
    LAZY COMPONENTS
 ========================================================= */
-
-const LandingPage = lazy(() =>
-  import("./components/LandingPage.js").then((m) => ({
-    default: m.LandingPage,
-  })),
-);
 
 const DashboardView = lazy(() =>
   import("./components/DashboardView.js").then((m) => ({
@@ -1448,25 +1443,19 @@ export default function App() {
         ================================================= */}
 
         {activeTab === "landing" && (
-          <Suspense
-            fallback={
-              <div className="min-h-[60vh]" />
-            }
-          >
-            <LandingPage
-              onGetStarted={() => {
-                openNewProject();
-              }}
-              onOpenPricing={() => {
-                setActiveTab("pricing");
-              }}
-              onOpenNewProjectWithUrl={(
-                url: string,
-              ) => {
-                openNewProject(url);
-              }}
-            />
-          </Suspense>
+          <LandingPage
+            onGetStarted={() => {
+              openNewProject();
+            }}
+            onOpenPricing={() => {
+              setActiveTab("pricing");
+            }}
+            onOpenNewProjectWithUrl={(
+              url: string,
+            ) => {
+              openNewProject(url);
+            }}
+          />
         )}
 
         {/* =================================================
