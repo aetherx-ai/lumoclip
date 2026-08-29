@@ -1,45 +1,45 @@
 {
   "compilerOptions": {
-    "ignoreDeprecations": "5.0",
-
     "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
-    "lib": [
-      "ES2022",
-      "DOM",
-      "DOM.Iterable"
-    ],
-
-    "jsx": "react-jsx",
-
-    "moduleResolution": "bundler",
-    "moduleDetection": "force",
-
-    "experimentalDecorators": true,
-    "useDefineForClassFields": false,
-
-    "allowJs": true,
-    "allowImportingTsExtensions": true,
-
-    "isolatedModules": true,
-    "noEmit": true,
     "skipLibCheck": true,
 
-    "types": ["vite/client"],
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
 
-    "baseUrl": ".",
+    /* Linting / Interop */
+    "strict": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+
+    /* Types & Paths */
     "paths": {
       "@/*": ["src/*"]
-    }
-  },
+    },
 
+    /* Vite 6 + TS 5.4+ recommended */
+    "types": [
+      "vite/client",
+      "node"
+    ]
+  },
   "include": [
     "src",
-    "src/**/*.ts",
-    "src/**/*.tsx",
-    "src/vite-env.d.ts"
+    "vite.config.ts",
+    "server.ts"
   ],
-
   "exclude": [
     "node_modules",
     "dist"
