@@ -2017,8 +2017,8 @@ function createClip(
         {
           filter: "scale",
           options: {
-            w: 720,
-            h: 1280,
+            w: 540,
+            h: 960,
             force_original_aspect_ratio:
               "decrease",
           },
@@ -2026,8 +2026,8 @@ function createClip(
         {
           filter: "pad",
           options: {
-            w: 720,
-            h: 1280,
+            w: 540,
+            h: 960,
             x: "(ow-iw)/2",
             y: "(oh-ih)/2",
             color: "black",
@@ -2112,17 +2112,20 @@ function createClip(
           "-preset",
           "ultrafast",
 
-          // Slightly smaller/lower quality than CRF 24
-          // but much faster to encode
+          // Faster encode / smaller output
           "-crf",
-          "26",
+          "27",
+
+          // Let FFmpeg use the available CPU threads.
+          "-threads",
+          "0",
 
           "-pix_fmt",
           "yuv420p",
 
-          // Keep output compatible
+          // 24fps is sufficient for social clips and reduces CPU work.
           "-r",
-          "30",
+          "24",
 
           // Audio
           "-c:a",
@@ -2451,6 +2454,18 @@ async function processVideo(
         duration,
       );
 
+    // Enforce the server-side clip limit even if Gemini returns more.
+    // Keep the highest-scoring clips so generation stays bounded.
+    if (Array.isArray(analysis.clips)) {
+      analysis.clips = analysis.clips
+        .sort(
+          (a, b) =>
+            Number(b?.score || 0) -
+            Number(a?.score || 0),
+        )
+        .slice(0, MAX_CLIPS);
+    }
+
     await saveTranscript(
       projectId,
       analysis.transcript,
@@ -2483,9 +2498,8 @@ async function processVideo(
        Generate clips in small parallel batches.
 
        The previous implementation encoded every clip strictly
-       one-by-one. With CLIP_CONCURRENCY=1, two FFmpeg jobs can
-       overlap without creating an excessive CPU/RAM spike on
-       modest Windows machines.
+       one-by-one. Keep concurrency configurable so Render can use 1
+       on small instances and 2 on stronger instances.
     */
     const processOneClip = async (
       clip: ViralClip,
@@ -2678,14 +2692,13 @@ async function processVideo(
 
     /*
        Run a maximum of CLIP_CONCURRENCY clips at once.
-       Default = 2 for the user's current modest PC.
+       Render can keep this at 1; stronger instances can use 2.
     */
     const concurrency =
       Math.max(
         1,
         Math.min(
           CLIP_CONCURRENCY,
-          1,
           analysis.clips.length,
         ),
       );
