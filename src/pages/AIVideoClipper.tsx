@@ -1,7 +1,234 @@
-
 import { Link } from "react-router-dom";
+import { useEffect } from "react";
 
 export default function AIVideoClipper() {
+  useEffect(() => {
+    const title =
+      "AI Video Clipper | Find Your Best Video Moments with AI | LumoClip";
+
+    const description =
+      "LumoClip is an AI video clipper that finds potential highlights in long-form videos and helps turn them into short-form clips for YouTube Shorts, TikTok, and Instagram Reels.";
+
+    const canonical =
+      "https://lumo-clip.com/ai-video-clipper";
+
+    const image =
+      "https://lumo-clip.com/logo.png";
+
+    document.title = title;
+
+    const setMeta = (
+      selector: string,
+      attribute: string,
+      value: string
+    ) => {
+      let element = document.querySelector(selector);
+
+      if (!element) {
+        element = document.createElement("meta");
+        document.head.appendChild(element);
+      }
+
+      element.setAttribute(attribute, value);
+    };
+
+    // ==========================================
+    // Primary SEO
+    // ==========================================
+
+    setMeta(
+      'meta[name="description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[name="robots"]',
+      "content",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    );
+
+    // ==========================================
+    // Open Graph
+    // ==========================================
+
+    setMeta(
+      'meta[property="og:type"]',
+      "content",
+      "website"
+    );
+
+    setMeta(
+      'meta[property="og:url"]',
+      "content",
+      canonical
+    );
+
+    setMeta(
+      'meta[property="og:title"]',
+      "content",
+      title
+    );
+
+    setMeta(
+      'meta[property="og:description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[property="og:image"]',
+      "content",
+      image
+    );
+
+    setMeta(
+      'meta[property="og:image:alt"]',
+      "content",
+      "LumoClip AI Video Clipper"
+    );
+
+    setMeta(
+      'meta[property="og:site_name"]',
+      "content",
+      "LumoClip"
+    );
+
+    setMeta(
+      'meta[property="og:locale"]',
+      "content",
+      "en_US"
+    );
+
+    // ==========================================
+    // Twitter / X
+    // ==========================================
+
+    setMeta(
+      'meta[name="twitter:card"]',
+      "content",
+      "summary_large_image"
+    );
+
+    setMeta(
+      'meta[name="twitter:title"]',
+      "content",
+      title
+    );
+
+    setMeta(
+      'meta[name="twitter:description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[name="twitter:image"]',
+      "content",
+      image
+    );
+
+    setMeta(
+      'meta[name="twitter:image:alt"]',
+      "content",
+      "LumoClip AI Video Clipper"
+    );
+
+    // ==========================================
+    // Canonical
+    // ==========================================
+
+    let canonicalLink = document.querySelector(
+      'link[rel="canonical"]'
+    ) as HTMLLinkElement | null;
+
+    if (!canonicalLink) {
+      canonicalLink = document.createElement("link");
+      canonicalLink.rel = "canonical";
+      document.head.appendChild(canonicalLink);
+    }
+
+    canonicalLink.href = canonical;
+
+    // ==========================================
+    // FAQ Schema
+    // ==========================================
+
+    const schemaId =
+      "ai-video-clipper-faq-schema";
+
+    let schema =
+      document.getElementById(schemaId);
+
+    if (!schema) {
+      schema = document.createElement("script");
+
+      schema.id = schemaId;
+
+      schema.setAttribute(
+        "type",
+        "application/ld+json"
+      );
+
+      document.head.appendChild(schema);
+    }
+
+    schema.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name:
+            "What is an AI video clipper?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "An AI video clipper is software that uses artificial intelligence to help identify useful moments from longer videos and turn them into shorter clips."
+          }
+        },
+        {
+          "@type": "Question",
+          name:
+            "Can LumoClip turn long videos into Shorts?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Yes. LumoClip is designed to help creators discover potential highlights from long-form videos and create short-form clips from selected moments."
+          }
+        },
+        {
+          "@type": "Question",
+          name:
+            "What types of videos can I clip?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Podcasts, interviews, tutorials, educational videos, presentations, and other long-form content can be suitable for AI-assisted clipping."
+          }
+        },
+        {
+          "@type": "Question",
+          name:
+            "Which platforms are supported?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Short-form clips can be used for platforms such as YouTube Shorts, TikTok, and Instagram Reels."
+          }
+        }
+      ]
+    });
+
+    // ==========================================
+    // Cleanup
+    // ==========================================
+
+    return () => {
+      document.getElementById(schemaId)?.remove();
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-black text-white px-6 py-20">
       <div className="mx-auto max-w-5xl">
@@ -218,6 +445,7 @@ export default function AIVideoClipper() {
               <h3 className="font-semibold">
                 YouTubers
               </h3>
+
               <p className="mt-2 text-sm text-gray-400">
                 Repurpose long YouTube videos into short-form content.
               </p>
@@ -227,6 +455,7 @@ export default function AIVideoClipper() {
               <h3 className="font-semibold">
                 Podcasters
               </h3>
+
               <p className="mt-2 text-sm text-gray-400">
                 Discover memorable moments from podcast episodes.
               </p>
@@ -236,6 +465,7 @@ export default function AIVideoClipper() {
               <h3 className="font-semibold">
                 Content Creators
               </h3>
+
               <p className="mt-2 text-sm text-gray-400">
                 Create more short-form content from existing videos.
               </p>
@@ -245,6 +475,7 @@ export default function AIVideoClipper() {
               <h3 className="font-semibold">
                 Educators
               </h3>
+
               <p className="mt-2 text-sm text-gray-400">
                 Turn longer educational recordings into shorter lessons.
               </p>
@@ -254,6 +485,7 @@ export default function AIVideoClipper() {
               <h3 className="font-semibold">
                 Businesses
               </h3>
+
               <p className="mt-2 text-sm text-gray-400">
                 Repurpose webinars, presentations, and interviews.
               </p>
@@ -263,6 +495,7 @@ export default function AIVideoClipper() {
               <h3 className="font-semibold">
                 Social Media Teams
               </h3>
+
               <p className="mt-2 text-sm text-gray-400">
                 Build a faster workflow for short-form video production.
               </p>

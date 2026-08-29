@@ -1,7 +1,234 @@
-
 import { Link } from "react-router-dom";
+import { useEffect } from "react";
 
 export default function LongVideoToShorts() {
+  useEffect(() => {
+    const title =
+      "Long Video to Shorts | Turn Long Videos Into Shorts | LumoClip";
+
+    const description =
+      "Turn long videos into Shorts with LumoClip. Find potential highlights with AI-assisted video analysis and repurpose long-form content for YouTube Shorts, TikTok, and Instagram Reels.";
+
+    const canonical =
+      "https://lumo-clip.com/long-video-to-shorts";
+
+    const image =
+      "https://lumo-clip.com/logo.png";
+
+    document.title = title;
+
+    const setMeta = (
+      selector: string,
+      attribute: string,
+      value: string
+    ) => {
+      let element = document.querySelector(selector);
+
+      if (!element) {
+        element = document.createElement("meta");
+        document.head.appendChild(element);
+      }
+
+      element.setAttribute(attribute, value);
+    };
+
+    // ==========================================
+    // Primary SEO
+    // ==========================================
+
+    setMeta(
+      'meta[name="description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[name="robots"]',
+      "content",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    );
+
+    // ==========================================
+    // Open Graph
+    // ==========================================
+
+    setMeta(
+      'meta[property="og:type"]',
+      "content",
+      "website"
+    );
+
+    setMeta(
+      'meta[property="og:url"]',
+      "content",
+      canonical
+    );
+
+    setMeta(
+      'meta[property="og:title"]',
+      "content",
+      title
+    );
+
+    setMeta(
+      'meta[property="og:description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[property="og:image"]',
+      "content",
+      image
+    );
+
+    setMeta(
+      'meta[property="og:image:alt"]',
+      "content",
+      "LumoClip Long Video to Shorts"
+    );
+
+    setMeta(
+      'meta[property="og:site_name"]',
+      "content",
+      "LumoClip"
+    );
+
+    setMeta(
+      'meta[property="og:locale"]',
+      "content",
+      "en_US"
+    );
+
+    // ==========================================
+    // Twitter / X
+    // ==========================================
+
+    setMeta(
+      'meta[name="twitter:card"]',
+      "content",
+      "summary_large_image"
+    );
+
+    setMeta(
+      'meta[name="twitter:title"]',
+      "content",
+      title
+    );
+
+    setMeta(
+      'meta[name="twitter:description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[name="twitter:image"]',
+      "content",
+      image
+    );
+
+    setMeta(
+      'meta[name="twitter:image:alt"]',
+      "content",
+      "LumoClip Long Video to Shorts"
+    );
+
+    // ==========================================
+    // Canonical
+    // ==========================================
+
+    let canonicalLink = document.querySelector(
+      'link[rel="canonical"]'
+    ) as HTMLLinkElement | null;
+
+    if (!canonicalLink) {
+      canonicalLink = document.createElement("link");
+      canonicalLink.rel = "canonical";
+      document.head.appendChild(canonicalLink);
+    }
+
+    canonicalLink.href = canonical;
+
+    // ==========================================
+    // FAQ Schema
+    // ==========================================
+
+    const schemaId =
+      "long-video-to-shorts-faq-schema";
+
+    let schema =
+      document.getElementById(schemaId);
+
+    if (!schema) {
+      schema = document.createElement("script");
+
+      schema.id = schemaId;
+
+      schema.setAttribute(
+        "type",
+        "application/ld+json"
+      );
+
+      document.head.appendChild(schema);
+    }
+
+    schema.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name:
+            "How can I turn a long video into Shorts?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Add your long-form video to an AI-assisted clipping workflow, identify useful moments, review the selected sections, and create short clips from them."
+          }
+        },
+        {
+          "@type": "Question",
+          name:
+            "Can LumoClip find highlights automatically?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "LumoClip uses AI-assisted video analysis to identify potential highlights from long-form content."
+          }
+        },
+        {
+          "@type": "Question",
+          name:
+            "What type of long videos can I repurpose?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Podcasts, interviews, tutorials, educational videos, webinars, and other long-form recordings can be suitable for short-form repurposing."
+          }
+        },
+        {
+          "@type": "Question",
+          name:
+            "Where can I publish the Shorts?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Short-form videos can be used on platforms such as YouTube Shorts, TikTok, and Instagram Reels."
+          }
+        }
+      ]
+    });
+
+    // ==========================================
+    // Cleanup
+    // ==========================================
+
+    return () => {
+      document.getElementById(schemaId)?.remove();
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-black text-white px-6 py-20">
       <div className="mx-auto max-w-5xl">

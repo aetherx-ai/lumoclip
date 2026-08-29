@@ -1,7 +1,188 @@
-
 import { Link } from "react-router-dom";
+import { useEffect } from "react";
 
 export default function YouTubeToShorts() {
+  useEffect(() => {
+    const title =
+      "YouTube to Shorts AI | Turn YouTube Videos Into Shorts | LumoClip";
+
+    const description =
+      "Turn YouTube videos into Shorts with LumoClip AI. Find potential highlights from long-form videos and create short-form content for YouTube Shorts, TikTok, and Instagram Reels.";
+
+    const canonical = "https://lumo-clip.com/youtube-to-shorts";
+    const image = "https://lumo-clip.com/logo.png";
+
+    document.title = title;
+
+    const setMeta = (
+      selector: string,
+      attribute: string,
+      value: string
+    ) => {
+      let element = document.querySelector(selector);
+
+      if (!element) {
+        element = document.createElement("meta");
+        document.head.appendChild(element);
+      }
+
+      element.setAttribute(attribute, value);
+    };
+
+    // Description
+    setMeta(
+      'meta[name="description"]',
+      "content",
+      description
+    );
+
+    // Robots
+    setMeta(
+      'meta[name="robots"]',
+      "content",
+      "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+    );
+
+    // Open Graph
+    setMeta(
+      'meta[property="og:type"]',
+      "content",
+      "website"
+    );
+
+    setMeta(
+      'meta[property="og:url"]',
+      "content",
+      canonical
+    );
+
+    setMeta(
+      'meta[property="og:title"]',
+      "content",
+      title
+    );
+
+    setMeta(
+      'meta[property="og:description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[property="og:image"]',
+      "content",
+      image
+    );
+
+    setMeta(
+      'meta[property="og:image:alt"]',
+      "content",
+      "LumoClip YouTube to Shorts AI"
+    );
+
+    // Twitter / X
+    setMeta(
+      'meta[name="twitter:card"]',
+      "content",
+      "summary_large_image"
+    );
+
+    setMeta(
+      'meta[name="twitter:title"]',
+      "content",
+      title
+    );
+
+    setMeta(
+      'meta[name="twitter:description"]',
+      "content",
+      description
+    );
+
+    setMeta(
+      'meta[name="twitter:image"]',
+      "content",
+      image
+    );
+
+    // Canonical
+    let canonicalLink = document.querySelector(
+      'link[rel="canonical"]'
+    ) as HTMLLinkElement | null;
+
+    if (!canonicalLink) {
+      canonicalLink = document.createElement("link");
+      canonicalLink.rel = "canonical";
+      document.head.appendChild(canonicalLink);
+    }
+
+    canonicalLink.href = canonical;
+
+    // FAQ Schema
+    const schemaId = "youtube-to-shorts-faq-schema";
+
+    let schema = document.getElementById(schemaId);
+
+    if (!schema) {
+      schema = document.createElement("script");
+      schema.id = schemaId;
+      schema.setAttribute(
+        "type",
+        "application/ld+json"
+      );
+
+      document.head.appendChild(schema);
+    }
+
+    schema.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "How can I turn a YouTube video into a Short?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Provide a supported YouTube video URL, analyze the content with an AI-assisted workflow, review potential highlights, and create short-form clips from the selected moments."
+          }
+        },
+        {
+          "@type": "Question",
+          name: "Can LumoClip find highlights from YouTube videos?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "LumoClip uses AI-assisted video analysis to identify potential highlights from supported long-form videos."
+          }
+        },
+        {
+          "@type": "Question",
+          name: "Can I use the Shorts on other platforms?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Short-form clips can be used as part of your content strategy for platforms such as YouTube Shorts, TikTok, and Instagram Reels."
+          }
+        },
+        {
+          "@type": "Question",
+          name: "What YouTube videos work best for repurposing?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Podcasts, interviews, tutorials, educational videos, webinars, and commentary can contain sections that may work well as short-form content."
+          }
+        }
+      ]
+    });
+
+    return () => {
+      // Remove page-specific schema when leaving the page
+      document.getElementById(schemaId)?.remove();
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-black text-white px-6 py-20">
       <div className="mx-auto max-w-5xl">
@@ -145,59 +326,27 @@ export default function YouTubeToShorts() {
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
 
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Podcasts
-              </h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Find memorable conversations and discussion moments.
-              </p>
-            </div>
+            {[
+              ["Podcasts", "Find memorable conversations and discussion moments."],
+              ["Interviews", "Discover useful answers, quotes, and discussion segments."],
+              ["Tutorials", "Turn useful sections of longer tutorials into short clips."],
+              ["Educational Content", "Repurpose explanations and educational moments."],
+              ["Commentary", "Find interesting sections from longer commentary videos."],
+              ["Webinars", "Repurpose useful sections from longer presentations."]
+            ].map(([title, description]) => (
+              <div
+                key={title}
+                className="rounded-xl border border-white/10 p-5"
+              >
+                <h3 className="font-semibold">
+                  {title}
+                </h3>
 
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Interviews
-              </h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Discover useful answers, quotes, and discussion segments.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Tutorials
-              </h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Turn useful sections of longer tutorials into short clips.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Educational Content
-              </h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Repurpose explanations and educational moments.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Commentary
-              </h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Find interesting sections from longer commentary videos.
-              </p>
-            </div>
-
-            <div className="rounded-xl border border-white/10 p-5">
-              <h3 className="font-semibold">
-                Webinars
-              </h3>
-              <p className="mt-2 text-sm text-gray-400">
-                Repurpose useful sections from longer presentations.
-              </p>
-            </div>
+                <p className="mt-2 text-sm text-gray-400">
+                  {description}
+                </p>
+              </div>
+            ))}
 
           </div>
         </section>
@@ -210,50 +359,37 @@ export default function YouTubeToShorts() {
 
           <div className="mt-10 grid gap-6 md:grid-cols-2">
 
-            <div className="rounded-2xl border border-white/10 p-6">
-              <h3 className="text-xl font-semibold">
-                Save Time
-              </h3>
+            {[
+              [
+                "Save Time",
+                "Finding useful moments manually can take significant time. An AI-assisted workflow can make the initial discovery process faster."
+              ],
+              [
+                "Repurpose Existing Content",
+                "Create additional short-form content from videos you have already published or recorded."
+              ],
+              [
+                "Build a Short-Form Workflow",
+                "Turn long-form YouTube content into a repeatable source of short-form video ideas and clips."
+              ],
+              [
+                "Reach More Platforms",
+                "Use selected short clips as part of your content strategy across YouTube Shorts, TikTok, and Instagram Reels."
+              ]
+            ].map(([title, description]) => (
+              <div
+                key={title}
+                className="rounded-2xl border border-white/10 p-6"
+              >
+                <h3 className="text-xl font-semibold">
+                  {title}
+                </h3>
 
-              <p className="mt-3 leading-7 text-gray-400">
-                Finding useful moments manually can take significant time.
-                An AI-assisted workflow can make the initial discovery
-                process faster.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 p-6">
-              <h3 className="text-xl font-semibold">
-                Repurpose Existing Content
-              </h3>
-
-              <p className="mt-3 leading-7 text-gray-400">
-                Create additional short-form content from videos you have
-                already published or recorded.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 p-6">
-              <h3 className="text-xl font-semibold">
-                Build a Short-Form Workflow
-              </h3>
-
-              <p className="mt-3 leading-7 text-gray-400">
-                Turn long-form YouTube content into a repeatable source of
-                short-form video ideas and clips.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 p-6">
-              <h3 className="text-xl font-semibold">
-                Reach More Platforms
-              </h3>
-
-              <p className="mt-3 leading-7 text-gray-400">
-                Use selected short clips as part of your content strategy
-                across YouTube Shorts, TikTok, and Instagram Reels.
-              </p>
-            </div>
+                <p className="mt-3 leading-7 text-gray-400">
+                  {description}
+                </p>
+              </div>
+            ))}
 
           </div>
         </section>
