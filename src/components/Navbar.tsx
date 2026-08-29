@@ -1269,191 +1269,354 @@ export const Navbar: React.FC<
 
                   {/* NOTIFICATION PANEL */}
 
-                  {notificationsOpen && (
-                    <div
-                      className="
-                        absolute
-                        right-0
-                        top-full
-                        mt-3
-                        w-[360px]
-                        max-w-[calc(100vw-24px)]
-                        overflow-hidden
-                        rounded-2xl
-                        border
-                        border-white/[0.09]
-                        bg-[#090a0f]/95
-                        shadow-[0_30px_100px_rgba(0,0,0,.8)]
-                        backdrop-blur-2xl
-                        animate-[dropdownIn_.18s_ease-out]
-                      "
-                    >
-                      <div className="relative overflow-hidden border-b border-white/[0.06] p-4">
-                        <div className="absolute -right-12 -top-16 h-32 w-32 rounded-full bg-cyan-400/10 blur-3xl" />
+                  {/* PREMIUM NOTIFICATION PANEL */}
 
-                        <div className="relative flex items-center justify-between">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-cyan-400/10 bg-cyan-400/[0.07]">
-                                <Bell className="h-3.5 w-3.5 text-cyan-300" />
-                              </div>
+{notificationsOpen && (
 
-                              <div>
-                                <p className="text-xs font-black text-white">
-                                  Activity
-                                </p>
+  <div
+    className="
+      absolute right-0 top-full z-50 mt-3
+      w-[390px] max-w-[calc(100vw-24px)]
+      overflow-hidden
+      rounded-[22px]
+      border border-white/[0.10]
+      bg-[#08090d]/[0.97]
+      shadow-[0_25px_100px_rgba(0,0,0,.75),0_0_40px_rgba(34,211,238,.04)]
+      backdrop-blur-2xl
+      animate-[dropdownIn_.2s_cubic-bezier(.16,1,.3,1)]
+    "
+  >
+    {/* HEADER */}
+    <div className="relative overflow-hidden border-b border-white/[0.07] px-4 py-4">
+      {/* Ambient glow */}
+      <div className="pointer-events-none absolute -right-16 -top-20 h-40 w-40 rounded-full bg-cyan-400/[0.08] blur-3xl" />
+      <div className="pointer-events-none absolute -left-20 -top-24 h-32 w-32 rounded-full bg-blue-500/[0.05] blur-3xl" />
 
-                                <p className="text-[8px] text-zinc-600">
-                                  Workspace updates
-                                </p>
-                              </div>
-                            </div>
-                          </div>
+      <div className="relative flex items-center justify-between">
+    <div className="flex items-center gap-3">
+      {/* Bell */}
+      <div
+        className="
+          relative flex h-9 w-9 items-center justify-center
+          rounded-xl
+          border border-cyan-400/[0.12]
+          bg-cyan-400/[0.07]
+          shadow-[0_0_25px_rgba(34,211,238,.05)]
+        "
+      >
+        <Bell className="h-4 w-4 text-cyan-300" />
 
-                          {unreadCount >
-                            0 && (
-                            <span className="rounded-full border border-cyan-400/15 bg-cyan-400/[0.07] px-2 py-1 text-[7px] font-black tracking-[0.12em] text-cyan-300">
-                              {
-                                unreadCount
-                              }{" "}
-                              NEW
-                            </span>
-                          )}
-                        </div>
-                      </div>
+        {unreadCount > 0 && (
+          <span
+            className="
+              absolute -right-0.5 -top-0.5
+              h-2 w-2 rounded-full
+              bg-cyan-400
+              shadow-[0_0_10px_rgba(34,211,238,.9)]
+            "
+          />
+        )}
+      </div>
 
-                      <div className="max-h-[370px] overflow-y-auto">
-                        {notificationsLoading &&
-                        notifications.length ===
-                          0 ? (
-                          <div className="px-4 py-12 text-center">
-                            <div className="mx-auto h-6 w-6 animate-spin rounded-full border-2 border-cyan-400/15 border-t-cyan-400" />
+      <div>
+        <div className="flex items-center gap-2">
+          <p className="text-[12px] font-extrabold tracking-tight text-white">
+            Activity
+          </p>
 
-                            <p className="mt-3 text-[9px] text-zinc-600">
-                              Loading activity...
-                            </p>
-                          </div>
-                        ) : notifications.length ===
-                          0 ? (
-                          <div className="px-4 py-12 text-center">
-                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.025]">
-                              <Bell className="h-4 w-4 text-zinc-700" />
-                            </div>
+          {unreadCount > 0 && (
+            <span
+              className="
+                rounded-full
+                border border-cyan-400/[0.15]
+                bg-cyan-400/[0.08]
+                px-1.5 py-0.5
+                text-[7px] font-black
+                tracking-[0.12em]
+                text-cyan-300
+              "
+            >
+              {unreadCount} NEW
+            </span>
+          )}
+        </div>
 
-                            <p className="mt-3 text-xs font-bold text-zinc-400">
-                              All caught up
-                            </p>
+        <p className="mt-0.5 text-[8px] font-medium text-zinc-600">
+          Your latest workspace activity
+        </p>
+      </div>
+    </div>
 
-                            <p className="mt-1 text-[9px] text-zinc-700">
-                              New activity will appear here.
-                            </p>
-                          </div>
-                        ) : (
-                          notifications.map(
-                            (
-                              notification
-                            ) => (
-                              <button
-                                key={
-                                  notification.id
-                                }
-                                type="button"
-                                onClick={() =>
-                                  void handleNotificationClick(
-                                    notification
-                                  )
-                                }
-                                className={`
-                                  group
-                                  flex
-                                  w-full
-                                  gap-3
-                                  border-b
-                                  border-white/[0.04]
-                                  px-4
-                                  py-3.5
-                                  text-left
-                                  transition-all
-                                  hover:bg-white/[0.035]
-                                  ${
-                                    !notification.read
-                                      ? "bg-cyan-400/[0.015]"
-                                      : "opacity-60"
-                                  }
-                                `}
-                              >
-                                <div
-                                  className={`
-                                    flex
-                                    h-9
-                                    w-9
-                                    shrink-0
-                                    items-center
-                                    justify-center
-                                    rounded-xl
-                                    ${getNotificationBg(
-                                      notification.type
-                                    )}
-                                  `}
-                                >
-                                  {getNotificationIcon(
-                                    notification.type
-                                  )}
-                                </div>
+    {/* LIVE INDICATOR */}
+    <div className="flex items-center gap-1.5">
+      <span className="relative flex h-1.5 w-1.5">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+      </span>
 
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-start justify-between gap-2">
-                                    <p className="text-[11px] font-bold text-zinc-200">
-                                      {
-                                        notification.title
-                                      }
-                                    </p>
+      <span className="text-[7px] font-bold uppercase tracking-[0.12em] text-zinc-600">
+        Live
+      </span>
+    </div>
+  </div>
+</div>
 
-                                    {!notification.read && (
-                                      <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,.8)]" />
-                                    )}
-                                  </div>
+{/* NOTIFICATION LIST */}
+<div
+  className="
+    max-h-[390px]
+    overflow-y-auto
+    overscroll-contain
+    scrollbar-thin
+    scrollbar-track-transparent
+    scrollbar-thumb-white/[0.08]
+    hover:scrollbar-thumb-white/[0.14]
+  "
+>
+  {/* LOADING */}
+  {notificationsLoading && notifications.length === 0 ? (
+    <div className="px-5 py-14 text-center">
+      <div
+        className="
+          mx-auto flex h-11 w-11
+          items-center justify-center
+          rounded-2xl
+          border border-cyan-400/[0.08]
+          bg-cyan-400/[0.035]
+        "
+      >
+        <div
+          className="
+            h-5 w-5 animate-spin
+            rounded-full
+            border-2 border-white/[0.08]
+            border-t-cyan-400
+          "
+        />
+      </div>
 
-                                  <p className="mt-1 line-clamp-2 text-[9px] leading-4 text-zinc-600">
-                                    {
-                                      notification.message
-                                    }
-                                  </p>
+      <p className="mt-3 text-[10px] font-semibold text-zinc-500">
+        Loading activity
+      </p>
 
-                                  <p className="mt-1.5 text-[8px] text-zinc-700">
-                                    {formatTime(
-                                      notification.created_at
-                                    )}
-                                  </p>
-                                </div>
-                              </button>
-                            )
-                          )
-                        )}
-                      </div>
+      <p className="mt-1 text-[8px] text-zinc-700">
+        Fetching your latest updates...
+      </p>
+    </div>
+  ) : notifications.length === 0 ? (
+    /* EMPTY STATE */
+    <div className="px-5 py-14 text-center">
+      <div
+        className="
+          relative mx-auto flex h-14 w-14
+          items-center justify-center
+          rounded-[18px]
+          border border-white/[0.07]
+          bg-white/[0.025]
+          shadow-[0_10px_40px_rgba(0,0,0,.25)]
+        "
+      >
+        <div className="absolute inset-0 rounded-[18px] bg-cyan-400/[0.025] blur-xl" />
 
-                      {unreadCount >
-                        0 && (
-                        <button
-                          type="button"
-                          disabled={
-                            notificationAction ===
-                            "all"
-                          }
-                          onClick={() =>
-                            void handleMarkAllRead()
-                          }
-                          className="flex w-full items-center justify-center border-t border-white/[0.06] py-3 text-[8px] font-black uppercase tracking-[0.14em] text-cyan-400 transition hover:bg-cyan-400/[0.035] hover:text-cyan-300 disabled:opacity-50"
-                        >
-                          {notificationAction ===
-                          "all"
-                            ? "Updating..."
-                            : "Mark all as read"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
+        <Bell className="relative h-5 w-5 text-zinc-700" />
+      </div>
+
+      <p className="mt-4 text-[11px] font-bold text-zinc-400">
+        You're all caught up
+      </p>
+
+      <p className="mx-auto mt-1 max-w-[210px] text-[8px] leading-4 text-zinc-700">
+        Nothing new right now. We'll show your workspace activity here.
+      </p>
+    </div>
+  ) : (
+    /* ITEMS */
+    <div className="divide-y divide-white/[0.045]">
+      {notifications.map((notification) => (
+        <button
+          key={notification.id}
+          type="button"
+          onClick={() =>
+            void handleNotificationClick(notification)
+          }
+          className={`
+            group relative flex w-full gap-3
+            px-4 py-3.5
+            text-left
+            transition-all duration-200
+            hover:bg-white/[0.035]
+            active:bg-white/[0.05]
+            ${
+              !notification.read
+                ? "bg-cyan-400/[0.012]"
+                : "opacity-55 hover:opacity-80"
+            }
+          `}
+        >
+          {/* UNREAD SIDE LINE */}
+          {!notification.read && (
+            <span
+              className="
+                absolute left-0 top-2 bottom-2
+                w-[2px]
+                rounded-r-full
+                bg-cyan-400
+                shadow-[0_0_10px_rgba(34,211,238,.55)]
+              "
+            />
+          )}
+
+          {/* ICON */}
+          <div
+            className={`
+              relative mt-0.5
+              flex h-10 w-10 shrink-0
+              items-center justify-center
+              rounded-[13px]
+              border border-white/[0.05]
+              transition-transform duration-200
+              group-hover:scale-[1.04]
+              ${getNotificationBg(notification.type)}
+            `}
+          >
+            {getNotificationIcon(notification.type)}
+
+            {!notification.read && (
+              <span
+                className="
+                  absolute -right-1 -top-1
+                  h-2.5 w-2.5
+                  rounded-full
+                  border-2 border-[#08090d]
+                  bg-cyan-400
+                  shadow-[0_0_8px_rgba(34,211,238,.8)]
+                "
+              />
+            )}
+          </div>
+
+          {/* CONTENT */}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <p
+                className={`
+                  line-clamp-1
+                  text-[10.5px]
+                  leading-4
+                  ${
+                    !notification.read
+                      ? "font-extrabold text-white"
+                      : "font-bold text-zinc-300"
+                  }
+                `}
+              >
+                {notification.title}
+              </p>
+
+              <span
+                className="
+                  shrink-0
+                  pt-0.5
+                  text-[7px]
+                  font-medium
+                  text-zinc-700
+                "
+              >
+                {formatTime(notification.created_at)}
+              </span>
+            </div>
+
+            <p
+              className="
+                mt-1
+                line-clamp-2
+                text-[8.5px]
+                leading-[1.55]
+                text-zinc-600
+                transition-colors
+                group-hover:text-zinc-500
+              "
+            >
+              {notification.message}
+            </p>
+
+            {/* UNREAD LABEL */}
+            {!notification.read && (
+              <div className="mt-2 flex items-center gap-1.5">
+                <span className="h-1 w-1 rounded-full bg-cyan-400" />
+
+                <span
+                  className="
+                    text-[7px]
+                    font-bold
+                    uppercase
+                    tracking-[0.12em]
+                    text-cyan-500/80
+                  "
+                >
+                  New activity
+                </span>
+              </div>
+            )}
+          </div>
+        </button>
+      ))}
+    </div>
+  )}
+</div>
+
+{/* FOOTER */}
+{unreadCount > 0 && (
+  <div
+    className="
+      border-t border-white/[0.07]
+      bg-white/[0.012]
+      p-2
+    "
+  >
+    <button
+      type="button"
+      disabled={notificationAction === "all"}
+      onClick={() => void handleMarkAllRead()}
+      className="
+        flex w-full
+        items-center justify-center
+        gap-2
+        rounded-xl
+        border border-white/[0.05]
+        bg-white/[0.025]
+        py-2.5
+        text-[8px]
+        font-black
+        uppercase
+        tracking-[0.15em]
+        text-zinc-500
+        transition-all duration-200
+        hover:border-cyan-400/[0.12]
+        hover:bg-cyan-400/[0.05]
+        hover:text-cyan-300
+        disabled:cursor-not-allowed
+        disabled:opacity-40
+      "
+    >
+      {notificationAction === "all" ? (
+        <>
+          <div className="h-3 w-3 animate-spin rounded-full border border-zinc-600 border-t-cyan-400" />
+          Updating...
+        </>
+      ) : (
+        <>
+          <Check className="h-3 w-3" />
+          Mark all as read
+        </>
+      )}
+    </button>
+  </div>
+)}
+
+  </div>
+)}
+</div>
 
                 {/* PROFILE */}
 
