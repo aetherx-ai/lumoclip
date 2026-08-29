@@ -221,15 +221,19 @@ function Reveal({
   children,
   className = "",
   delay = 0,
+  immediate = false,
 }: {
   children: React.ReactNode;
   className?: string;
   delay?: number;
+  immediate?: boolean;
 }) {
   const ref = useRef<HTMLDivElement | null>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(immediate);
 
   useEffect(() => {
+    if (immediate) return;
+
     const node = ref.current;
 
     if (!node) return;
@@ -249,7 +253,7 @@ function Reveal({
     observer.observe(node);
 
     return () => observer.disconnect();
-  }, []);
+  }, [immediate]);
 
   return (
     <div
@@ -1364,13 +1368,13 @@ export function LandingPage({
 
           <div className="relative mx-auto max-w-[1280px] px-5 pb-20 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pt-28">
             <div className="mx-auto max-w-5xl text-center">
-              <Reveal>
+              <Reveal immediate>
                 <SectionLabel>
                   AI VIDEO CLIPPER
                 </SectionLabel>
               </Reveal>
 
-              <Reveal delay={80}>
+              <Reveal immediate delay={80}>
                 <h1
                   id="hero-title"
                   className="mt-7 text-[52px] font-black leading-[0.88] tracking-[-0.07em] sm:text-[78px] lg:text-[104px]"
@@ -1388,7 +1392,7 @@ export function LandingPage({
                 </h1>
               </Reveal>
 
-              <Reveal delay={150}>
+              <Reveal immediate delay={150}>
                 <p className="mx-auto mt-8 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base sm:leading-8">
                   LumoClip is an AI video clipper
                   that finds the best moments from
@@ -1402,6 +1406,7 @@ export function LandingPage({
               {/* SOURCE BOX */}
 
               <Reveal
+                immediate
                 delay={220}
                 className="mx-auto mt-10 max-w-[800px]"
               >
@@ -1568,6 +1573,7 @@ export function LandingPage({
             {/* HERO INTELLIGENCE */}
 
             <Reveal
+              immediate
               delay={300}
               className="relative mx-auto mt-20 max-w-[1120px]"
             >
@@ -1627,7 +1633,7 @@ export function LandingPage({
               </div>
             </Reveal>
 
-            <Reveal delay={100}>
+            <Reveal immediate delay={100}>
               <div className="mx-auto mt-6 max-w-[1000px]">
                 <MiniStats />
               </div>
