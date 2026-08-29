@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import crypto from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import {
@@ -127,9 +128,40 @@ const GEMINI_RETRY_MAX_MS = Number(
   process.env.GEMINI_RETRY_MAX_MS || 60000,
 );
 
-const CLIP_CONCURRENCY = Number(
-  process.env.CLIP_CONCURRENCY || 1,
+// =========================================================
+// FFMPEG SPEED CONFIG
+// =========================================================
+// Render-friendly defaults:
+// - 2 clips can encode in parallel on a 2+ vCPU instance.
+// - Each encoder gets a limited number of threads to avoid
+//   oversubscribing the CPU when clips run concurrently.
+// Override with Render environment variables if needed.
+const CPU_COUNT = Math.max(1, os.cpus().length);
+
+const CLIP_CONCURRENCY = Math.max(
+  1,
+  Math.min(
+    Number(process.env.CLIP_CONCURRENCY || 2),
+    4,
+  ),
 );
+
+const FFMPEG_THREADS_PER_CLIP = Math.max(
+  1,
+  Math.min(
+    Number(
+      process.env.FFMPEG_THREADS_PER_CLIP ||
+        (CPU_COUNT >= 4 ? 2 : 1),
+    ),
+    4,
+  ),
+);
+
+const FFMPEG_PRESET =
+  process.env.FFMPEG_PRESET?.trim() || "ultrafast";
+
+const FFMPEG_CRF =
+  process.env.FFMPEG_CRF?.trim() || "27";
 
 /* =========================================================
    SELF-HOSTED YOUTUBE WORKER
@@ -2009,6 +2041,10 @@ function createClip(
         "=================================",
       );
 
+      console.log(
+        `FFmpeg speed mode: preset=${FFMPEG_PRESET}, threads=${FFMPEG_THREADS_PER_CLIP}, concurrency=${CLIP_CONCURRENCY}`,
+      );
+
       // ---------------------------------------------------------
       // Video filters
       // ---------------------------------------------------------
@@ -2076,6 +2112,8 @@ function createClip(
       // FFmpeg command
       // ---------------------------------------------------------
 
+      let nextLoggedPercent = 5;
+
       const command = ffmpeg(
         absoluteInputPath,
       )
@@ -2110,15 +2148,15 @@ function createClip(
 
           // Faster encoding
           "-preset",
-          "ultrafast",
+          FFMPEG_PRESET,
 
           // Faster encode / smaller output
           "-crf",
-          "27",
+          FFMPEG_CRF,
 
           // Let FFmpeg use the available CPU threads.
           "-threads",
-          "0",
+          String(FFMPEG_THREADS_PER_CLIP),
 
           "-pix_fmt",
           "yuv420p",
@@ -2178,18 +2216,28 @@ function createClip(
         .on(
           "progress",
           (progress) => {
+            // Render logs do not need a line for every tiny progress
+            // change. Logging every 5% keeps the worker much quieter.
             if (
-              typeof progress.percent ===
-                "number" &&
-              Number.isFinite(
-                progress.percent,
-              )
+              typeof progress.percent === "number" &&
+              Number.isFinite(progress.percent)
             ) {
-              console.log(
-                `FFmpeg clip progress: ${progress.percent.toFixed(
-                  1,
-                )}%`,
+              const percent = Math.min(
+                100,
+                Math.max(0, progress.percent),
               );
+
+              if (
+                percent >= nextLoggedPercent ||
+                percent >= 99.9
+              ) {
+                console.log(
+                  `FFmpeg clip progress: ${percent.toFixed(0)}%`,
+                );
+
+                nextLoggedPercent =
+                  Math.floor(percent / 5) * 5 + 5;
+              }
             }
           },
         )
@@ -2495,11 +2543,11 @@ async function processVideo(
     let generated = 0;
 
     /*
-       Generate clips in small parallel batches.
+       Generate clips in parallel batches.
 
-       The previous implementation encoded every clip strictly
-       one-by-one. Keep concurrency configurable so Render can use 1
-       on small instances and 2 on stronger instances.
+       Speed-optimized default: up to 2 clips encode at once.
+       CLIP_CONCURRENCY remains configurable for smaller/larger
+       Render instances.
     */
     const processOneClip = async (
       clip: ViralClip,
@@ -2692,7 +2740,8 @@ async function processVideo(
 
     /*
        Run a maximum of CLIP_CONCURRENCY clips at once.
-       Render can keep this at 1; stronger instances can use 2.
+       Default is 2 for faster processing; set CLIP_CONCURRENCY=1
+       if the Render instance has only one vCPU.
     */
     const concurrency =
       Math.max(
@@ -5062,6 +5111,9 @@ app.listen(
 
     console.log(
       `Speed mode: YouTube ${YOUTUBE_MAX_HEIGHT}p, ${YOUTUBE_CONCURRENT_FRAGMENTS} download fragments, ${CLIP_CONCURRENCY} parallel clips`,
+    );
+    console.log(
+      `FFmpeg tuning: preset=${FFMPEG_PRESET}, crf=${FFMPEG_CRF}, threads/clip=${FFMPEG_THREADS_PER_CLIP}, detected CPUs=${CPU_COUNT}`,
     );
 
     console.log(
