@@ -29,9 +29,6 @@ import {
 import { Navbar } from "./components/Navbar.js";
 import LandingPage from "./components/LandingPage.js";
 
-import PrivacyPolicy from "./pages/PrivacyPolicy";
-import TermsOfService from "./pages/TermsOfService";
-
 /* =========================================================
    LAZY COMPONENTS
 ========================================================= */
@@ -250,9 +247,13 @@ const normalizeYouTubeUrl = (
 
 /* =========================================================
    MAIN APP
+   (Rendered by main.tsx at path="/". /privacy, /terms and
+   the other SEO landing pages are now routed centrally in
+   main.tsx, so this component no longer needs its own
+   <Routes> wrapper.)
 ========================================================= */
 
-export default function App() {
+function App() {
   /* =======================================================
      STATE
   ======================================================= */
@@ -1405,7 +1406,7 @@ export default function App() {
     };
 
   /* =======================================================
-     MAIN APPLICATION
+     RENDER
   ======================================================= */
 
   return (
@@ -1775,3 +1776,5 @@ export default function App() {
     </div>
   );
 }
+
+export default App;
