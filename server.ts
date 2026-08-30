@@ -699,6 +699,66 @@ const ai = new GoogleGenAI({
   apiKey: geminiApiKey,
 });
 
+interface ProcessingConfig {
+  mode: ProcessingMode;
+  captionStyle: SubtitleStyle;
+}
+
+// The in-memory value makes the mode available to the worker during the
+// current server lifetime. If the optional database columns are present,
+// they are also used so a worker job can survive a restart.
+const processingConfigs = new Map<string, ProcessingConfig>();
+
+async function rememberProcessingConfig(
+  projectId: string,
+  config: ProcessingConfig,
+): Promise<void> {
+  processingConfigs.set(projectId, config);
+
+  const { error } = await supabase
+    .from("projects")
+    .update({
+      processing_mode: config.mode,
+      caption_style: config.captionStyle,
+    })
+    .eq("id", projectId);
+
+  if (error) {
+    // These columns are optional for backward compatibility with the current
+    // schema. The in-memory config remains the fallback.
+    console.warn(
+      "Project processing config was not persisted; using in-memory config:",
+      error.message,
+    );
+  }
+}
+
+async function getProcessingConfig(
+  projectId: string,
+): Promise<ProcessingConfig> {
+  const inMemory = processingConfigs.get(projectId);
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("processing_mode, caption_style")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  if (!error && data?.processing_mode) {
+    return {
+      mode: normalizeProcessingMode(data.processing_mode),
+      captionStyle: normalizeCaptionStyle(data.caption_style),
+    };
+  }
+
+  return (
+    inMemory || {
+      mode: "clips",
+      captionStyle: normalizeCaptionStyle(undefined),
+    }
+  );
+}
+
 /* =========================================================
    DIRECTORIES
 ========================================================= */
@@ -850,6 +910,8 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
+type ProcessingMode = "clips" | "full_video_caption";
+
 interface SubtitleStyle {
   font: string;
   textColor: string;      // base ("not yet spoken") color, hex
@@ -857,6 +919,83 @@ interface SubtitleStyle {
   position: "bottom" | "center" | "top";
   fontSize: number;
   uppercase: boolean;
+}
+
+const ALLOWED_CAPTION_FONTS = new Set([
+  "Arial",
+  "Inter",
+  "Poppins",
+  "Montserrat",
+  "Impact",
+  "Liberation Sans",
+  "DejaVu Sans",
+]);
+
+function normalizeHexColor(value: unknown, fallback: string): string {
+  const candidate = String(value || "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(candidate)
+    ? candidate.toUpperCase()
+    : fallback;
+}
+
+function normalizeCaptionStyle(value: unknown): SubtitleStyle {
+  let raw: any = value;
+
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      raw = {};
+    }
+  }
+
+  const requestedFont = String(raw?.font || "").trim();
+  const requestedPosition = String(raw?.position || "bottom");
+
+  return {
+    font: ALLOWED_CAPTION_FONTS.has(requestedFont)
+      ? requestedFont
+      : DEFAULT_SUBTITLE_STYLE.font,
+    textColor: normalizeHexColor(
+      raw?.textColor,
+      DEFAULT_SUBTITLE_STYLE.textColor,
+    ),
+    highlightColor: normalizeHexColor(
+      raw?.highlightColor,
+      DEFAULT_SUBTITLE_STYLE.highlightColor,
+    ),
+    position: ["top", "center", "bottom"].includes(requestedPosition)
+      ? (requestedPosition as SubtitleStyle["position"])
+      : DEFAULT_SUBTITLE_STYLE.position,
+    fontSize: DEFAULT_SUBTITLE_STYLE.fontSize,
+    uppercase: raw?.uppercase === false ? false : true,
+  };
+}
+
+function normalizeProcessingMode(value: unknown): ProcessingMode {
+  return value === "full_video_caption"
+    ? "full_video_caption"
+    : "clips";
+}
+
+function getProcessingConfigFromRequest(
+  styleValue: unknown,
+  modeValue?: unknown,
+): ProcessingConfig {
+  let rawStyle: any = styleValue;
+
+  if (typeof styleValue === "string") {
+    try {
+      rawStyle = JSON.parse(styleValue);
+    } catch {
+      rawStyle = {};
+    }
+  }
+
+  return {
+    mode: normalizeProcessingMode(modeValue || rawStyle?.mode),
+    captionStyle: normalizeCaptionStyle(rawStyle),
+  };
 }
 
 const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
@@ -1832,6 +1971,7 @@ VALIDATE GEMINI RESULT
 function validateAnalysis(
   raw: any,
   duration: number,
+  options: { requireClips?: boolean } = {},
 ): GeminiAnalysis {
   const safeDuration = Number(duration);
 
@@ -2001,7 +2141,7 @@ function validateAnalysis(
     `Gemini validation: ${transcript.length} transcript segments, ${clips.length} valid clips`,
   );
 
-  if (!clips.length) {
+  if (!clips.length && options.requireClips !== false) {
     throw new Error(
       "AI could not find any valid viral moments within the video duration.",
     );
@@ -2020,6 +2160,7 @@ async function analyzeLocalVideo(
   videoPath: string,
   mimeType: string,
   duration: number,
+  processingMode: ProcessingMode = "clips",
 ): Promise<GeminiAnalysis> {
   console.log(
     "Uploading video to Gemini:",
@@ -2086,6 +2227,11 @@ TASK:
 Analyze the entire video and return:
 1. A concise timestamped transcript.
 2. Up to ${MAX_CLIPS} high-retention short-form clips.
+
+PROCESSING MODE:
+${processingMode === "full_video_caption"
+  ? "Full-video caption mode: the transcript is required; clips may be an empty array because no clips will be generated."
+  : "Clip mode: return high-retention clips as usual."}
 
 TARGET:
 TikTok, Instagram Reels, YouTube Shorts, Facebook Reels.
@@ -2198,6 +2344,7 @@ EXACT JSON SHAPE:
   return validateAnalysis(
     parsed,
     duration,
+    { requireClips: processingMode !== "full_video_caption" },
   );
 }
 
@@ -2691,6 +2838,137 @@ function createClip(
 }
 
 /* =========================================================
+   CREATE FULL CAPTIONED VIDEO
+========================================================= */
+
+function createFullCaptionedVideo(
+  inputPath: string,
+  outputPath: string,
+  duration: number,
+  transcript: TranscriptSegment[],
+  style: SubtitleStyle,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let assFilePath = "";
+    let settled = false;
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+
+      if (assFilePath) {
+        try {
+          fs.unlinkSync(assFilePath);
+        } catch {
+          // Best-effort cleanup.
+        }
+      }
+
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    };
+
+    try {
+      const absoluteInputPath = path.resolve(inputPath);
+      const absoluteOutputPath = path.resolve(outputPath);
+      const safeDuration = Number(duration);
+
+      if (!fs.existsSync(absoluteInputPath)) {
+        return finish(new Error("Full caption input video was not found."));
+      }
+
+      if (!Number.isFinite(safeDuration) || safeDuration <= 0) {
+        return finish(new Error("Invalid full caption video duration."));
+      }
+
+      fs.mkdirSync(path.dirname(absoluteOutputPath), { recursive: true });
+
+      const relativeSegments = getClipRelativeSegments(
+        transcript,
+        0,
+        safeDuration,
+      );
+
+      if (!relativeSegments.length) {
+        return finish(new Error("No transcript is available for full-video captions."));
+      }
+
+      const assContent = buildKaraokeAss(
+        relativeSegments,
+        style,
+      );
+
+      assFilePath = path.join(tempDir, `${generateId()}-full.ass`);
+      fs.writeFileSync(assFilePath, assContent, "utf8");
+
+      const subtitleFilter = `subtitles=${escapeFfmpegFilterPath(assFilePath)}`;
+
+      const command = ffmpeg(absoluteInputPath)
+        .outputOptions([
+          "-y",
+          "-map",
+          "0:v:0",
+          "-map",
+          "0:a:0?",
+          "-c:v",
+          "libx264",
+          "-preset",
+          FFMPEG_PRESET,
+          "-crf",
+          FFMPEG_CRF,
+          "-threads",
+          String(FFMPEG_THREADS_PER_CLIP),
+          "-pix_fmt",
+          "yuv420p",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-movflags",
+          "+faststart",
+        ])
+        .videoFilters([subtitleFilter])
+        .on("start", () => {
+          console.log("Full-video AI caption encoding started.");
+        })
+        .on("progress", (progress) => {
+          if (
+            typeof progress.percent === "number" &&
+            Number.isFinite(progress.percent)
+          ) {
+            console.log(
+              `Full-video caption progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`,
+            );
+          }
+        })
+        .on("end", () => {
+          if (
+            !fs.existsSync(absoluteOutputPath) ||
+            !fs.statSync(absoluteOutputPath).isFile() ||
+            fs.statSync(absoluteOutputPath).size <= 0
+          ) {
+            return finish(new Error("Full caption video was not created."));
+          }
+
+          console.log("Full-video AI caption encoding completed.");
+          return finish();
+        })
+        .on("error", (error) => {
+          console.error("Full-video caption FFmpeg failed:", error.message);
+          return finish(error);
+        });
+
+      command.save(absoluteOutputPath);
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error("Full caption encoding failed."));
+    }
+  });
+}
+
+/* =========================================================
    SAVE TRANSCRIPT
 ========================================================= */
 
@@ -2732,7 +3010,11 @@ async function processVideo(
   localVideoPath: string,
   mimeType: string,
   originalSourceUrl?: string,
+  processingMode: ProcessingMode = "clips",
+  captionStyle: SubtitleStyle = DEFAULT_SUBTITLE_STYLE,
 ) {
+  const mode = normalizeProcessingMode(processingMode);
+  const safeCaptionStyle = normalizeCaptionStyle(captionStyle);
   try {
     await updateProject(
       projectId,
@@ -2839,6 +3121,7 @@ async function processVideo(
         sourcePath,
         mimeType,
         duration,
+        mode,
       );
 
     // Enforce the server-side clip limit even if Gemini returns more.
@@ -2857,6 +3140,91 @@ async function processVideo(
       projectId,
       analysis.transcript,
     );
+
+    if (mode === "full_video_caption") {
+      const fullCaptionFilename = "full-captioned.mp4";
+      const fullCaptionPath = path.join(
+        projectDir,
+        fullCaptionFilename,
+      );
+
+      await updateProject(
+        projectId,
+        55,
+        "Burning AI captions on the full video",
+        "processing",
+        0,
+      );
+
+      await createFullCaptionedVideo(
+        sourcePath,
+        fullCaptionPath,
+        duration,
+        analysis.transcript,
+        safeCaptionStyle,
+      );
+
+      const fullVideoUrl = publicMediaUrl(
+        projectId,
+        fullCaptionFilename,
+      );
+
+      const optionalCompletionUpdate = await supabase
+        .from("projects")
+        .update({
+          full_video_url: fullVideoUrl,
+          processing_mode: mode,
+          caption_style: safeCaptionStyle,
+          progress: 100,
+          current_step: "Full-video AI captions are ready",
+          status: "completed",
+          total_clips: 0,
+        })
+        .eq("id", projectId);
+
+      let fullVideoUpdateError = optionalCompletionUpdate.error;
+
+      if (fullVideoUpdateError) {
+        // Backward-compatible fallback when the optional metadata columns
+        // have not been added to the current projects table yet.
+        console.warn(
+          "Optional full-video metadata columns are unavailable; saving completion status only:",
+          fullVideoUpdateError.message,
+        );
+
+        const fallbackCompletionUpdate = await supabase
+          .from("projects")
+          .update({
+            progress: 100,
+            current_step: "Full-video AI captions are ready",
+            status: "completed",
+            total_clips: 0,
+          })
+          .eq("id", projectId);
+
+        fullVideoUpdateError = fallbackCompletionUpdate.error;
+      }
+
+      if (fullVideoUpdateError) {
+        throw fullVideoUpdateError;
+      }
+
+      await createNotification({
+        userId,
+        type: "project_completed",
+        title: "Your full captioned video is ready",
+        message: "LumoClip added AI captions to your complete video.",
+        projectId,
+        metadata: {
+          mode,
+          fullVideoUrl,
+          generated: 0,
+        },
+      });
+
+      console.log(`Project ${projectId} completed with full-video captions.`);
+      return;
+    }
 
     await updateProject(
       projectId,
@@ -3013,7 +3381,7 @@ async function processVideo(
         finalDuration,
         {
           transcript: analysis.transcript,
-          style: DEFAULT_SUBTITLE_STYLE,
+          style: safeCaptionStyle,
         },
       );
 
@@ -3809,10 +4177,24 @@ app.get(
         throw error;
       }
 
-      res.json({
-        projects:
-          data || [],
+      const projects = (data || []).map((project: any) => {
+        const fullVideoPath = path.join(
+          mediaDir,
+          safeSegment(project.id),
+          "full-captioned.mp4",
+        );
+
+        return {
+          ...project,
+          full_video_url:
+            project.full_video_url ||
+            (fs.existsSync(fullVideoPath)
+              ? publicMediaUrl(project.id, "full-captioned.mp4")
+              : null),
+        };
       });
+
+      res.json({ projects });
     } catch (error: any) {
       if (
         error?.message ===
@@ -3890,6 +4272,11 @@ app.post(
               .originalname ||
             "LumoClip Project";
 
+      const requestedConfig = getProcessingConfigFromRequest(
+        req.body?.captionStyle,
+        req.body?.mode,
+      );
+
       const {
         profile,
         project,
@@ -3907,6 +4294,11 @@ app.post(
 
       creditsCharged =
         true;
+
+      await rememberProcessingConfig(
+        projectId,
+        requestedConfig,
+      );
 
       const extension =
         extensionForMime(
@@ -3977,6 +4369,9 @@ app.post(
         user.id,
         sourcePath,
         req.file.mimetype,
+        undefined,
+        requestedConfig.mode,
+        requestedConfig.captionStyle,
       ).catch(
         async (
           error,
@@ -4142,6 +4537,11 @@ app.post(
           ? req.body.name.trim()
           : "YouTube Project";
 
+      const requestedConfig = getProcessingConfigFromRequest(
+        req.body?.captionStyle,
+        req.body?.mode,
+      );
+
       const { profile, project, newCredits } =
         await createProjectAndCharge(
           user.id,
@@ -4152,6 +4552,11 @@ app.post(
 
       projectId = project.id;
       creditsCharged = true;
+
+      await rememberProcessingConfig(
+        projectId,
+        requestedConfig,
+      );
 
       const waitingMessage = WORKER_ENABLED
         ? "Waiting for LumoClip worker"
@@ -4177,6 +4582,10 @@ app.post(
         },
         worker: {
           enabled: WORKER_ENABLED,
+        },
+        processing: {
+          mode: requestedConfig.mode,
+          captionStyle: requestedConfig.captionStyle,
         },
         message: WORKER_ENABLED
           ? "YouTube job queued. Your LumoClip PC worker will download the video."
@@ -4353,6 +4762,7 @@ app.post(
       } catch {}
 
       const sourceMediaUrl = publicMediaUrl(projectId, "source.mp4");
+      const processingConfig = await getProcessingConfig(projectId);
 
       const { error: updateError } = await supabase
         .from("projects")
@@ -4372,6 +4782,8 @@ app.post(
         sourcePath,
         "video/mp4",
         project.source_url || undefined,
+        processingConfig.mode,
+        processingConfig.captionStyle,
       ).catch(async (error) => {
         console.error(`Worker-upload processing failed for project ${projectId}:`, error);
         await refundCredits(project.user_id, projectId);
@@ -4380,7 +4792,10 @@ app.post(
       return res.json({
         success: true,
         projectId,
-        message: "Video received. AI processing started.",
+        mode: processingConfig.mode,
+        message: processingConfig.mode === "full_video_caption"
+          ? "Video received. Full-video AI caption processing started."
+          : "Video received. AI processing started.",
       });
     } catch (error: any) {
       console.error(`Worker upload failed for ${projectId}:`, error);
@@ -4979,11 +5394,24 @@ app.get(
         );
       }
 
-      res.json({
-        project,
+      const fullVideoPath = path.join(
+        mediaDir,
+        safeSegment(project.id),
+        "full-captioned.mp4",
+      );
 
-        clips:
-          clips || [],
+      const projectWithFullVideo = {
+        ...project,
+        full_video_url:
+          project.full_video_url ||
+          (fs.existsSync(fullVideoPath)
+            ? publicMediaUrl(project.id, "full-captioned.mp4")
+            : null),
+      };
+
+      res.json({
+        project: projectWithFullVideo,
+        clips: clips || [],
       });
     } catch (error: any) {
       if (

@@ -34,9 +34,11 @@ import {
 ============================================================================ */
 
 export type CaptionPosition = "top" | "center" | "bottom";
+export type CaptionProcessingMode = "clips" | "full_video_caption";
 
 export type CaptionStyleSettings = {
   preset: string;
+  mode: CaptionProcessingMode;
   font: string;
   textColor: string;
   highlightColor: string;
@@ -60,6 +62,7 @@ type LandingPageProps = {
 const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
   {
     preset: "opus-punch",
+    mode: "full_video_caption",
     font: "Arial",
     textColor: "#FFFFFF",
     highlightColor: "#FFD84D",
@@ -68,6 +71,7 @@ const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
   },
   {
     preset: "clean-cyan",
+    mode: "full_video_caption",
     font: "Inter",
     textColor: "#FFFFFF",
     highlightColor: "#67E8F9",
@@ -76,6 +80,7 @@ const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
   },
   {
     preset: "creator-pop",
+    mode: "full_video_caption",
     font: "Poppins",
     textColor: "#FFFFFF",
     highlightColor: "#F472B6",
@@ -84,6 +89,7 @@ const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
   },
   {
     preset: "neon-energy",
+    mode: "full_video_caption",
     font: "Impact",
     textColor: "#D9F99D",
     highlightColor: "#39FF14",
@@ -92,6 +98,7 @@ const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
   },
   {
     preset: "minimal",
+    mode: "full_video_caption",
     font: "Arial",
     textColor: "#FFFFFF",
     highlightColor: "#FFFFFF",
@@ -1002,7 +1009,7 @@ function CaptionStylePicker({
               </span>
             </span>
             <span className="mt-0.5 block truncate text-[10px] text-zinc-600">
-              {CAPTION_STYLE_LABELS[style.preset] || "Custom style"} · {style.font} · {style.position}
+              {style.mode === "full_video_caption" ? "Full video · no clips" : "Clips mode"} · {CAPTION_STYLE_LABELS[style.preset] || "Custom style"} · {style.font} · {style.position}
             </span>
           </span>
         </span>
@@ -1184,6 +1191,9 @@ export function LandingPage({
 
   const [captionPickerOpen, setCaptionPickerOpen] =
     useState(false);
+
+  const [captionMode, setCaptionMode] =
+    useState<CaptionProcessingMode>("clips");
 
   const [openFaq, setOpenFaq] =
     useState<number | null>(null);
@@ -1547,7 +1557,10 @@ export function LandingPage({
   }, []);
 
   const submit = () => {
-    const selectedStyle = cloneCaptionStyle(captionStyle);
+    const selectedStyle = {
+      ...cloneCaptionStyle(captionStyle),
+      mode: captionMode,
+    } as CaptionStyleSettings;
 
     if (selectedFile) {
       onUploadFile?.(selectedFile, selectedStyle);
@@ -1777,15 +1790,27 @@ export function LandingPage({
                         onClick={submit}
                         icon
                       >
-                        Start creating
+                        {captionMode === "full_video_caption"
+                          ? "Create full captioned video"
+                          : "Start creating"}
                       </PremiumButton>
                     </div>
 
                     <CaptionStylePicker
                       style={captionStyle}
                       open={captionPickerOpen}
-                      onToggle={() => setCaptionPickerOpen((open) => !open)}
-                      onChange={setCaptionStyle}
+                      onToggle={() => {
+                        setCaptionPickerOpen((open) => {
+                          if (!open) {
+                            setCaptionMode("full_video_caption");
+                          }
+                          return !open;
+                        });
+                      }}
+                      onChange={(nextStyle) => {
+                        setCaptionMode("full_video_caption");
+                        setCaptionStyle(nextStyle);
+                      }}
                     />
 
                     <div className="my-2 flex items-center gap-3 px-2">
