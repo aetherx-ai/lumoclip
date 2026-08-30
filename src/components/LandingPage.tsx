@@ -33,12 +33,94 @@ import {
    TYPES
 ============================================================================ */
 
+export type CaptionPosition = "top" | "center" | "bottom";
+
+export type CaptionStyleSettings = {
+  preset: string;
+  font: string;
+  textColor: string;
+  highlightColor: string;
+  position: CaptionPosition;
+  uppercase: boolean;
+};
+
 type LandingPageProps = {
   onGetStarted: () => void;
   onOpenPricing: () => void;
-  onOpenNewProjectWithUrl: (url: string) => void;
-  onUploadFile?: (file: File) => void;
+  onOpenNewProjectWithUrl: (
+    url: string,
+    captionStyle?: CaptionStyleSettings
+  ) => void;
+  onUploadFile?: (
+    file: File,
+    captionStyle?: CaptionStyleSettings
+  ) => void;
 };
+
+const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
+  {
+    preset: "opus-punch",
+    font: "Arial",
+    textColor: "#FFFFFF",
+    highlightColor: "#FFD84D",
+    position: "bottom",
+    uppercase: true,
+  },
+  {
+    preset: "clean-cyan",
+    font: "Inter",
+    textColor: "#FFFFFF",
+    highlightColor: "#67E8F9",
+    position: "bottom",
+    uppercase: false,
+  },
+  {
+    preset: "creator-pop",
+    font: "Poppins",
+    textColor: "#FFFFFF",
+    highlightColor: "#F472B6",
+    position: "center",
+    uppercase: true,
+  },
+  {
+    preset: "neon-energy",
+    font: "Impact",
+    textColor: "#D9F99D",
+    highlightColor: "#39FF14",
+    position: "top",
+    uppercase: true,
+  },
+  {
+    preset: "minimal",
+    font: "Arial",
+    textColor: "#FFFFFF",
+    highlightColor: "#FFFFFF",
+    position: "bottom",
+    uppercase: false,
+  },
+];
+
+const CAPTION_STYLE_LABELS: Record<string, string> = {
+  "opus-punch": "Opus Punch",
+  "clean-cyan": "Clean Cyan",
+  "creator-pop": "Creator Pop",
+  "neon-energy": "Neon Energy",
+  minimal: "Minimal",
+};
+
+const CAPTION_STYLE_DESCRIPTIONS: Record<string, string> = {
+  "opus-punch": "Bold words with a punchy highlight.",
+  "clean-cyan": "Clean, readable captions for every video.",
+  "creator-pop": "Centered creator-style captions with color.",
+  "neon-energy": "High-energy neon captions for fast edits.",
+  minimal: "Simple white captions with no distraction.",
+};
+
+const DEFAULT_CAPTION_STYLE = CAPTION_STYLE_PRESETS[0];
+
+function cloneCaptionStyle(style: CaptionStyleSettings): CaptionStyleSettings {
+  return { ...style };
+}
 
 /* ============================================================================
    SEO CONSTANTS
@@ -881,6 +963,207 @@ const MiniStats = React.memo(function MiniStats() {
 });
 
 /* ============================================================================
+   AI CAPTION STYLE PICKER
+============================================================================ */
+
+function CaptionStylePicker({
+  style,
+  open,
+  onToggle,
+  onChange,
+}: {
+  style: CaptionStyleSettings;
+  open: boolean;
+  onToggle: () => void;
+  onChange: (next: CaptionStyleSettings) => void;
+}) {
+  const update = (patch: Partial<CaptionStyleSettings>) => {
+    onChange({ ...style, ...patch });
+  };
+
+  return (
+    <div className="mt-3 rounded-[24px] border border-cyan-300/10 bg-cyan-400/[0.025] p-3 text-left">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        aria-controls="caption-style-panel"
+        className="flex w-full items-center justify-between gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-white/[0.03]"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.08]">
+            <Subtitles className="h-4 w-4 text-cyan-200" />
+          </span>
+          <span className="min-w-0">
+            <span className="flex items-center gap-2 text-xs font-bold text-white">
+              AI Captions
+              <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.07] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-200">
+                AI
+              </span>
+            </span>
+            <span className="mt-0.5 block truncate text-[10px] text-zinc-600">
+              {CAPTION_STYLE_LABELS[style.preset] || "Custom style"} · {style.font} · {style.position}
+            </span>
+          </span>
+        </span>
+
+        <ChevronDown
+          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${open ? "rotate-180 text-cyan-300" : ""}`}
+        />
+      </button>
+
+      {open && (
+        <div id="caption-style-panel" className="mt-4 border-t border-white/[0.06] pt-4">
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-200">
+                Choose a caption style
+              </p>
+              <p className="mt-1 text-[10px] leading-5 text-zinc-600">
+                Select a preset now. You can fine-tune the look before processing.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 text-[9px] font-mono text-zinc-500">
+              9:16
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+            {CAPTION_STYLE_PRESETS.map((preset) => {
+              const selected = style.preset === preset.preset;
+              const previewText = preset.uppercase ? "MAKE IT POP" : "Make it pop";
+
+              return (
+                <button
+                  key={preset.preset}
+                  type="button"
+                  onClick={() => onChange(cloneCaptionStyle(preset))}
+                  aria-pressed={selected}
+                  className={`group relative overflow-hidden rounded-2xl border p-2 text-left transition-all ${
+                    selected
+                      ? "border-cyan-300/50 bg-cyan-300/[0.09] shadow-[0_0_28px_rgba(34,211,238,0.09)]"
+                      : "border-white/[0.07] bg-black/20 hover:border-cyan-300/20 hover:bg-white/[0.035]"
+                  }`}
+                >
+                  <span className="relative flex h-20 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#111827] via-[#090d14] to-black px-2">
+                    <span
+                      className="text-center text-[11px] font-black leading-tight tracking-tight"
+                      style={{
+                        color: preset.textColor,
+                        fontFamily: preset.font,
+                        textTransform: preset.uppercase ? "uppercase" : "none",
+                        textShadow: `0 2px 14px ${preset.highlightColor}55`,
+                      }}
+                    >
+                      {previewText.split(" ").map((word, index) => (
+                        <React.Fragment key={`${preset.preset}-${word}`}>
+                          {index > 0 ? " " : ""}
+                          <span style={{ color: index === 1 ? preset.highlightColor : preset.textColor }}>
+                            {word}
+                          </span>
+                        </React.Fragment>
+                      ))}
+                    </span>
+                    <span
+                      className="absolute bottom-1.5 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full"
+                      style={{ backgroundColor: preset.highlightColor }}
+                    />
+                  </span>
+                  <span className="mt-2 block truncate text-[10px] font-bold text-zinc-200">
+                    {CAPTION_STYLE_LABELS[preset.preset]}
+                  </span>
+                  <span className="mt-0.5 block min-h-7 text-[8px] leading-3 text-zinc-600">
+                    {CAPTION_STYLE_DESCRIPTIONS[preset.preset]}
+                  </span>
+                  {selected && (
+                    <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-cyan-200" />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <label className="block">
+              <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Font
+              </span>
+              <select
+                value={style.font}
+                onChange={(event) => update({ font: event.target.value, preset: "custom" })}
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-cyan-300/30"
+              >
+                {["Arial", "Inter", "Poppins", "Montserrat", "Impact", "Liberation Sans"].map((font) => (
+                  <option key={font} value={font}>{font}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Position
+              </span>
+              <select
+                value={style.position}
+                onChange={(event) => update({ position: event.target.value as CaptionPosition, preset: "custom" })}
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-cyan-300/30"
+              >
+                <option value="top">Top</option>
+                <option value="center">Center</option>
+                <option value="bottom">Bottom</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Text case
+              </span>
+              <button
+                type="button"
+                onClick={() => update({ uppercase: !style.uppercase, preset: "custom" })}
+                className={`flex h-10 w-full items-center justify-between rounded-xl border px-3 text-xs transition ${
+                  style.uppercase
+                    ? "border-cyan-300/25 bg-cyan-300/[0.08] text-cyan-100"
+                    : "border-white/[0.08] bg-[#080b10] text-zinc-400"
+                }`}
+              >
+                <span>{style.uppercase ? "UPPERCASE" : "Sentence case"}</span>
+                <span className={`h-4 w-7 rounded-full p-0.5 transition ${style.uppercase ? "bg-cyan-300/40" : "bg-white/10"}`}>
+                  <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${style.uppercase ? "translate-x-3" : ""}`} />
+                </span>
+              </button>
+            </label>
+          </div>
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
+              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-600">Text color</span>
+              <input
+                type="color"
+                value={style.textColor}
+                onChange={(event) => update({ textColor: event.target.value, preset: "custom" })}
+                className="h-7 w-9 cursor-pointer rounded-md border-0 bg-transparent p-0"
+                aria-label="Caption text color"
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
+              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-600">Highlight</span>
+              <input
+                type="color"
+                value={style.highlightColor}
+                onChange={(event) => update({ highlightColor: event.target.value, preset: "custom" })}
+                className="h-7 w-9 cursor-pointer rounded-md border-0 bg-transparent p-0"
+                aria-label="Caption highlight color"
+              />
+            </label>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ============================================================================
    LANDING PAGE
 ============================================================================ */
 
@@ -893,6 +1176,14 @@ export function LandingPage({
   const [url, setUrl] = useState("");
   const [selectedFile, setSelectedFile] =
     useState<File | null>(null);
+
+  const [captionStyle, setCaptionStyle] =
+    useState<CaptionStyleSettings>(() =>
+      cloneCaptionStyle(DEFAULT_CAPTION_STYLE)
+    );
+
+  const [captionPickerOpen, setCaptionPickerOpen] =
+    useState(false);
 
   const [openFaq, setOpenFaq] =
     useState<number | null>(null);
@@ -1256,13 +1547,21 @@ export function LandingPage({
   }, []);
 
   const submit = () => {
+    const selectedStyle = cloneCaptionStyle(captionStyle);
+
+    if (selectedFile) {
+      onUploadFile?.(selectedFile, selectedStyle);
+      return;
+    }
+
     if (!normalizedUrl) {
       onGetStarted();
       return;
     }
 
     onOpenNewProjectWithUrl(
-      normalizedUrl
+      normalizedUrl,
+      selectedStyle
     );
   };
 
@@ -1482,6 +1781,13 @@ export function LandingPage({
                       </PremiumButton>
                     </div>
 
+                    <CaptionStylePicker
+                      style={captionStyle}
+                      open={captionPickerOpen}
+                      onToggle={() => setCaptionPickerOpen((open) => !open)}
+                      onChange={setCaptionStyle}
+                    />
+
                     <div className="my-2 flex items-center gap-3 px-2">
                       <div className="h-px flex-1 bg-white/[0.045]" />
 
@@ -1509,9 +1815,8 @@ export function LandingPage({
 
                           setUrl("");
 
-                          onUploadFile?.(
-                            file
-                          );
+                          // Keep the file selected so the user can choose
+                          // a caption style before starting the job.
                         }}
                       />
 

@@ -3972,7 +3972,7 @@ app.post(
           projectId,
         );
 
-      processVideo(
+      void processVideo(
         projectId,
         user.id,
         sourcePath,
@@ -4231,7 +4231,15 @@ function requireWorkerToken(req: express.Request, res: express.Response): boolea
       ? req.headers["x-lumo-worker-token"].trim()
       : "";
 
-  if (!supplied || supplied !== LUMO_WORKER_TOKEN) {
+  if (!supplied || supplied.length !== LUMO_WORKER_TOKEN.length) {
+    res.status(401).json({ error: "Invalid worker token." });
+    return false;
+  }
+
+  const suppliedBuffer = Buffer.from(supplied, "utf8");
+  const expectedBuffer = Buffer.from(LUMO_WORKER_TOKEN, "utf8");
+
+  if (!crypto.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
     res.status(401).json({ error: "Invalid worker token." });
     return false;
   }
