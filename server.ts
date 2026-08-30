@@ -5,6 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
+import { spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import {
   GoogleGenAI,
@@ -164,20 +165,16 @@ const FFMPEG_CRF =
   process.env.FFMPEG_CRF?.trim() || "27";
 
 /* =========================================================
-   SELF-HOSTED YOUTUBE WORKER
+   YOUTUBE PROCESSING
 
-   Render never contacts YouTube directly. A trusted PC worker
-   polls for queued YouTube jobs, downloads the video locally,
-   then uploads the resulting file to Render.
+   YouTube jobs are processed by the Render server itself.
+   This removes the production dependency on a personal PC.
 
-   This worker does not bypass CAPTCHAs, PO tokens, bot checks,
-   or other access controls. It only downloads content that
-   yt-dlp can legitimately access from the worker machine.
+   yt-dlp is used only for normal, legitimate access to public
+   YouTube content. This code does not bypass CAPTCHAs, bot
+   checks, access controls, or other restrictions.
 ========================================================= */
-const LUMO_WORKER_TOKEN =
-  process.env.LUMO_WORKER_TOKEN?.trim() || "";
-
-const WORKER_ENABLED = Boolean(LUMO_WORKER_TOKEN);
+const YOUTUBE_SERVER_PROCESSING = true;
 
 
 
@@ -1911,18 +1908,157 @@ EXACT JSON SHAPE:
 }
 
 /* =========================================================
-   YOUTUBE DOWNLOAD
-
-   Render intentionally does NOT download YouTube URLs.
-   YouTube jobs are handled by the self-hosted PC worker.
+   YOUTUBE DOWNLOAD — SERVER SIDE
 ========================================================= */
 
+function resolveYouTubeDownloader(): {
+  command: string;
+  argsPrefix: string[];
+} {
+  if (YTDLP_PATH_ENV) {
+    return { command: YTDLP_PATH_ENV, argsPrefix: [] };
+  }
+
+  // Prefer a native yt-dlp executable when the hosting environment
+  // provides one. Fall back to Python's yt-dlp module.
+  if (process.platform === "win32") {
+    return { command: "yt-dlp.exe", argsPrefix: [] };
+  }
+
+  return { command: "yt-dlp", argsPrefix: [] };
+}
+
+function runYouTubeDownloader(
+  command: string,
+  args: string[],
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+    });
+
+    let stderr = "";
+    let stdout = "";
+
+    child.stdout.on("data", (chunk) => {
+      stdout += String(chunk);
+      if (stdout.length > 4000) stdout = stdout.slice(-4000);
+    });
+
+    child.stderr.on("data", (chunk) => {
+      const text = String(chunk);
+      stderr += text;
+      if (stderr.length > 12000) stderr = stderr.slice(-12000);
+      if (YTDLP_VERBOSE) console.log(`[yt-dlp] ${text.trimEnd()}`);
+    });
+
+    child.on("error", (error: any) => {
+      const code = error?.code || "UNKNOWN";
+      reject(new Error(`yt-dlp could not start (${code}). ${error?.message || error}`));
+    });
+
+    child.on("close", (code) => {
+      if (code === 0) return resolve();
+
+      const details = stderr.trim() || stdout.trim();
+      reject(
+        new Error(
+          `yt-dlp failed with exit code ${code ?? "unknown"}. ${details.slice(-3000)}`,
+        ),
+      );
+    });
+  });
+}
+
 async function downloadYouTubeVideo(
-  _url: string,
-  _outputPath: string,
+  url: string,
+  outputPath: string,
 ) {
-  throw new Error(
-    "Direct YouTube downloading is disabled on the Render server. Use the LumoClip PC worker.",
+  const outputDirectory = path.dirname(path.resolve(outputPath));
+  fs.mkdirSync(outputDirectory, { recursive: true });
+
+  try {
+    if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+  } catch {}
+
+  const args = [
+    "--no-playlist",
+    "--no-warnings",
+    "--retries",
+    String(Math.max(1, YOUTUBE_RETRIES)),
+    "--fragment-retries",
+    String(Math.max(1, YOUTUBE_RETRIES)),
+    "--concurrent-fragments",
+    String(Math.max(1, YOUTUBE_CONCURRENT_FRAGMENTS)),
+    "--socket-timeout",
+    "30",
+    "--no-part",
+    "--merge-output-format",
+    "mp4",
+    "-f",
+    `bv*[height<=${Math.max(144, YOUTUBE_MAX_HEIGHT)}]+ba/b[height<=${Math.max(144, YOUTUBE_MAX_HEIGHT)}]/b`,
+    "-o",
+    path.resolve(outputPath),
+  ];
+
+  if (YTDLP_JS_RUNTIME) {
+    args.push("--js-runtimes", YTDLP_JS_RUNTIME);
+  }
+
+  if (YTDLP_PLUGIN_DIR_ENV) {
+    args.push("--plugin-dirs", YTDLP_PLUGIN_DIR_ENV);
+  }
+
+  // Cookies are optional. If configured by the deployment, yt-dlp can
+  // use them for content the account is legitimately allowed to access.
+  if (youtubeCookiesAvailable) {
+    args.push("--cookies", youtubeCookiesPath);
+  }
+
+  args.push(url);
+
+  const primary = resolveYouTubeDownloader();
+
+  try {
+    console.log(`Starting server-side yt-dlp download: ${url}`);
+    await runYouTubeDownloader(
+      primary.command,
+      [...primary.argsPrefix, ...args],
+    );
+  } catch (firstError: any) {
+    // On Linux Render, fall back to Python module execution if the
+    // native yt-dlp command is not installed.
+    if (!YTDLP_PATH_ENV && process.platform !== "win32") {
+      console.warn(
+        "Native yt-dlp command failed; trying python3 -m yt_dlp...",
+      );
+      try {
+        await runYouTubeDownloader(
+          "python3",
+          ["-m", "yt_dlp", ...args],
+        );
+      } catch (secondError: any) {
+        throw new Error(
+          `${firstError?.message || firstError} | Python fallback: ${secondError?.message || secondError}`,
+        );
+      }
+    } else {
+      throw firstError;
+    }
+  }
+
+  if (!fs.existsSync(outputPath)) {
+    throw new Error("yt-dlp completed but the downloaded video file was not created.");
+  }
+
+  const stat = fs.statSync(outputPath);
+  if (!stat.isFile() || stat.size <= 0) {
+    throw new Error("yt-dlp created an empty or invalid video file.");
+  }
+
+  console.log(
+    `YouTube download complete: ${(stat.size / 1024 / 1024).toFixed(2)} MB`,
   );
 }
 
@@ -3163,8 +3299,8 @@ app.get(
       ffmpegPath,
 
       ffprobePath,
-      youtubeDownloader: "self-hosted-worker",
-      workerConfigured: WORKER_ENABLED,
+      youtubeDownloader: "server-side-yt-dlp",
+      serverSideProcessing: YOUTUBE_SERVER_PROCESSING,
     });
   },
 );
@@ -3810,11 +3946,82 @@ app.post(
       projectId = project.id;
       creditsCharged = true;
 
-      const waitingMessage = WORKER_ENABLED
-        ? "Waiting for LumoClip worker"
-        : "Worker is not configured. Please start/configure the LumoClip PC worker.";
+      const projectDir = path.join(
+        mediaDir,
+        safeSegment(projectId),
+      );
+      fs.mkdirSync(projectDir, { recursive: true });
 
-      await updateProject(projectId, 5, waitingMessage, "processing");
+      const sourcePath = path.join(projectDir, "source.mp4");
+
+      await updateProject(
+        projectId,
+        5,
+        "Downloading YouTube video",
+        "processing",
+      );
+
+      // Start cloud-side processing. The HTTP request returns immediately
+      // while the Render process continues the job in the background.
+      void (async () => {
+        try {
+          await downloadYouTubeVideo(sourceUrl, sourcePath);
+
+          const duration = await getVideoDuration(sourcePath);
+          if (!duration || duration <= 0 || duration > MAX_VIDEO_DURATION) {
+            throw new Error(
+              `Video duration must be between 1 second and ${MAX_VIDEO_DURATION} seconds.`,
+            );
+          }
+
+          const sourceMediaUrl = publicMediaUrl(
+            projectId,
+            "source.mp4",
+          );
+
+          await updateProjectMedia(
+            projectId,
+            sourceMediaUrl,
+            duration,
+            sourceUrl,
+          );
+
+          await updateProject(
+            projectId,
+            20,
+            "YouTube video downloaded",
+            "processing",
+          );
+
+          await processVideo(
+            projectId,
+            user.id,
+            sourcePath,
+            "video/mp4",
+            sourceUrl,
+          );
+        } catch (error: any) {
+          console.error(
+            `Server-side YouTube processing failed for ${projectId}:`,
+            error,
+          );
+
+          try {
+            await updateProject(
+              projectId,
+              0,
+              error?.message || "YouTube processing failed.",
+              "failed",
+            );
+            await refundCredits(user.id, projectId);
+          } catch (cleanupError) {
+            console.error(
+              "Failed to update/refund failed YouTube project:",
+              cleanupError,
+            );
+          }
+        }
+      })();
 
       return res.json({
         success: true,
@@ -3822,7 +4029,7 @@ app.post(
           ...project,
           status: "processing",
           progress: 5,
-          current_step: waitingMessage,
+          current_step: "Downloading YouTube video",
         },
         clips: [],
         user: {
@@ -3833,11 +4040,10 @@ app.post(
           plan: profile.plan,
         },
         worker: {
-          enabled: WORKER_ENABLED,
+          enabled: false,
+          mode: "server",
         },
-        message: WORKER_ENABLED
-          ? "YouTube job queued. Your LumoClip PC worker will download the video."
-          : "YouTube job queued, but the PC worker is not configured on the server.",
+        message: "YouTube job started on the LumoClip cloud server.",
       });
     } catch (error: any) {
       console.error("YouTube queue endpoint failed:", error);
@@ -5095,7 +5301,7 @@ app.listen(
     );
 
     console.log(
-      "YouTube PC worker processing: ENABLED",
+      "YouTube server-side processing: ENABLED",
     );
 
     console.log(
