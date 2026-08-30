@@ -4080,6 +4080,8 @@ app.post(
 /* =========================================================
    WORKER AUTH
 ========================================================= */
+const LUMO_WORKER_TOKEN = process.env.LUMO_WORKER_TOKEN?.trim();
+
 
 function requireWorkerToken(req: express.Request, res: express.Response): boolean {
   if (!LUMO_WORKER_TOKEN) {
