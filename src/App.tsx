@@ -29,6 +29,9 @@ import {
 import { Navbar } from "./components/Navbar.js";
 import LandingPage from "./components/LandingPage.js";
 
+import PrivacyPolicy from "./pages/PrivacyPolicy";
+import TermsOfService from "./pages/TermsOfService";
+
 /* =========================================================
    LAZY COMPONENTS
 ========================================================= */
