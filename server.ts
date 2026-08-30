@@ -835,6 +835,297 @@ if (fs.existsSync(fontPath)) {
 }
 
 /* =========================================================
+   CAPTIONS (AI Auto Caption — word-by-word karaoke highlight)
+
+   Burned directly into each generated clip using FFmpeg's
+   `subtitles` filter (libass) + an ASS file generated on the
+   fly from the Gemini transcript segments that fall inside
+   the clip's time range.
+
+   No new Gemini call, no new DB columns: word-level timing is
+   *approximated* from each segment's text length, which is
+   good enough for a stylish, readable highlight effect.
+========================================================= */
+
+const CAPTIONS_ENABLED =
+  process.env.CAPTIONS_ENABLED !== "false";
+
+interface SubtitleStyle {
+  font: string;
+  textColor: string;      // base ("not yet spoken") color, hex
+  highlightColor: string; // active-word color, hex
+  position: "bottom" | "center" | "top";
+  fontSize: number;
+  uppercase: boolean;
+}
+
+const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
+  font: process.env.CAPTION_FONT?.trim() || "Liberation Sans",
+  textColor: "#FFFFFF",
+  highlightColor: "#39FF14",
+  position: "bottom",
+  fontSize: 44,
+  uppercase: true,
+};
+
+interface ClipRelativeSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+function hexToAssColor(hex: string): string {
+  const clean = (hex || "").replace("#", "").trim();
+
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) {
+    return "&H00FFFFFF&";
+  }
+
+  const r = clean.slice(0, 2);
+  const g = clean.slice(2, 4);
+  const b = clean.slice(4, 6);
+
+  // ASS colors are &H00BBGGRR&
+  return `&H00${b}${g}${r}&`.toUpperCase();
+}
+
+function escapeAssText(text: string): string {
+  return text
+    .replace(/\\/g, "\\\\")
+    .replace(/\{/g, "\\{")
+    .replace(/\}/g, "\\}")
+    .replace(/\r?\n/g, " ")
+    .trim();
+}
+
+function formatAssTime(totalSeconds: number): string {
+  const safe = Math.max(0, totalSeconds);
+  const hours = Math.floor(safe / 3600);
+  const minutes = Math.floor((safe % 3600) / 60);
+  const seconds = Math.floor(safe % 60);
+  const centiseconds = Math.round(
+    (safe - Math.floor(safe)) * 100,
+  );
+
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(
+    seconds,
+  ).padStart(2, "0")}.${String(centiseconds).padStart(2, "0")}`;
+}
+
+// Escape a filesystem path so it can be embedded inside an
+// ffmpeg `subtitles=...` filter argument (colons and backslashes
+// are filter-syntax special characters).
+function escapeFfmpegFilterPath(filePath: string): string {
+  return filePath
+    .replace(/\\/g, "/")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'");
+}
+
+// Extract the transcript segments that overlap a clip's time
+// range and shift them so 0 = the start of the clip.
+function getClipRelativeSegments(
+  transcript: TranscriptSegment[],
+  clipStart: number,
+  clipEnd: number,
+): ClipRelativeSegment[] {
+  if (!Array.isArray(transcript) || !transcript.length) {
+    return [];
+  }
+
+  return transcript
+    .filter(
+      (segment) =>
+        segment.end > clipStart && segment.start < clipEnd,
+    )
+    .map((segment) => ({
+      start: Math.max(segment.start, clipStart) - clipStart,
+      end: Math.min(segment.end, clipEnd) - clipStart,
+      text: String(segment.text || "").trim(),
+    }))
+    .filter(
+      (segment) =>
+        segment.end > segment.start && segment.text.length > 0,
+    );
+}
+
+// Approximate a per-word duration for a segment by weighting on
+// word length, so longer words get slightly more screen time.
+function computeWordTimings(
+  text: string,
+  duration: number,
+): { word: string; duration: number }[] {
+  const words = text
+    .split(/\s+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+
+  if (!words.length || duration <= 0) {
+    return [];
+  }
+
+  const MIN_WORD_DURATION = 0.12;
+
+  const weights = words.map((word) =>
+    Math.max(1, word.length),
+  );
+
+  const totalWeight = weights.reduce(
+    (sum, weight) => sum + weight,
+    0,
+  );
+
+  const rawDurations = weights.map((weight) =>
+    Math.max(
+      MIN_WORD_DURATION,
+      (weight / totalWeight) * duration,
+    ),
+  );
+
+  const rawTotal = rawDurations.reduce(
+    (sum, value) => sum + value,
+    0,
+  );
+
+  const scale = rawTotal > 0 ? duration / rawTotal : 1;
+
+  return words.map((word, index) => ({
+    word,
+    duration: rawDurations[index] * scale,
+  }));
+}
+
+// Group timed words into short on-screen lines (like CapCut/
+// OpusClip auto-captions), so each highlight event only shows
+// a handful of words at a time.
+function groupWordsIntoLines(
+  words: { word: string; duration: number }[],
+): { word: string; duration: number }[][] {
+  const MAX_WORDS_PER_LINE = 4;
+  const MAX_CHARS_PER_LINE = 22;
+
+  const lines: { word: string; duration: number }[][] = [];
+  let current: { word: string; duration: number }[] = [];
+  let currentChars = 0;
+
+  for (const item of words) {
+    const wouldOverflow =
+      current.length > 0 &&
+      (current.length >= MAX_WORDS_PER_LINE ||
+        currentChars + item.word.length > MAX_CHARS_PER_LINE);
+
+    if (wouldOverflow) {
+      lines.push(current);
+      current = [];
+      currentChars = 0;
+    }
+
+    current.push(item);
+    currentChars += item.word.length + 1;
+  }
+
+  if (current.length) {
+    lines.push(current);
+  }
+
+  return lines;
+}
+
+// Build a full .ass subtitle document with karaoke (\k) tags so
+// libass highlights each word as it's "spoken".
+function buildKaraokeAss(
+  segments: ClipRelativeSegment[],
+  style: SubtitleStyle,
+  videoWidth = 540,
+  videoHeight = 960,
+): string {
+  const alignment =
+    style.position === "top"
+      ? 8
+      : style.position === "center"
+      ? 5
+      : 2;
+
+  const marginV =
+    style.position === "bottom"
+      ? 190
+      : style.position === "top"
+      ? 90
+      : 0;
+
+  // In ASS karaoke, SecondaryColour = "not yet highlighted" text
+  // and PrimaryColour = the color a word becomes once its \k
+  // timer fires — so PrimaryColour holds our highlight color.
+  const primary = hexToAssColor(style.highlightColor);
+  const secondary = hexToAssColor(style.textColor);
+
+  const header = `[Script Info]
+ScriptType: v4.00+
+PlayResX: ${videoWidth}
+PlayResY: ${videoHeight}
+ScaledBorderAndShadow: yes
+WrapStyle: 2
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,${style.font},${style.fontSize},${primary},${secondary},&H00000000&,&H00000000&,-1,0,0,0,100,100,0,0,1,3,1,${alignment},30,30,${marginV},1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+`;
+
+  const events: string[] = [];
+
+  for (const segment of segments) {
+    const duration = segment.end - segment.start;
+    const words = computeWordTimings(segment.text, duration);
+
+    if (!words.length) {
+      continue;
+    }
+
+    const lines = groupWordsIntoLines(words);
+    let cursor = segment.start;
+
+    for (const line of lines) {
+      const lineStart = cursor;
+
+      const lineText = line
+        .map((item) => {
+          const centiseconds = Math.max(
+            1,
+            Math.round(item.duration * 100),
+          );
+
+          const word = style.uppercase
+            ? item.word.toUpperCase()
+            : item.word;
+
+          return `{\\k${centiseconds}}${escapeAssText(word)}`;
+        })
+        .join(" ");
+
+      const lineDuration = line.reduce(
+        (sum, item) => sum + item.duration,
+        0,
+      );
+
+      const lineEnd = lineStart + lineDuration;
+
+      events.push(
+        `Dialogue: 0,${formatAssTime(lineStart)},${formatAssTime(
+          lineEnd,
+        )},Default,,0,0,0,,${lineText}`,
+      );
+
+      cursor = lineEnd;
+    }
+  }
+
+  return header + events.join("\n") + "\n";
+}
+
+/* =========================================================
    MULTER
 ========================================================= */
 
@@ -1935,7 +2226,10 @@ function createClip(
   outputPath: string,
   start: number,
   duration: number,
-  caption?: string,
+  captionOptions?: {
+    transcript?: TranscriptSegment[];
+    style?: SubtitleStyle;
+  },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
@@ -2072,47 +2366,88 @@ function createClip(
       ];
 
       // ---------------------------------------------------------
-      // Caption disabled for now
+      // AI Captions — word-by-word karaoke highlight
+      //
+      // Builds a temporary .ass subtitle file from the transcript
+      // segments that fall inside this clip, then burns it in via
+      // the `subtitles` (libass) filter.
       // ---------------------------------------------------------
 
-      /*
-      if (caption?.trim()) {
-        const safeCaption = caption
-          .replace(/\\/g, "\\\\")
-          .replace(/:/g, "\\:")
-          .replace(/'/g, "\\'")
-          .replace(/\[/g, "\\[")
-          .replace(/\]/g, "\\]")
-          .replace(/,/g, "\\,")
-          .replace(/;/g, "\\;")
-          .replace(/%/g, "\\%");
+      let assFilePath = "";
 
-        videoFilters.push({
-          filter: "drawtext",
-          options: {
-            fontfile: fontPath,
-            text: safeCaption,
-            fontsize: 42,
-            fontcolor: "white",
-            borderw: 3,
-            bordercolor: "black",
-            x: "(w-text_w)/2",
-            y: "h-220",
-            box: 1,
-            boxcolor: "black@0.45",
-            boxborderw: 18,
-            line_spacing: 8,
-            fix_bounds: 1,
-          },
-        });
+      const transcript = captionOptions?.transcript;
+      const style =
+        captionOptions?.style || DEFAULT_SUBTITLE_STYLE;
+
+      if (
+        CAPTIONS_ENABLED &&
+        Array.isArray(transcript) &&
+        transcript.length
+      ) {
+        try {
+          const relativeSegments =
+            getClipRelativeSegments(
+              transcript,
+              safeStart,
+              safeStart + safeDuration,
+            );
+
+          if (relativeSegments.length) {
+            const assContent = buildKaraokeAss(
+              relativeSegments,
+              style,
+            );
+
+            assFilePath = path.join(
+              tempDir,
+              `${generateId()}.ass`,
+            );
+
+            fs.writeFileSync(
+              assFilePath,
+              assContent,
+              "utf8",
+            );
+
+            videoFilters.push(
+              `subtitles=${escapeFfmpegFilterPath(
+                assFilePath,
+              )}`,
+            );
+
+            console.log(
+              `Captions: burning ${relativeSegments.length} segment(s) via ${assFilePath}`,
+            );
+          } else {
+            console.log(
+              "Captions: no transcript overlap for this clip, skipping.",
+            );
+          }
+        } catch (captionError) {
+          // Captions must never break clip generation.
+          console.error(
+            "Caption generation failed, continuing without captions:",
+            captionError,
+          );
+          assFilePath = "";
+        }
       }
-      */
 
       // ---------------------------------------------------------
       // FFmpeg command
       // ---------------------------------------------------------
 
       let nextLoggedPercent = 5;
+
+      const cleanupAssFile = () => {
+        if (assFilePath) {
+          try {
+            fs.unlinkSync(assFilePath);
+          } catch {
+            // best-effort cleanup only
+          }
+        }
+      };
 
       const command = ffmpeg(
         absoluteInputPath,
@@ -2254,6 +2589,8 @@ function createClip(
               absoluteOutputPath,
             );
 
+            cleanupAssFile();
+
             if (
               !fs.existsSync(
                 absoluteOutputPath,
@@ -2333,6 +2670,8 @@ function createClip(
             console.error(
               "==================================",
             );
+
+            cleanupAssFile();
 
             reject(error);
           },
@@ -2672,7 +3011,10 @@ async function processVideo(
         outputPath,
         start,
         finalDuration,
-        clip.caption,
+        {
+          transcript: analysis.transcript,
+          style: DEFAULT_SUBTITLE_STYLE,
+        },
       );
 
       if (
@@ -3165,6 +3507,7 @@ app.get(
       ffprobePath,
       youtubeDownloader: "self-hosted-worker",
       workerConfigured: WORKER_ENABLED,
+      captionsEnabled: CAPTIONS_ENABLED,
     });
   },
 );
@@ -5107,6 +5450,10 @@ app.listen(
 
     console.log(
       "FFmpeg: ENABLED",
+    );
+
+    console.log(
+      `AI Captions: ${CAPTIONS_ENABLED ? "ENABLED" : "DISABLED"}`,
     );
 
     console.log(
