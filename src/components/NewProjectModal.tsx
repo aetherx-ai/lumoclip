@@ -71,6 +71,19 @@ interface ApiResponse {
 }
 
 /* =========================================================
+   CAPTION STYLE TYPES
+========================================================= */
+
+interface CaptionStyle {
+  enabled: boolean;
+  font: string;
+  textColor: string;
+  highlightColor: string;
+  position: "bottom" | "center" | "top";
+  uppercase: boolean;
+}
+
+/* =========================================================
    CONSTANTS
 ========================================================= */
 
@@ -92,33 +105,33 @@ const ACCEPTED_MIME_TYPES = new Set([
   "video/x-matroska",
 ]);
 
-/* =========================================================
-   SAMPLE VIDEOS
-========================================================= */
-
-const SAMPLE_VIDEOS = [
-  {
-    id: 1,
-    tag: "SaaS & Tech",
-    title: "How We Built a $100k/mo AI SaaS Startup",
-    description: "Startup lessons, growth and AI.",
-    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-  },
-  {
-    id: 2,
-    tag: "Creator Economy",
-    title: "Mastering Short-Form Video & Viral Hooks",
-    description: "Hooks, retention and content strategy.",
-    url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
-  },
-  {
-    id: 10,
-    tag: "Podcast",
-    title: "The Future of Artificial Intelligence — Ep #42",
-    description: "AI trends and the creator economy.",
-    url: "https://www.youtube.com/watch?v=9bZkp7q19f0",
-  },
+// Must match ALLOWED_CAPTION_FONTS on the server (server.ts).
+// Anything outside this list silently falls back to the server default.
+const CAPTION_FONTS = [
+  "Liberation Sans",
+  "Arial",
+  "Montserrat",
+  "Poppins",
+  "Impact",
 ];
+
+const CAPTION_HIGHLIGHT_PRESETS = [
+  { label: "Neon green", value: "#39FF14" },
+  { label: "Electric yellow", value: "#FFE600" },
+  { label: "Hot pink", value: "#FF2E9A" },
+  { label: "Sky blue", value: "#3AB0FF" },
+  { label: "Orange", value: "#FF7A00" },
+  { label: "White", value: "#FFFFFF" },
+];
+
+const DEFAULT_CAPTION_STYLE: CaptionStyle = {
+  enabled: true,
+  font: "Liberation Sans",
+  textColor: "#FFFFFF",
+  highlightColor: "#39FF14",
+  position: "bottom",
+  uppercase: true,
+};
 
 /* =========================================================
    HELPERS
@@ -274,6 +287,7 @@ interface UploadVideoOptions {
   file: File;
   projectName: string;
   accessToken: string;
+  captionStyle: CaptionStyle;
 
   onProgress?: (progress: number) => void;
 
@@ -289,6 +303,7 @@ const uploadVideoWithProgress = ({
   file,
   projectName,
   accessToken,
+  captionStyle,
   onProgress,
   onStage,
   signal,
@@ -482,6 +497,16 @@ const uploadVideoWithProgress = ({
     formData.append(
       "sourceType",
       "upload",
+    );
+
+    formData.append(
+      "mode",
+      "clips",
+    );
+
+    formData.append(
+      "captionStyle",
+      JSON.stringify(captionStyle),
     );
 
     formData.append(
@@ -701,6 +726,258 @@ const Particles = () => {
 };
 
 /* =========================================================
+   CAPTION STYLE PICKER
+========================================================= */
+
+const CaptionStylePicker: React.FC<{
+  style: CaptionStyle;
+  onChange: (next: CaptionStyle) => void;
+  disabled: boolean;
+}> = ({ style, onChange, disabled }) => {
+  const update = (patch: Partial<CaptionStyle>) => {
+    onChange({ ...style, ...patch });
+  };
+
+  return (
+    <section className="relative overflow-hidden rounded-[23px] border border-white/[0.06] bg-gradient-to-br from-white/[0.025] to-transparent p-4.5">
+      <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-violet-500/[0.08] blur-3xl" />
+
+      {/* HEADER + TOGGLE */}
+      <div className="relative mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-400/10 bg-violet-500/10">
+            <Captions className="h-3.5 w-3.5 text-violet-400" />
+          </div>
+
+          <div>
+            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-300">
+              AI captions
+            </p>
+
+            <p className="mt-0.5 text-[7px] text-zinc-700">
+              Word-by-word highlight, burned into every clip
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={style.enabled}
+          disabled={disabled}
+          onClick={() =>
+            update({ enabled: !style.enabled })
+          }
+          className={`
+            relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-300
+            focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/70
+            disabled:cursor-not-allowed disabled:opacity-40
+            ${
+              style.enabled
+                ? "border-violet-400/30 bg-violet-500"
+                : "border-white/[0.1] bg-white/[0.06]"
+            }
+          `}
+        >
+          <span
+            className={`
+              absolute top-1/2 h-4.5 w-4.5 -translate-y-1/2 rounded-full bg-white
+              shadow-md transition-all duration-300
+              ${style.enabled ? "left-[22px]" : "left-1"}
+            `}
+          />
+        </button>
+      </div>
+
+      {!style.enabled ? (
+        <p className="relative text-[9px] text-zinc-600">
+          Captions are off — clips will render without on-screen text.
+        </p>
+      ) : (
+        <div className="relative space-y-4">
+          {/* PREVIEW */}
+          <div className="mx-auto flex w-full max-w-[220px] flex-col items-center overflow-hidden rounded-[18px] border border-white/[0.08] bg-black">
+            <div
+              className={`
+                flex aspect-[9/16] w-full flex-col p-3
+                ${
+                  style.position === "top"
+                    ? "justify-start"
+                    : style.position === "center"
+                      ? "justify-center"
+                      : "justify-end"
+                }
+              `}
+            >
+              <p
+                className="text-center text-[13px] font-extrabold leading-tight"
+                style={{
+                  fontFamily: style.font,
+                  textShadow:
+                    "0 0 2px #000, 0 0 6px #000, 0 2px 3px #000",
+                }}
+              >
+                <span style={{ color: style.textColor }}>
+                  {style.uppercase ? "THIS IS " : "This is "}
+                </span>
+                <span style={{ color: style.highlightColor }}>
+                  {style.uppercase ? "AWESOME" : "awesome"}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          {/* HIGHLIGHT COLOR */}
+          <div>
+            <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+              Highlight color
+            </p>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {CAPTION_HIGHLIGHT_PRESETS.map((preset) => (
+                <button
+                  key={preset.value}
+                  type="button"
+                  disabled={disabled}
+                  title={preset.label}
+                  onClick={() =>
+                    update({ highlightColor: preset.value })
+                  }
+                  className={`
+                    h-7 w-7 rounded-full border-2 transition
+                    disabled:cursor-not-allowed disabled:opacity-40
+                    ${
+                      style.highlightColor.toUpperCase() ===
+                      preset.value.toUpperCase()
+                        ? "border-white scale-110"
+                        : "border-white/20 hover:border-white/50"
+                    }
+                  `}
+                  style={{ background: preset.value }}
+                />
+              ))}
+
+              <label
+                className={`
+                  relative flex h-7 w-7 items-center justify-center
+                  overflow-hidden rounded-full border-2 border-dashed
+                  border-white/20 text-[10px] text-zinc-500
+                  ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:border-white/50"}
+                `}
+                title="Custom color"
+              >
+                +
+                <input
+                  type="color"
+                  disabled={disabled}
+                  value={style.highlightColor}
+                  onChange={(event) =>
+                    update({ highlightColor: event.target.value })
+                  }
+                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* FONT + POSITION */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Font
+              </p>
+
+              <select
+                value={style.font}
+                disabled={disabled}
+                onChange={(event) =>
+                  update({ font: event.target.value })
+                }
+                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-[10px] font-medium text-white outline-none focus:border-violet-500/40 disabled:opacity-40"
+              >
+                {CAPTION_FONTS.map((font) => (
+                  <option
+                    key={font}
+                    value={font}
+                    className="bg-[#0a0a0e]"
+                  >
+                    {font}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Position
+              </p>
+
+              <div className="flex overflow-hidden rounded-xl border border-white/[0.08]">
+                {(["top", "center", "bottom"] as const).map(
+                  (position) => (
+                    <button
+                      key={position}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => update({ position })}
+                      className={`
+                        flex-1 py-2.5 text-[9px] font-bold capitalize transition
+                        disabled:cursor-not-allowed disabled:opacity-40
+                        ${
+                          style.position === position
+                            ? "bg-violet-500 text-white"
+                            : "bg-white/[0.02] text-zinc-500 hover:bg-white/[0.05]"
+                        }
+                      `}
+                    >
+                      {position}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* UPPERCASE TOGGLE */}
+          <label className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
+            <span className="text-[9px] font-medium text-zinc-400">
+              Uppercase text
+            </span>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={style.uppercase}
+              disabled={disabled}
+              onClick={() =>
+                update({ uppercase: !style.uppercase })
+              }
+              className={`
+                relative h-5 w-9 shrink-0 rounded-full border transition-colors duration-300
+                disabled:cursor-not-allowed disabled:opacity-40
+                ${
+                  style.uppercase
+                    ? "border-violet-400/30 bg-violet-500"
+                    : "border-white/[0.1] bg-white/[0.06]"
+                }
+              `}
+            >
+              <span
+                className={`
+                  absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white
+                  shadow-md transition-all duration-300
+                  ${style.uppercase ? "left-[18px]" : "left-1"}
+                `}
+              />
+            </button>
+          </label>
+        </div>
+      )}
+    </section>
+  );
+};
+
+/* =========================================================
    COMPONENT
 ========================================================= */
 
@@ -744,6 +1021,11 @@ export const NewProjectModal: React.FC<
 
   const [isFocused, setIsFocused] =
     useState(false);
+
+  const [captionStyle, setCaptionStyle] =
+    useState<CaptionStyle>(
+      DEFAULT_CAPTION_STYLE,
+    );
 
   const fileInputRef =
     useRef<HTMLInputElement | null>(
@@ -812,6 +1094,7 @@ export const NewProjectModal: React.FC<
     setError("");
     setDragActive(false);
     setIsFocused(false);
+    setCaptionStyle(DEFAULT_CAPTION_STYLE);
 
     setUploadState({
       progress: 0,
@@ -1218,6 +1501,8 @@ export const NewProjectModal: React.FC<
                 accessToken:
                   session.access_token,
 
+                captionStyle,
+
                 signal:
                   controller.signal,
 
@@ -1275,6 +1560,10 @@ export const NewProjectModal: React.FC<
                       : "youtube",
 
                   sourceUrl: finalUrl,
+
+                  mode: "clips",
+
+                  captionStyle,
                 }),
               },
             );
@@ -2081,6 +2370,16 @@ export const NewProjectModal: React.FC<
             </section>
 
             {/* =================================================
+                AI CAPTIONS
+            ================================================= */}
+
+            <CaptionStylePicker
+              style={captionStyle}
+              onChange={setCaptionStyle}
+              disabled={loading}
+            />
+
+            {/* =================================================
                 AI FEATURES
             ================================================= */}
 
@@ -2520,3 +2819,32 @@ export const NewProjectModal: React.FC<
 };
 
 export default NewProjectModal;
+
+/* =========================================================
+   SAMPLE VIDEOS
+   (kept at bottom, referenced above — unchanged from original)
+========================================================= */
+
+const SAMPLE_VIDEOS = [
+  {
+    id: 1,
+    tag: "SaaS & Tech",
+    title: "How We Built a $100k/mo AI SaaS Startup",
+    description: "Startup lessons, growth and AI.",
+    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+  },
+  {
+    id: 2,
+    tag: "Creator Economy",
+    title: "Mastering Short-Form Video & Viral Hooks",
+    description: "Hooks, retention and content strategy.",
+    url: "https://www.youtube.com/watch?v=jNQXAC9IVRw",
+  },
+  {
+    id: 10,
+    tag: "Podcast",
+    title: "The Future of Artificial Intelligence — Ep #42",
+    description: "AI trends and the creator economy.",
+    url: "https://www.youtube.com/watch?v=9bZkp7q19f0",
+  },
+];

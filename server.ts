@@ -913,6 +913,7 @@ const CAPTIONS_ENABLED =
 type ProcessingMode = "clips" | "full_video_caption";
 
 interface SubtitleStyle {
+  enabled: boolean;
   font: string;
   textColor: string;      // base ("not yet spoken") color, hex
   highlightColor: string; // active-word color, hex
@@ -953,6 +954,7 @@ function normalizeCaptionStyle(value: unknown): SubtitleStyle {
   const requestedPosition = String(raw?.position || "bottom");
 
   return {
+    enabled: raw?.enabled === false ? false : true,
     font: ALLOWED_CAPTION_FONTS.has(requestedFont)
       ? requestedFont
       : DEFAULT_SUBTITLE_STYLE.font,
@@ -999,6 +1001,7 @@ function getProcessingConfigFromRequest(
 }
 
 const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
+  enabled: true,
   font: process.env.CAPTION_FONT?.trim() || "Liberation Sans",
   textColor: "#FFFFFF",
   highlightColor: "#39FF14",
@@ -2528,6 +2531,7 @@ function createClip(
 
       if (
         CAPTIONS_ENABLED &&
+        style.enabled !== false &&
         Array.isArray(transcript) &&
         transcript.length
       ) {
@@ -2578,6 +2582,10 @@ function createClip(
           );
           assFilePath = "";
         }
+      } else if (style.enabled === false) {
+        console.log(
+          "Captions: disabled for this project, skipping.",
+        );
       }
 
       // ---------------------------------------------------------
