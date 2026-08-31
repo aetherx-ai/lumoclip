@@ -494,7 +494,7 @@ const uploadVideoWithProgress = ({
 
     formData.append(
       "mode",
-      "full_video_caption",
+      "clips",
     );
 
     formData.append(
@@ -599,7 +599,7 @@ const CaptionStylePicker: React.FC<{
         <div className="space-y-4 border-t border-white/[0.06] px-4 py-4">
           <label className="flex items-center justify-between">
             <span className="text-[10px] text-zinc-500">
-              Burn captions into full video
+              Burn captions into clips
             </span>
 
             <button
@@ -1092,7 +1092,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             name: projectTitle.trim() || "LumoClip Project",
             sourceType: sourceType === "podcast" ? "podcast" : "youtube",
             sourceUrl: finalUrl,
-            mode: "full_video_caption",
+            mode: "clips",
             captionStyle,
           }),
         });
@@ -1463,7 +1463,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
             ) : (
               <>
                 <Sparkles className="h-3.5 w-3.5" />
-                <span>Generate Full Video</span>
+                <span>Create project</span>
                 <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
               </>
             )}
