@@ -380,25 +380,95 @@ function PremiumButton({
     <button
       type="button"
       onClick={onClick}
-      className={`group relative inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-2xl px-6 text-sm font-bold transition-all duration-300 ${
+      className={`group inline-flex h-12 items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all duration-200 ${
         variant === "primary"
-          ? "bg-white text-black shadow-[0_15px_50px_rgba(255,255,255,0.07)] hover:-translate-y-1 hover:bg-zinc-100"
-          : "border border-white/[0.09] bg-white/[0.025] text-zinc-300 backdrop-blur-xl hover:-translate-y-1 hover:border-cyan-300/20 hover:bg-white/[0.055] hover:text-white"
+          ? "bg-white text-black hover:bg-zinc-200 active:scale-[0.98]"
+          : "border border-white/15 bg-transparent text-white hover:bg-white/5 active:scale-[0.98]"
       }`}
     >
-      {variant === "primary" && (
-        <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-black/[0.08] to-transparent transition-transform duration-700 group-hover:translate-x-full" />
-      )}
-
-      <span className="relative">{children}</span>
+      <span>{children}</span>
 
       {icon && (
         <ArrowRight
           aria-hidden="true"
-          className="relative h-4 w-4 transition-transform duration-300 group-hover:translate-x-1"
+          className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5"
         />
       )}
     </button>
+  );
+}
+
+/* ============================================================================
+   TOOL GRID (Opus-style small icon buttons)
+============================================================================ */
+
+type ToolGridItem = {
+  icon: React.ElementType;
+  label: string;
+  badge?: "New";
+};
+
+const toolGridItems: ToolGridItem[] = [
+  { icon: Zap, label: "Long to shorts" },
+  { icon: Scissors, label: "Video editor" },
+  { icon: Subtitles, label: "AI captions", badge: "New" },
+  { icon: Film, label: "AI reframe", badge: "New" },
+  { icon: Mic2, label: "Auto SFX", badge: "New" },
+  { icon: Layers3, label: "Upscale", badge: "New" },
+  { icon: WandSparkles, label: "Video dubbing", badge: "New" },
+  { icon: BarChart3, label: "Enhance speech" },
+];
+
+function ToolGridButton({
+  item,
+  onClick,
+}: {
+  item: ToolGridItem;
+  onClick?: () => void;
+}) {
+  const Icon = item.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="group flex w-[84px] flex-col items-center gap-2 focus:outline-none"
+    >
+      <span className="relative flex h-14 w-14 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.03] transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-cyan-300/20 group-hover:bg-white/[0.06]">
+        {item.badge && (
+          <span className="absolute -top-1.5 rounded-full bg-cyan-300 px-1.5 py-[1px] text-[7px] font-bold uppercase tracking-wide text-black">
+            {item.badge}
+          </span>
+        )}
+
+        <Icon
+          aria-hidden="true"
+          className="h-5 w-5 text-zinc-400 transition-colors duration-200 group-hover:text-cyan-200"
+        />
+      </span>
+
+      <span className="text-center text-[10px] leading-tight text-zinc-500 transition-colors duration-200 group-hover:text-zinc-300">
+        {item.label}
+      </span>
+    </button>
+  );
+}
+
+function ToolGrid({
+  onSelect,
+}: {
+  onSelect?: (label: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-center gap-x-3 gap-y-5 sm:gap-x-5">
+      {toolGridItems.map((item) => (
+        <ToolGridButton
+          key={item.label}
+          item={item}
+          onClick={() => onSelect?.(item.label)}
+        />
+      ))}
+    </div>
   );
 }
 
@@ -1897,6 +1967,12 @@ export function LandingPage({
                     </span>
                   ))}
                 </div>
+              </Reveal>
+
+              {/* TOOL GRID (Opus-style small icon buttons) */}
+
+              <Reveal immediate delay={260} className="mt-12">
+                <ToolGrid onSelect={onGetStarted} />
               </Reveal>
             </div>
 
