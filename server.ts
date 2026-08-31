@@ -128,6 +128,33 @@ const GEMINI_RETRY_MAX_MS = Number(
   process.env.GEMINI_RETRY_MAX_MS || 60000,
 );
 
+/* =========================================================
+   SPEECH-TO-TEXT / REAL WORD TIMESTAMPS
+
+   Gemini is still used for clip intelligence, but caption timing
+   comes from a real speech-to-text engine. This prevents the old
+   character/word-length timing approximation from drifting away
+   from the speaker.
+
+   Supported providers:
+   - Groq Whisper: set GROQ_API_KEY
+   - OpenAI Whisper: set OPENAI_API_KEY
+   Groq is preferred when both are configured.
+========================================================= */
+const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || "";
+const GROQ_TRANSCRIPTION_MODEL =
+  process.env.GROQ_TRANSCRIPTION_MODEL?.trim() || "whisper-large-v3-turbo";
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY?.trim() || "";
+const OPENAI_TRANSCRIPTION_MODEL =
+  process.env.OPENAI_TRANSCRIPTION_MODEL?.trim() || "whisper-1";
+const TRANSCRIPTION_LANGUAGE =
+  process.env.TRANSCRIPTION_LANGUAGE?.trim() || "";
+const TRANSCRIPTION_TIMEOUT_MS = Number(
+  process.env.TRANSCRIPTION_TIMEOUT_MS || 180000,
+);
+const TRANSCRIPTION_AUDIO_BITRATE =
+  process.env.TRANSCRIPTION_AUDIO_BITRATE?.trim() || "48k";
+
 // =========================================================
 // FFMPEG SPEED CONFIG
 // =========================================================
@@ -1010,10 +1037,17 @@ const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   uppercase: true,
 };
 
+interface TimedWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
 interface ClipRelativeSegment {
   start: number;
   end: number;
   text: string;
+  words?: TimedWord[];
 }
 
 function hexToAssColor(hex: string): string {
@@ -1055,8 +1089,7 @@ function formatAssTime(totalSeconds: number): string {
 }
 
 // Escape a filesystem path so it can be embedded inside an
-// ffmpeg `subtitles=...` filter argument (colons and backslashes
-// are filter-syntax special characters).
+// ffmpeg `subtitles=...` filter argument.
 function escapeFfmpegFilterPath(filePath: string): string {
   return filePath
     .replace(/\\/g, "/")
@@ -1064,8 +1097,28 @@ function escapeFfmpegFilterPath(filePath: string): string {
     .replace(/'/g, "\\'");
 }
 
-// Extract the transcript segments that overlap a clip's time
-// range and shift them so 0 = the start of the clip.
+function normalizeTimedWords(value: unknown): TimedWord[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item: any) => ({
+      word: String(item?.word ?? item?.text ?? "").trim(),
+      start: Number(item?.start),
+      end: Number(item?.end),
+    }))
+    .filter(
+      (item: TimedWord) =>
+        item.word.length > 0 &&
+        Number.isFinite(item.start) &&
+        Number.isFinite(item.end) &&
+        item.start >= 0 &&
+        item.end > item.start,
+    )
+    .sort((a, b) => a.start - b.start);
+}
+
+// Extract transcript segments that overlap a clip and shift both
+// segment and word timestamps so 0 = the beginning of the clip.
 function getClipRelativeSegments(
   transcript: TranscriptSegment[],
   clipStart: number,
@@ -1080,74 +1133,78 @@ function getClipRelativeSegments(
       (segment) =>
         segment.end > clipStart && segment.start < clipEnd,
     )
-    .map((segment) => ({
-      start: Math.max(segment.start, clipStart) - clipStart,
-      end: Math.min(segment.end, clipEnd) - clipStart,
-      text: String(segment.text || "").trim(),
-    }))
+    .map((segment) => {
+      const words = normalizeTimedWords(segment.words)
+        .filter(
+          (word) =>
+            word.end > clipStart && word.start < clipEnd,
+        )
+        .map((word) => ({
+          word: word.word,
+          start: Math.max(word.start, clipStart) - clipStart,
+          end: Math.min(word.end, clipEnd) - clipStart,
+        }))
+        .filter((word) => word.end > word.start);
+
+      return {
+        start: Math.max(segment.start, clipStart) - clipStart,
+        end: Math.min(segment.end, clipEnd) - clipStart,
+        text: String(segment.text || "").trim(),
+        words: words.length ? words : undefined,
+      };
+    })
     .filter(
       (segment) =>
         segment.end > segment.start && segment.text.length > 0,
     );
 }
 
-// Approximate a per-word duration for a segment by weighting on
-// word length, so longer words get slightly more screen time.
-function computeWordTimings(
+// Fallback only: used when no word-level ASR timestamps are available.
+// Production caption jobs should use a configured STT provider.
+function computeFallbackWordTimings(
   text: string,
-  duration: number,
-): { word: string; duration: number }[] {
+  start: number,
+  end: number,
+): TimedWord[] {
   const words = text
     .split(/\s+/)
     .map((word) => word.trim())
     .filter(Boolean);
 
-  if (!words.length || duration <= 0) {
-    return [];
-  }
+  const duration = end - start;
+  if (!words.length || duration <= 0) return [];
 
-  const MIN_WORD_DURATION = 0.12;
+  const weights = words.map((word) => Math.max(1, word.length));
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
 
-  const weights = words.map((word) =>
-    Math.max(1, word.length),
-  );
+  let cursor = start;
 
-  const totalWeight = weights.reduce(
-    (sum, weight) => sum + weight,
-    0,
-  );
+  return words.map((word, index) => {
+    const remaining = Math.max(0, end - cursor);
+    const isLast = index === words.length - 1;
+    const wordDuration = isLast
+      ? remaining
+      : Math.min(remaining, Math.max(0.08, (weights[index] / totalWeight) * duration));
 
-  const rawDurations = weights.map((weight) =>
-    Math.max(
-      MIN_WORD_DURATION,
-      (weight / totalWeight) * duration,
-    ),
-  );
+    const item = {
+      word,
+      start: cursor,
+      end: Math.min(end, cursor + wordDuration),
+    };
 
-  const rawTotal = rawDurations.reduce(
-    (sum, value) => sum + value,
-    0,
-  );
-
-  const scale = rawTotal > 0 ? duration / rawTotal : 1;
-
-  return words.map((word, index) => ({
-    word,
-    duration: rawDurations[index] * scale,
-  }));
+    cursor = item.end;
+    return item;
+  });
 }
 
-// Group timed words into short on-screen lines (like CapCut/
-// OpusClip auto-captions), so each highlight event only shows
-// a handful of words at a time.
 function groupWordsIntoLines(
-  words: { word: string; duration: number }[],
-): { word: string; duration: number }[][] {
+  words: TimedWord[],
+): TimedWord[][] {
   const MAX_WORDS_PER_LINE = 4;
   const MAX_CHARS_PER_LINE = 22;
 
-  const lines: { word: string; duration: number }[][] = [];
-  let current: { word: string; duration: number }[] = [];
+  const lines: TimedWord[][] = [];
+  let current: TimedWord[] = [];
   let currentChars = 0;
 
   for (const item of words) {
@@ -1166,15 +1223,11 @@ function groupWordsIntoLines(
     currentChars += item.word.length + 1;
   }
 
-  if (current.length) {
-    lines.push(current);
-  }
+  if (current.length) lines.push(current);
 
   return lines;
 }
 
-// Build a full .ass subtitle document with karaoke (\k) tags so
-// libass highlights each word as it's "spoken".
 function buildKaraokeAss(
   segments: ClipRelativeSegment[],
   style: SubtitleStyle,
@@ -1195,9 +1248,6 @@ function buildKaraokeAss(
       ? 90
       : 0;
 
-  // In ASS karaoke, SecondaryColour = "not yet highlighted" text
-  // and PrimaryColour = the color a word becomes once its \k
-  // timer fires — so PrimaryColour holds our highlight color.
   const primary = hexToAssColor(style.highlightColor);
   const secondary = hexToAssColor(style.textColor);
 
@@ -1219,48 +1269,64 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const events: string[] = [];
 
   for (const segment of segments) {
-    const duration = segment.end - segment.start;
-    const words = computeWordTimings(segment.text, duration);
+    const words =
+      segment.words && segment.words.length
+        ? segment.words
+        : computeFallbackWordTimings(segment.text, segment.start, segment.end);
 
-    if (!words.length) {
-      continue;
-    }
+    if (!words.length) continue;
 
     const lines = groupWordsIntoLines(words);
-    let cursor = segment.start;
 
     for (const line of lines) {
-      const lineStart = cursor;
+      if (!line.length) continue;
+
+      const lineStart = Math.max(segment.start, line[0].start);
+      const lineEnd = Math.min(segment.end, line[line.length - 1].end);
+
+      if (lineEnd <= lineStart) continue;
 
       const lineText = line
-        .map((item) => {
-          const centiseconds = Math.max(
+        .map((item, index) => {
+          const next = line[index + 1];
+          const wordStart = Math.max(lineStart, item.start);
+          const wordEnd = Math.min(lineEnd, item.end);
+
+          // Make the highlight switch at the REAL next-word start, not merely
+          // at the end of the previous spoken word. This preserves pauses and
+          // prevents the karaoke highlight from racing ahead during silence.
+          const highlightEnd = next
+            ? Math.min(lineEnd, Math.max(wordEnd, next.start))
+            : wordEnd;
+
+          // ASS \k uses centiseconds. Preserve real ASR timing; only
+          // quantize to the ASS format's 10ms precision.
+          let durationCs = Math.max(
             1,
-            Math.round(item.duration * 100),
+            Math.round((highlightEnd - wordStart) * 100),
           );
+
+          // Never let rounded timing extend beyond the subtitle event.
+          if (wordStart + durationCs / 100 > lineEnd) {
+            durationCs = Math.max(
+              1,
+              Math.round((lineEnd - wordStart) * 100),
+            );
+          }
 
           const word = style.uppercase
             ? item.word.toUpperCase()
             : item.word;
 
-          return `{\\k${centiseconds}}${escapeAssText(word)}`;
+          return `{\\k${durationCs}}${escapeAssText(word)}`;
         })
         .join(" ");
-
-      const lineDuration = line.reduce(
-        (sum, item) => sum + item.duration,
-        0,
-      );
-
-      const lineEnd = lineStart + lineDuration;
 
       events.push(
         `Dialogue: 0,${formatAssTime(lineStart)},${formatAssTime(
           lineEnd,
         )},Default,,0,0,0,,${lineText}`,
       );
-
-      cursor = lineEnd;
     }
   }
 
@@ -1898,6 +1964,7 @@ interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
+  words?: TimedWord[];
 }
 
 interface ViralClip {
@@ -2008,6 +2075,7 @@ function validateAnalysis(
           text: String(
             s?.text ?? "",
           ).trim(),
+          words: normalizeTimedWords(s?.words),
         };
       })
       .filter(
@@ -2041,6 +2109,11 @@ function validateAnalysis(
           ),
 
           text: s.text,
+          words: normalizeTimedWords(s.words).map((word) => ({
+            ...word,
+            start: Math.max(0, Math.min(safeDuration, word.start)),
+            end: Math.max(0, Math.min(safeDuration, word.end)),
+          })).filter((word) => word.end > word.start),
         }),
       );
 
@@ -2156,6 +2229,298 @@ function validateAnalysis(
   };
 }
 /* =========================================================
+   REAL WORD-LEVEL TRANSCRIPTION
+========================================================= */
+
+function transcriptionProvider(): "groq" | "openai" | null {
+  if (GROQ_API_KEY) return "groq";
+  if (OPENAI_API_KEY) return "openai";
+  return null;
+}
+
+function transcribeFileWithHttp(
+  endpoint: string,
+  apiKey: string,
+  model: string,
+  audioPath: string,
+  provider: "groq" | "openai",
+): Promise<any> {
+  return new Promise(async (resolve, reject) => {
+    let controller: AbortController | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    try {
+      controller = new AbortController();
+      timeout = setTimeout(() => controller?.abort(), TRANSCRIPTION_TIMEOUT_MS);
+
+      const form = new FormData();
+      const audioBuffer = await fs.promises.readFile(audioPath);
+      const audioBlob = new Blob([audioBuffer], { type: "audio/mp4" });
+
+      form.append("file", audioBlob, "audio.m4a");
+      form.append("model", model);
+      form.append("response_format", "verbose_json");
+      form.append("temperature", "0");
+
+      if (provider === "groq") {
+        form.append("timestamp_granularities[]", "word");
+        form.append("timestamp_granularities[]", "segment");
+      } else {
+        form.append("timestamp_granularities[]", "word");
+        form.append("timestamp_granularities[]", "segment");
+      }
+
+      if (TRANSCRIPTION_LANGUAGE) {
+        form.append("language", TRANSCRIPTION_LANGUAGE);
+      }
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: form,
+        signal: controller.signal,
+      });
+
+      const rawText = await response.text();
+      let data: any;
+
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        data = { error: { message: rawText } };
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `${provider.toUpperCase()} transcription failed (${response.status}): ${
+            data?.error?.message || rawText || "Unknown error"
+          }`,
+        );
+      }
+
+      resolve(data);
+    } catch (error: any) {
+      if (error?.name === "AbortError") {
+        reject(
+          new Error(
+            `${provider.toUpperCase()} transcription timed out after ${TRANSCRIPTION_TIMEOUT_MS}ms.`,
+          ),
+        );
+      } else {
+        reject(error);
+      }
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  });
+}
+
+function buildTranscriptFromWhisperResponse(
+  response: any,
+  duration: number,
+): TranscriptSegment[] {
+  const safeDuration = Number(duration);
+  const responseWords = normalizeTimedWords(response?.words);
+  const rawSegments = Array.isArray(response?.segments)
+    ? response.segments
+    : [];
+
+  const segments: TranscriptSegment[] = rawSegments
+    .map((segment: any) => {
+      const start = Number(segment?.start);
+      const end = Number(segment?.end);
+      const text = String(segment?.text ?? "").trim();
+
+      const words = responseWords
+        .filter((word) => word.end > start && word.start < end)
+        .map((word) => ({
+          ...word,
+          start: Math.max(start, word.start),
+          end: Math.min(end, word.end),
+        }))
+        .filter((word) => word.end > word.start);
+
+      return { start, end, text, words };
+    })
+    .filter(
+      (segment: TranscriptSegment) =>
+        Number.isFinite(segment.start) &&
+        Number.isFinite(segment.end) &&
+        segment.start >= 0 &&
+        segment.end > segment.start &&
+        segment.start < safeDuration &&
+        segment.text.length > 0,
+    )
+    .map((segment) => ({
+      ...segment,
+      end: Math.min(safeDuration, segment.end),
+    }));
+
+  // Some providers return a top-level word list but segment word lists
+  // are incomplete. In that case, build short caption segments directly
+  // from the real word timestamps.
+  if (!segments.length && responseWords.length) {
+    const MAX_WORDS = 8;
+    const MAX_CHARS = 42;
+    const generated: TranscriptSegment[] = [];
+    let current: TimedWord[] = [];
+    let chars = 0;
+
+    const flush = () => {
+      if (!current.length) return;
+      generated.push({
+        start: current[0].start,
+        end: current[current.length - 1].end,
+        text: current.map((word) => word.word).join(" "),
+        words: [...current],
+      });
+      current = [];
+      chars = 0;
+    };
+
+    for (const word of responseWords) {
+      const overflow =
+        current.length > 0 &&
+        (current.length >= MAX_WORDS || chars + word.word.length > MAX_CHARS);
+
+      if (overflow) flush();
+
+      current.push(word);
+      chars += word.word.length + 1;
+    }
+
+    flush();
+    return generated;
+  }
+
+  // OpenAI/Groq can expose word timestamps as a top-level list. Prefer
+  // those real timestamps whenever the segment itself did not include them.
+  return segments.map((segment) => {
+    if (segment.words?.length) return segment;
+
+    const words = responseWords
+      .filter((word) => word.end > segment.start && word.start < segment.end)
+      .map((word) => ({
+        ...word,
+        start: Math.max(segment.start, word.start),
+        end: Math.min(segment.end, word.end),
+      }))
+      .filter((word) => word.end > word.start);
+
+    return words.length ? { ...segment, words } : segment;
+  });
+}
+
+async function extractTranscriptionAudio(
+  inputPath: string,
+): Promise<string> {
+  const outputPath = path.join(
+    tempDir,
+    `${generateId()}-transcription.m4a`,
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(inputPath)
+      .outputOptions([
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "aac",
+        "-b:a",
+        TRANSCRIPTION_AUDIO_BITRATE,
+        "-movflags",
+        "+faststart",
+      ])
+      .on("start", (commandLine) => {
+        console.log("Preparing speech-to-text audio:");
+        console.log(commandLine);
+      })
+      .on("end", () => {
+        if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
+          return reject(new Error("Speech-to-text audio was not created."));
+        }
+
+        console.log(
+          `Speech-to-text audio ready: ${(fs.statSync(outputPath).size / 1024 / 1024).toFixed(2)} MB`,
+        );
+        resolve();
+      })
+      .on("error", reject)
+      .save(outputPath);
+  });
+
+  return outputPath;
+}
+
+async function transcribeVideoWithWordTimestamps(
+  videoPath: string,
+  duration: number,
+): Promise<TranscriptSegment[]> {
+  const provider = transcriptionProvider();
+
+  if (!provider) {
+    console.warn(
+      "No real-time STT provider configured. Using Gemini transcript fallback. Set GROQ_API_KEY or OPENAI_API_KEY for accurate word-level captions.",
+    );
+    return [];
+  }
+
+  const audioPath = await extractTranscriptionAudio(videoPath);
+
+  try {
+    const response =
+      provider === "groq"
+        ? await transcribeFileWithHttp(
+            "https://api.groq.com/openai/v1/audio/transcriptions",
+            GROQ_API_KEY,
+            GROQ_TRANSCRIPTION_MODEL,
+            audioPath,
+            "groq",
+          )
+        : await transcribeFileWithHttp(
+            "https://api.openai.com/v1/audio/transcriptions",
+            OPENAI_API_KEY,
+            OPENAI_TRANSCRIPTION_MODEL,
+            audioPath,
+            "openai",
+          );
+
+    const transcript = buildTranscriptFromWhisperResponse(
+      response,
+      duration,
+    );
+
+    if (!transcript.length) {
+      throw new Error(
+        `${provider.toUpperCase()} returned no usable timestamped transcript.`,
+      );
+    }
+
+    const wordCount = transcript.reduce(
+      (sum, segment) => sum + (segment.words?.length || 0),
+      0,
+    );
+
+    console.log(
+      `Real STT transcript ready: ${transcript.length} segments, ${wordCount} word timestamps, provider=${provider}.`,
+    );
+
+    return transcript;
+  } finally {
+    try {
+      fs.unlinkSync(audioPath);
+    } catch {
+      // best-effort cleanup
+    }
+  }
+}
+
+/* =========================================================
    GEMINI LOCAL VIDEO ANALYSIS
 ========================================================= */
 
@@ -2165,6 +2530,22 @@ async function analyzeLocalVideo(
   duration: number,
   processingMode: ProcessingMode = "clips",
 ): Promise<GeminiAnalysis> {
+  // Full-video caption mode does not need Gemini's approximate transcript.
+  // Get exact word timestamps directly from speech-to-text.
+  if (processingMode === "full_video_caption" && transcriptionProvider()) {
+    console.log("Full-video caption mode: using real word-level STT timestamps.");
+
+    const transcript = await transcribeVideoWithWordTimestamps(
+      videoPath,
+      duration,
+    );
+
+    return {
+      transcript,
+      clips: [],
+    };
+  }
+
   console.log(
     "Uploading video to Gemini:",
     videoPath,
@@ -2183,17 +2564,11 @@ async function analyzeLocalVideo(
     file.name,
   );
 
-  /*
-     Faster polling:
-     The old pipeline waited 4 seconds between every ACTIVE check.
-     1.5s keeps the same API flow but removes unnecessary idle time.
-  */
   while (
     file.state &&
     file.state.toString() !== "ACTIVE"
   ) {
-    const state =
-      file.state.toString();
+    const state = file.state.toString();
 
     console.log(
       "Gemini processing state:",
@@ -2344,11 +2719,37 @@ EXACT JSON SHAPE:
     );
   }
 
-  return validateAnalysis(
+  const geminiAnalysis = validateAnalysis(
     parsed,
     duration,
     { requireClips: processingMode !== "full_video_caption" },
   );
+
+  // The Gemini transcript is retained as a safe fallback, but when a real
+  // STT provider is configured its word timestamps become authoritative.
+  if (transcriptionProvider()) {
+    try {
+      const accurateTranscript =
+        await transcribeVideoWithWordTimestamps(
+          videoPath,
+          duration,
+        );
+
+      if (accurateTranscript.length) {
+        console.log(
+          "Replacing Gemini transcript with real word-level STT timestamps.",
+        );
+        geminiAnalysis.transcript = accurateTranscript;
+      }
+    } catch (error) {
+      console.error(
+        "Real STT transcription failed; falling back to Gemini transcript:",
+        error,
+      );
+    }
+  }
+
+  return geminiAnalysis;
 }
 
 /* =========================================================
@@ -2651,9 +3052,9 @@ function createClip(
           "-pix_fmt",
           "yuv420p",
 
-          // 24fps is sufficient for social clips and reduces CPU work.
-          "-r",
-          "24",
+          // Preserve the source timebase/FPS. Caption timestamps are tied to
+          // the original audio/video clock, so forcing 24fps can introduce
+          // avoidable A/V timing drift on variable-FPS or 30/60fps footage.
 
           // Audio
           "-c:a",
