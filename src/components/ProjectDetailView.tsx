@@ -26,6 +26,7 @@ import {
   Target,
   TrendingUp,
   Video,
+  Captions,
 } from "lucide-react";
 
 import { Project, Clip } from "../types.js";
@@ -123,6 +124,29 @@ function getClipThumbnailUrl(clip: Clip) {
   );
 }
 
+// The project may have been processed in "full_video_caption" mode
+// (no clips — the whole source video with captions burned in).
+function getFullVideoUrl(project: Project): string {
+  const data = project as any;
+
+  const value =
+    data.full_video_url ||
+    data.fullVideoUrl ||
+    "";
+
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getProcessingMode(project: Project): string {
+  const data = project as any;
+
+  return String(
+    data.processing_mode ||
+      data.processingMode ||
+      "",
+  ).toLowerCase();
+}
+
 /* =========================================================
    PREMIUM STATUS BADGE
 ========================================================= */
@@ -180,6 +204,9 @@ const HeroVideo: React.FC<{
   const thumbnail =
     project.thumbnail_url || "";
 
+  const fullVideoMode =
+    getProcessingMode(project) === "full_video_caption";
+
   return (
     <div className="group relative overflow-hidden rounded-[30px] border border-white/[0.08] bg-[#09090d] shadow-[0_30px_100px_rgba(0,0,0,0.45)]">
       {/* ambient glow */}
@@ -217,6 +244,13 @@ const HeroVideo: React.FC<{
             {project.source_type || "VIDEO"}
           </span>
 
+          {fullVideoMode && (
+            <span className="flex items-center gap-1.5 rounded-full border border-indigo-400/20 bg-indigo-500/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-indigo-200 backdrop-blur-xl">
+              <Captions className="h-3 w-3" />
+              Full video captions
+            </span>
+          )}
+
           {!completed && !failed && (
             <span className="flex items-center gap-1.5 rounded-full border border-violet-400/20 bg-violet-500/20 px-3 py-1.5 text-[9px] font-black uppercase tracking-[0.14em] text-violet-200 backdrop-blur-xl">
               <Sparkles className="h-3 w-3" />
@@ -238,7 +272,9 @@ const HeroVideo: React.FC<{
             {!completed && !failed && (
               <>
                 <p className="text-sm font-black text-white">
-                  AI is turning your long video into shorts
+                  {fullVideoMode
+                    ? "AI is captioning your full video"
+                    : "AI is turning your long video into shorts"}
                 </p>
 
                 <p className="mt-1 text-[10px] text-zinc-300">
@@ -302,6 +338,94 @@ const HeroVideo: React.FC<{
         </div>
       </div>
     </div>
+  );
+};
+
+/* =========================================================
+   FULL CAPTIONED VIDEO RESULT
+   (rendered instead of the clip grid when the project was
+   processed in "full_video_caption" mode)
+========================================================= */
+
+const FullCaptionedVideoResult: React.FC<{
+  project: Project;
+}> = ({ project }) => {
+  const fullVideoUrl = getFullVideoUrl(project);
+  const thumbnail = project.thumbnail_url || "";
+
+  return (
+    <section className="mt-10">
+      <div className="mb-5 flex items-center gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-500/10 bg-indigo-500/[0.08]">
+          <Captions className="h-4 w-4 text-indigo-400" />
+        </div>
+
+        <div>
+          <h2 className="text-xl font-black tracking-tight text-white">
+            Your captioned video
+          </h2>
+
+          <p className="mt-1 text-[10px] text-zinc-600">
+            The full video, with stylish AI captions burned in — no clipping.
+          </p>
+        </div>
+      </div>
+
+      <div className="relative overflow-hidden rounded-[28px] border border-white/[0.08] bg-[#09090d] shadow-[0_25px_90px_rgba(0,0,0,0.3)]">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-indigo-500/[0.08] blur-[90px]" />
+
+        <div className="bg-black">
+          {fullVideoUrl ? (
+            <video
+              src={fullVideoUrl}
+              controls
+              playsInline
+              preload="metadata"
+              poster={thumbnail || undefined}
+              className="max-h-[650px] w-full"
+            />
+          ) : (
+            <div className="flex aspect-video flex-col items-center justify-center gap-3">
+              <Loader2 className="h-6 w-6 animate-spin text-indigo-400" />
+              <p className="text-[10px] text-zinc-600">
+                Preparing your captioned video...
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="relative flex flex-col gap-3 border-t border-white/[0.06] p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-[10px] text-zinc-500">
+            <Clock3 className="h-3.5 w-3.5 text-zinc-600" />
+            {formatDuration(project.duration)} • captions burned in
+          </div>
+
+          {fullVideoUrl && (
+            <div className="flex gap-2">
+              <a
+                href={fullVideoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-[10px] font-black text-black transition hover:bg-zinc-200"
+              >
+                <Download className="h-3.5 w-3.5" />
+                Download video
+              </a>
+
+              <a
+                href={fullVideoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:border-white/10 hover:text-white"
+                title="Open in new tab"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 };
 
@@ -527,38 +651,69 @@ const Pipeline: React.FC<{
   project: Project;
   progress: number;
 }> = ({ project, progress }) => {
-  const steps = [
-    {
-      label: "Video received",
-      description: "Source video successfully uploaded",
-      threshold: 5,
-    },
-    {
-      label: "Understanding content",
-      description: "Analyzing speech and visual context",
-      threshold: 25,
-    },
-    {
-      label: "Finding viral moments",
-      description: "AI is scoring potential highlights",
-      threshold: 45,
-    },
-    {
-      label: "Creating short clips",
-      description: "Generating optimized 9:16 videos",
-      threshold: 65,
-    },
-    {
-      label: "Preparing publishing assets",
-      description: "Titles, captions and hashtags",
-      threshold: 85,
-    },
-    {
-      label: "Finalizing",
-      description: "Preparing everything for export",
-      threshold: 96,
-    },
-  ];
+  const fullVideoMode =
+    getProcessingMode(project) === "full_video_caption";
+
+  const steps = fullVideoMode
+    ? [
+        {
+          label: "Video received",
+          description: "Source video successfully uploaded",
+          threshold: 5,
+        },
+        {
+          label: "Understanding content",
+          description: "Analyzing speech and visual context",
+          threshold: 30,
+        },
+        {
+          label: "Building captions",
+          description: "Timing words for a stylish highlight effect",
+          threshold: 50,
+        },
+        {
+          label: "Burning captions in",
+          description: "Encoding your full video with captions",
+          threshold: 70,
+        },
+        {
+          label: "Finalizing",
+          description: "Preparing the file for download",
+          threshold: 96,
+        },
+      ]
+    : [
+        {
+          label: "Video received",
+          description: "Source video successfully uploaded",
+          threshold: 5,
+        },
+        {
+          label: "Understanding content",
+          description: "Analyzing speech and visual context",
+          threshold: 25,
+        },
+        {
+          label: "Finding viral moments",
+          description: "AI is scoring potential highlights",
+          threshold: 45,
+        },
+        {
+          label: "Creating short clips",
+          description: "Generating optimized 9:16 videos",
+          threshold: 65,
+        },
+        {
+          label: "Preparing publishing assets",
+          description: "Titles, captions and hashtags",
+          threshold: 85,
+        },
+        {
+          label: "Finalizing",
+          description: "Preparing everything for export",
+          threshold: 96,
+        },
+      ];
 
   return (
     <section className="rounded-[28px] border border-white/[0.07] bg-[#09090d] p-5 sm:p-6">
@@ -1323,6 +1478,9 @@ export const ProjectDetailView: React.FC<
     status === "failed" ||
     status === "error";
 
+  const isFullVideoMode =
+    getProcessingMode(project) === "full_video_caption";
+
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
@@ -1369,6 +1527,13 @@ export const ProjectDetailView: React.FC<
                     }
                     progress={progress}
                   />
+
+                  {isFullVideoMode && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-indigo-400/20 bg-indigo-500/10 px-2.5 py-1 text-[8px] font-black uppercase tracking-[0.12em] text-indigo-300">
+                      <Captions className="h-3 w-3" />
+                      Captions only
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-1.5 flex items-center gap-2 text-[8px] font-semibold uppercase tracking-[0.14em] text-zinc-700">
@@ -1385,11 +1550,15 @@ export const ProjectDetailView: React.FC<
                     )}
                   </span>
 
-                  <span>•</span>
+                  {!isFullVideoMode && (
+                    <>
+                      <span>•</span>
 
-                  <span>
-                    {safeClips.length} clips
-                  </span>
+                      <span>
+                        {safeClips.length} clips
+                      </span>
+                    </>
+                  )}
 
                   {isCompleted && (
                     <>
@@ -1460,24 +1629,28 @@ export const ProjectDetailView: React.FC<
               </div>
             </div>
 
-            <div className="mt-5">
-              <PremiumStats
-                project={project}
-                clips={safeClips}
-              />
-            </div>
+            {!isFullVideoMode && (
+              <>
+                <div className="mt-5">
+                  <PremiumStats
+                    project={project}
+                    clips={safeClips}
+                  />
+                </div>
 
-            <div className="mt-5">
-              <AIInsightPanel
-                project={project}
-                clips={safeClips}
-              />
-            </div>
+                <div className="mt-5">
+                  <AIInsightPanel
+                    project={project}
+                    clips={safeClips}
+                  />
+                </div>
 
-            <ClipsSection
-              clips={safeClips}
-              processing
-            />
+                <ClipsSection
+                  clips={safeClips}
+                  processing
+                />
+              </>
+            )}
           </>
         )}
 
@@ -1539,7 +1712,7 @@ export const ProjectDetailView: React.FC<
               </div>
             </div>
 
-            {safeClips.length > 0 && (
+            {!isFullVideoMode && safeClips.length > 0 && (
               <ClipsSection
                 clips={safeClips}
               />
@@ -1569,11 +1742,15 @@ export const ProjectDetailView: React.FC<
                     </p>
 
                     <h2 className="mt-1 text-base font-black text-white">
-                      Your content is ready to publish
+                      {isFullVideoMode
+                        ? "Your captioned video is ready"
+                        : "Your content is ready to publish"}
                     </h2>
 
                     <p className="mt-1 text-[9px] text-zinc-600">
-                      {safeClips.length} clips generated and optimized for publishing.
+                      {isFullVideoMode
+                        ? "Captions were burned into your full video."
+                        : `${safeClips.length} clips generated and optimized for publishing.`}
                     </p>
                   </div>
                 </div>
@@ -1585,42 +1762,72 @@ export const ProjectDetailView: React.FC<
               </div>
             </div>
 
-            {/* source + overview */}
-            <div className="grid gap-5 xl:grid-cols-12">
-              <div className="xl:col-span-7">
-                <SourceVideo
+            {isFullVideoMode ? (
+              <>
+                <FullCaptionedVideoResult
                   project={project}
                 />
-              </div>
 
-              <div className="xl:col-span-5">
-                <CompletedOverview
-                  project={project}
+                <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-4">
+                  <div className="rounded-[22px] border border-white/[0.07] bg-[#09090d] p-4">
+                    <span className="text-[8px] font-black uppercase tracking-[0.18em] text-zinc-700">
+                      Source
+                    </span>
+                    <p className="mt-3 text-xl font-black tracking-tight text-white">
+                      {formatDuration(project.duration)}
+                    </p>
+                  </div>
+
+                  <div className="rounded-[22px] border border-white/[0.07] bg-[#09090d] p-4">
+                    <span className="text-[8px] font-black uppercase tracking-[0.18em] text-zinc-700">
+                      Output
+                    </span>
+                    <p className="mt-3 text-xl font-black tracking-tight text-indigo-300">
+                      1 video
+                    </p>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* source + overview */}
+                <div className="grid gap-5 xl:grid-cols-12">
+                  <div className="xl:col-span-7">
+                    <SourceVideo
+                      project={project}
+                    />
+                  </div>
+
+                  <div className="xl:col-span-5">
+                    <CompletedOverview
+                      project={project}
+                      clips={safeClips}
+                    />
+                  </div>
+                </div>
+
+                {/* stats */}
+                <div className="mt-5">
+                  <PremiumStats
+                    project={project}
+                    clips={safeClips}
+                  />
+                </div>
+
+                {/* AI */}
+                <div className="mt-5">
+                  <AIInsightPanel
+                    project={project}
+                    clips={safeClips}
+                  />
+                </div>
+
+                {/* clips */}
+                <ClipsSection
                   clips={safeClips}
                 />
-              </div>
-            </div>
-
-            {/* stats */}
-            <div className="mt-5">
-              <PremiumStats
-                project={project}
-                clips={safeClips}
-              />
-            </div>
-
-            {/* AI */}
-            <div className="mt-5">
-              <AIInsightPanel
-                project={project}
-                clips={safeClips}
-              />
-            </div>
-
-            {/* clips */}
-            <ClipsSection
-              clips={safeClips}
-            />
+              </>
+            )}
           </>
         )}
 
@@ -1650,19 +1857,23 @@ export const ProjectDetailView: React.FC<
                 </div>
               </div>
 
-              <div className="mt-5">
-                <PremiumStats
-                  project={project}
-                  clips={safeClips}
-                />
-              </div>
+              {!isFullVideoMode && (
+                <>
+                  <div className="mt-5">
+                    <PremiumStats
+                      project={project}
+                      clips={safeClips}
+                    />
+                  </div>
 
-              <div className="mt-5">
-                <AIInsightPanel
-                  project={project}
-                  clips={safeClips}
-                />
-              </div>
+                  <div className="mt-5">
+                    <AIInsightPanel
+                      project={project}
+                      clips={safeClips}
+                    />
+                  </div>
+                </>
+              )}
             </>
           )}
 
