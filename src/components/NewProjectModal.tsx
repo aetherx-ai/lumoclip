@@ -12,6 +12,7 @@ import {
   Captions,
   Check,
   CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Clock3,
   FileCheck2,
@@ -155,13 +156,15 @@ const DEFAULT_CAPTION_STYLE: CaptionStyle = {
 const CAPTION_STYLE_PRESETS: {
   id: string;
   label: string;
-  preview: { bg: string; text: string; highlight: string };
+  // Duotone backdrop the thumbnail's "photo" silhouette is tinted with —
+  // stands in for a real clip frame the way OpusClip/CapCut style tiles do.
+  backdrop: { a: string; b: string };
   style: Omit<CaptionStyle, "enabled">;
 }[] = [
   {
     id: "bold-pop",
     label: "Bold Pop",
-    preview: { bg: "#111", text: "#FFFFFF", highlight: "#39FF14" },
+    backdrop: { a: "#3a2f55", b: "#0c0a14" },
     style: {
       font: "Liberation Sans",
       textColor: "#FFFFFF",
@@ -176,7 +179,7 @@ const CAPTION_STYLE_PRESETS: {
   {
     id: "clean-minimal",
     label: "Clean Minimal",
-    preview: { bg: "transparent", text: "#FFFFFF", highlight: "#FFE600" },
+    backdrop: { a: "#4a4238", b: "#100e0a" },
     style: {
       font: "Arial",
       textColor: "#FFFFFF",
@@ -191,7 +194,7 @@ const CAPTION_STYLE_PRESETS: {
   {
     id: "neon-nights",
     label: "Neon Nights",
-    preview: { bg: "#111", text: "#FFFFFF", highlight: "#FF2E9A" },
+    backdrop: { a: "#3d1f52", b: "#0a0611" },
     style: {
       font: "Montserrat",
       textColor: "#FFFFFF",
@@ -206,7 +209,7 @@ const CAPTION_STYLE_PRESETS: {
   {
     id: "impact-bold",
     label: "Impact Bold",
-    preview: { bg: "transparent", text: "#FFFFFF", highlight: "#FFD400" },
+    backdrop: { a: "#4a3418", b: "#0f0a05" },
     style: {
       font: "Impact",
       textColor: "#FFFFFF",
@@ -221,7 +224,7 @@ const CAPTION_STYLE_PRESETS: {
   {
     id: "karaoke-blue",
     label: "Karaoke Blue",
-    preview: { bg: "#111", text: "#FFFFFF", highlight: "#3AB0FF" },
+    backdrop: { a: "#173a52", b: "#070c11" },
     style: {
       font: "Poppins",
       textColor: "#FFFFFF",
@@ -231,6 +234,51 @@ const CAPTION_STYLE_PRESETS: {
       box: true,
       boxColor: "#000000",
       animation: "none",
+    },
+  },
+  {
+    id: "soft-glow",
+    label: "Soft Glow",
+    backdrop: { a: "#4a3d2c", b: "#110d08" },
+    style: {
+      font: "Poppins",
+      textColor: "#FFFFFF",
+      highlightColor: "#FFE600",
+      position: "bottom",
+      uppercase: false,
+      box: false,
+      boxColor: "#000000",
+      animation: "none",
+    },
+  },
+  {
+    id: "retro-frame",
+    label: "Retro Frame",
+    backdrop: { a: "#4a2415", b: "#100804" },
+    style: {
+      font: "Impact",
+      textColor: "#FFFFFF",
+      highlightColor: "#FF7A00",
+      position: "center",
+      uppercase: true,
+      box: true,
+      boxColor: "#2A1200",
+      animation: "none",
+    },
+  },
+  {
+    id: "y2k-pop",
+    label: "Y2K Pop",
+    backdrop: { a: "#123a4a", b: "#050d11" },
+    style: {
+      font: "Montserrat",
+      textColor: "#FFFFFF",
+      highlightColor: "#3AB0FF",
+      position: "top",
+      uppercase: true,
+      box: false,
+      boxColor: "#000000",
+      animation: "pop",
     },
   },
 ];
@@ -839,8 +887,17 @@ const CaptionStylePicker: React.FC<{
   disabled: boolean;
   lockEnabled?: boolean;
 }> = ({ style, onChange, disabled, lockEnabled = false }) => {
+  const presetRailRef = useRef<HTMLDivElement>(null);
+
   const update = (patch: Partial<CaptionStyle>) => {
     onChange({ ...style, ...patch });
+  };
+
+  const scrollRail = (direction: 1 | -1) => {
+    presetRailRef.current?.scrollBy({
+      left: direction * 168,
+      behavior: "smooth",
+    });
   };
 
   return (
@@ -1000,98 +1057,156 @@ const CaptionStylePicker: React.FC<{
             </p>
           </div>
 
-          {/* STYLE PRESETS */}
+          {/* STYLE PRESETS — scrollable rail of clip-style thumbnails */}
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                Style
-              </p>
-              <p className="text-[7px] text-zinc-700">
-                {CAPTION_STYLE_PRESETS.length} looks
-              </p>
+              <div>
+                <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                  Caption style
+                </p>
+                <p className="mt-0.5 text-[7px] text-zinc-700">
+                  Tap a look — every setting below updates with it
+                </p>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => scrollRail(-1)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500 transition hover:border-white/20 hover:text-zinc-200"
+                  aria-label="Scroll styles left"
+                >
+                  <ChevronLeft className="h-3 w-3" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => scrollRail(1)}
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500 transition hover:border-white/20 hover:text-zinc-200"
+                  aria-label="Scroll styles right"
+                >
+                  <ChevronRight className="h-3 w-3" />
+                </button>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-              {CAPTION_STYLE_PRESETS.map((preset) => {
-                const isActive =
-                  style.font === preset.style.font &&
-                  style.highlightColor.toUpperCase() ===
-                    preset.style.highlightColor.toUpperCase() &&
-                  style.box === preset.style.box &&
-                  style.animation === preset.style.animation &&
-                  style.position === preset.style.position;
+            <div className="relative -mx-1">
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-4 bg-gradient-to-r from-[#07070a] to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-[1] w-4 bg-gradient-to-l from-[#07070a] to-transparent" />
 
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    disabled={disabled}
-                    onClick={() => update(preset.style)}
-                    title={preset.label}
-                    className={`
-                      group relative flex flex-col items-center gap-1.5 rounded-[14px] border p-2 transition-all duration-200
-                      disabled:cursor-not-allowed disabled:opacity-40
-                      ${
-                        isActive
-                          ? "border-violet-400/60 bg-violet-500/10 shadow-[0_0_0_1px_rgba(167,139,250,0.15),0_8px_20px_rgba(124,58,237,0.18)]"
-                          : "border-white/[0.06] bg-black/20 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.02]"
-                      }
-                    `}
-                  >
-                    {isActive && (
-                      <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-black/40 bg-gradient-to-br from-violet-400 to-indigo-500 shadow-sm">
-                        <Check className="h-2 w-2 text-white" strokeWidth={3} />
-                      </span>
-                    )}
+              <div
+                ref={presetRailRef}
+                className="flex gap-2.5 overflow-x-auto scroll-smooth px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{ scrollSnapType: "x proximity" }}
+              >
+                {CAPTION_STYLE_PRESETS.map((preset) => {
+                  const isActive =
+                    style.font === preset.style.font &&
+                    style.highlightColor.toUpperCase() ===
+                      preset.style.highlightColor.toUpperCase() &&
+                    style.box === preset.style.box &&
+                    style.animation === preset.style.animation &&
+                    style.position === preset.style.position;
 
-                    <span
-                      className="relative flex aspect-[9/16] w-full items-end justify-center overflow-hidden rounded-[9px] p-1"
-                      style={{
-                        background:
-                          preset.preview.bg === "transparent"
-                            ? "repeating-conic-gradient(#1a1a1a 0% 25%, #0a0a0a 0% 50%) 50% / 6px 6px"
-                            : `linear-gradient(160deg, ${preset.preview.bg}, #05050a)`,
-                        justifyContent:
-                          preset.style.position === "top"
-                            ? "flex-start"
-                            : preset.style.position === "center"
-                              ? "center"
-                              : "flex-end",
-                        alignItems:
-                          preset.style.position === "top"
-                            ? "flex-start"
-                            : "center",
-                      }}
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      disabled={disabled}
+                      onClick={() => update(preset.style)}
+                      title={preset.label}
+                      style={{ scrollSnapAlign: "start" }}
+                      className={`
+                        group relative flex w-[88px] shrink-0 flex-col items-center gap-1.5 transition-all duration-200
+                        disabled:cursor-not-allowed disabled:opacity-40
+                      `}
                     >
                       <span
-                        className={`text-[8px] font-extrabold leading-none ${
-                          preset.style.box ? "rounded px-1 py-0.5" : ""
-                        }`}
-                        style={{
-                          fontFamily: preset.style.font,
-                          backgroundColor: preset.style.box
-                            ? `${preset.style.boxColor}90`
-                            : "transparent",
-                          color: preset.preview.text,
-                        }}
+                        className={`
+                          relative flex aspect-[4/5] w-full overflow-hidden rounded-[13px] transition-all duration-200
+                          ${
+                            isActive
+                              ? "shadow-[0_0_0_2px_#07070a,0_0_0_3.5px_rgba(167,139,250,0.85),0_10px_22px_rgba(124,58,237,0.25)]"
+                              : "shadow-[0_0_0_1px_rgba(255,255,255,0.07)] group-hover:-translate-y-0.5 group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(0,0,0,0.35)]"
+                          }
+                        `}
                       >
-                        {preset.style.uppercase ? "AB" : "ab"}
-                        <span style={{ color: preset.preview.highlight }}>
-                          {preset.style.uppercase ? "C" : "c"}
+                        {/* fake "clip frame" backdrop, standing in for a video thumbnail */}
+                        <span
+                          className="absolute inset-0"
+                          style={{
+                            background: `radial-gradient(120% 90% at 50% 8%, ${preset.backdrop.a}, ${preset.backdrop.b} 65%)`,
+                          }}
+                        />
+
+                        {/* subject silhouette so the tile reads like a real clip, not a swatch */}
+                        <svg
+                          viewBox="0 0 80 100"
+                          className="absolute inset-x-0 bottom-0 h-[78%] w-full opacity-70"
+                          preserveAspectRatio="xMidYMax slice"
+                        >
+                          <circle cx="40" cy="32" r="17" fill="rgba(255,255,255,0.14)" />
+                          <path
+                            d="M4 100 C4 66 18 52 40 52 C62 52 76 66 76 100 Z"
+                            fill="rgba(255,255,255,0.11)"
+                          />
+                        </svg>
+
+                        {/* top vignette for depth */}
+                        <span className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/55" />
+
+                        {isActive && (
+                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-500 shadow-sm">
+                            <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                          </span>
+                        )}
+
+                        {/* the actual caption, rendered with the real style values */}
+                        <span
+                          className={`
+                            relative z-[1] flex h-full w-full flex-col px-1.5 pb-2
+                            ${
+                              preset.style.position === "top"
+                                ? "justify-start pt-2.5"
+                                : preset.style.position === "center"
+                                  ? "justify-center"
+                                  : "justify-end"
+                            }
+                          `}
+                        >
+                          <span
+                            className={`mx-auto text-center text-[9px] font-extrabold leading-[1.15] ${
+                              preset.style.box ? "rounded px-1 py-0.5" : ""
+                            }`}
+                            style={{
+                              fontFamily: preset.style.font,
+                              backgroundColor: preset.style.box
+                                ? `${preset.style.boxColor}90`
+                                : "transparent",
+                              color: preset.style.textColor,
+                              textShadow: preset.style.box
+                                ? "none"
+                                : "0 0 2px #000, 0 1px 3px #000",
+                            }}
+                          >
+                            {preset.style.uppercase ? "TO GET " : "To get "}
+                            <span style={{ color: preset.style.highlightColor }}>
+                              {preset.style.uppercase ? "STARTED" : "started"}
+                            </span>
+                          </span>
                         </span>
                       </span>
-                    </span>
 
-                    <span
-                      className={`text-[7px] font-bold leading-tight ${
-                        isActive ? "text-violet-300" : "text-zinc-500"
-                      }`}
-                    >
-                      {preset.label}
-                    </span>
-                  </button>
-                );
-              })}
+                      <span
+                        className={`text-[7px] font-bold leading-tight ${
+                          isActive ? "text-violet-300" : "text-zinc-500"
+                        }`}
+                      >
+                        {preset.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
