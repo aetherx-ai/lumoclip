@@ -844,20 +844,28 @@ const CaptionStylePicker: React.FC<{
   };
 
   return (
-    <section className="relative overflow-hidden rounded-[23px] border border-white/[0.06] bg-gradient-to-br from-white/[0.025] to-transparent p-4.5">
-      <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-violet-500/[0.08] blur-3xl" />
+    <section className="relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-gradient-to-br from-white/[0.035] via-white/[0.015] to-transparent p-4.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-violet-500/[0.09] blur-3xl" />
+      <div className="pointer-events-none absolute -left-12 bottom-0 h-32 w-32 rounded-full bg-fuchsia-500/[0.05] blur-3xl" />
 
       {/* HEADER + TOGGLE */}
       <div className="relative mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-400/10 bg-violet-500/10">
-            <Captions className="h-3.5 w-3.5 text-violet-400" />
+          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-violet-400/15 bg-gradient-to-br from-violet-500/20 to-violet-500/5">
+            <Captions className="h-3.5 w-3.5 text-violet-300" />
           </div>
 
           <div>
-            <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-300">
-              AI captions
-            </p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-300">
+                AI captions
+              </p>
+
+              <span className="flex items-center gap-0.5 rounded-full border border-amber-300/25 bg-gradient-to-r from-amber-400/15 to-yellow-300/10 px-1.5 py-[1px] text-[6px] font-bold uppercase tracking-[0.12em] text-amber-200">
+                <Sparkles className="h-2 w-2" />
+                Premium
+              </span>
+            </div>
 
             <p className="mt-0.5 text-[7px] text-zinc-700">
               {lockEnabled
@@ -886,7 +894,7 @@ const CaptionStylePicker: React.FC<{
             disabled:cursor-not-allowed disabled:opacity-60
             ${
               style.enabled
-                ? "border-violet-400/30 bg-violet-500"
+                ? "border-violet-400/30 bg-gradient-to-r from-violet-600 to-indigo-500"
                 : "border-white/[0.1] bg-white/[0.06]"
             }
           `}
@@ -906,67 +914,102 @@ const CaptionStylePicker: React.FC<{
           Captions are off — clips will render without on-screen text.
         </p>
       ) : (
-        <div className="relative space-y-4">
+        <div className="relative space-y-5">
           <style>{`
             @keyframes captionPopPreview {
               0%, 60%, 100% { transform: scale(1); }
               75% { transform: scale(1.14); }
             }
+            @keyframes captionScreenGlow {
+              0%, 100% { opacity: 0.55; }
+              50% { opacity: 0.9; }
+            }
+            @keyframes captionCardSheen {
+              0% { transform: translateX(-120%) skewX(-12deg); }
+              100% { transform: translateX(220%) skewX(-12deg); }
+            }
           `}</style>
 
-          {/* PREVIEW */}
-          <div className="mx-auto flex w-full max-w-[220px] flex-col items-center overflow-hidden rounded-[18px] border border-white/[0.08] bg-black">
+          {/* PREVIEW — DEVICE FRAME */}
+          <div className="relative mx-auto w-full max-w-[200px]">
             <div
-              className={`
-                flex aspect-[9/16] w-full flex-col p-3
-                ${
-                  style.position === "top"
-                    ? "justify-start"
-                    : style.position === "center"
-                      ? "justify-center"
-                      : "justify-end"
-                }
-              `}
-            >
-              <p
-                className={`
-                  mx-auto text-center text-[13px] font-extrabold leading-tight
-                  ${style.box ? "rounded-lg px-2.5 py-1.5" : ""}
-                `}
-                style={{
-                  fontFamily: style.font,
-                  backgroundColor: style.box
-                    ? `${style.boxColor}80`
-                    : "transparent",
-                  textShadow: style.box
-                    ? "none"
-                    : "0 0 2px #000, 0 0 6px #000, 0 2px 3px #000",
-                }}
-              >
-                <span style={{ color: style.textColor }}>
-                  {style.uppercase ? "THIS IS " : "This is "}
-                </span>
-                <span
-                  className="inline-block"
-                  style={{
-                    color: style.highlightColor,
-                    animation:
-                      style.animation === "pop"
-                        ? "captionPopPreview 1.6s ease-in-out infinite"
-                        : undefined,
-                  }}
+              className="pointer-events-none absolute inset-x-6 -top-3 -bottom-3 rounded-[32px] blur-2xl transition-colors duration-500"
+              style={{
+                background: `radial-gradient(60% 60% at 50% 40%, ${style.highlightColor}33, transparent 70%)`,
+                animation: "captionScreenGlow 3.2s ease-in-out infinite",
+              }}
+            />
+
+            <div className="relative overflow-hidden rounded-[26px] border border-white/[0.12] bg-black p-[3px] shadow-[0_18px_45px_rgba(0,0,0,0.55)]">
+              <div className="relative flex aspect-[9/16] w-full flex-col overflow-hidden rounded-[23px] bg-gradient-to-b from-zinc-900 via-black to-zinc-950">
+                {/* dynamic island */}
+                <div className="absolute left-1/2 top-2 z-10 h-3.5 w-16 -translate-x-1/2 rounded-full bg-black/90" />
+
+                {/* subtle screen sheen */}
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.05] via-transparent to-transparent" />
+
+                <div
+                  className={`
+                    relative z-[1] flex h-full w-full flex-col p-3.5
+                    ${
+                      style.position === "top"
+                        ? "justify-start pt-7"
+                        : style.position === "center"
+                          ? "justify-center"
+                          : "justify-end pb-6"
+                    }
+                  `}
                 >
-                  {style.uppercase ? "AWESOME" : "awesome"}
-                </span>
-              </p>
+                  <p
+                    className={`
+                      mx-auto text-center text-[13px] font-extrabold leading-tight
+                      ${style.box ? "rounded-lg px-2.5 py-1.5" : ""}
+                    `}
+                    style={{
+                      fontFamily: style.font,
+                      backgroundColor: style.box
+                        ? `${style.boxColor}80`
+                        : "transparent",
+                      textShadow: style.box
+                        ? "none"
+                        : "0 0 2px #000, 0 0 6px #000, 0 2px 3px #000",
+                    }}
+                  >
+                    <span style={{ color: style.textColor }}>
+                      {style.uppercase ? "THIS IS " : "This is "}
+                    </span>
+                    <span
+                      className="inline-block"
+                      style={{
+                        color: style.highlightColor,
+                        animation:
+                          style.animation === "pop"
+                            ? "captionPopPreview 1.6s ease-in-out infinite"
+                            : undefined,
+                      }}
+                    >
+                      {style.uppercase ? "AWESOME" : "awesome"}
+                    </span>
+                  </p>
+                </div>
+              </div>
             </div>
+
+            <p className="mt-2 text-center text-[6.5px] font-medium uppercase tracking-[0.14em] text-zinc-700">
+              Live preview
+            </p>
           </div>
 
           {/* STYLE PRESETS */}
           <div>
-            <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-              Style
-            </p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Style
+              </p>
+              <p className="text-[7px] text-zinc-700">
+                {CAPTION_STYLE_PRESETS.length} looks
+              </p>
+            </div>
 
             <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
               {CAPTION_STYLE_PRESETS.map((preset) => {
@@ -986,35 +1029,56 @@ const CaptionStylePicker: React.FC<{
                     onClick={() => update(preset.style)}
                     title={preset.label}
                     className={`
-                      group flex flex-col items-center gap-1.5 rounded-xl border p-2 transition
+                      group relative flex flex-col items-center gap-1.5 rounded-[14px] border p-2 transition-all duration-200
                       disabled:cursor-not-allowed disabled:opacity-40
                       ${
                         isActive
-                          ? "border-violet-400/50 bg-violet-500/10"
-                          : "border-white/[0.06] bg-black/20 hover:border-white/20"
+                          ? "border-violet-400/60 bg-violet-500/10 shadow-[0_0_0_1px_rgba(167,139,250,0.15),0_8px_20px_rgba(124,58,237,0.18)]"
+                          : "border-white/[0.06] bg-black/20 hover:-translate-y-0.5 hover:border-white/20 hover:bg-white/[0.02]"
                       }
                     `}
                   >
+                    {isActive && (
+                      <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border border-black/40 bg-gradient-to-br from-violet-400 to-indigo-500 shadow-sm">
+                        <Check className="h-2 w-2 text-white" strokeWidth={3} />
+                      </span>
+                    )}
+
                     <span
-                      className="flex h-9 w-full items-center justify-center rounded-lg"
+                      className="relative flex aspect-[9/16] w-full items-end justify-center overflow-hidden rounded-[9px] p-1"
                       style={{
                         background:
                           preset.preview.bg === "transparent"
-                            ? "repeating-conic-gradient(#1a1a1a 0% 25%, #0a0a0a 0% 50%) 50% / 8px 8px"
-                            : preset.preview.bg,
+                            ? "repeating-conic-gradient(#1a1a1a 0% 25%, #0a0a0a 0% 50%) 50% / 6px 6px"
+                            : `linear-gradient(160deg, ${preset.preview.bg}, #05050a)`,
+                        justifyContent:
+                          preset.style.position === "top"
+                            ? "flex-start"
+                            : preset.style.position === "center"
+                              ? "center"
+                              : "flex-end",
+                        alignItems:
+                          preset.style.position === "top"
+                            ? "flex-start"
+                            : "center",
                       }}
                     >
                       <span
-                        className="text-[9px] font-extrabold"
-                        style={{ color: preset.preview.text }}
+                        className={`text-[8px] font-extrabold leading-none ${
+                          preset.style.box ? "rounded px-1 py-0.5" : ""
+                        }`}
+                        style={{
+                          fontFamily: preset.style.font,
+                          backgroundColor: preset.style.box
+                            ? `${preset.style.boxColor}90`
+                            : "transparent",
+                          color: preset.preview.text,
+                        }}
                       >
-                        A
-                        <span
-                          style={{ color: preset.preview.highlight }}
-                        >
-                          B
+                        {preset.style.uppercase ? "AB" : "ab"}
+                        <span style={{ color: preset.preview.highlight }}>
+                          {preset.style.uppercase ? "C" : "c"}
                         </span>
-                        C
                       </span>
                     </span>
 
@@ -1037,36 +1101,42 @@ const CaptionStylePicker: React.FC<{
               Fine-tune highlight color
             </p>
 
-            <div className="flex flex-wrap items-center gap-2">
-              {CAPTION_HIGHLIGHT_PRESETS.map((preset) => (
-                <button
-                  key={preset.value}
-                  type="button"
-                  disabled={disabled}
-                  title={preset.label}
-                  onClick={() =>
-                    update({ highlightColor: preset.value })
-                  }
-                  className={`
-                    h-7 w-7 rounded-full border-2 transition
-                    disabled:cursor-not-allowed disabled:opacity-40
-                    ${
-                      style.highlightColor.toUpperCase() ===
-                      preset.value.toUpperCase()
-                        ? "border-white scale-110"
-                        : "border-white/20 hover:border-white/50"
+            <div className="flex flex-wrap items-center gap-2.5">
+              {CAPTION_HIGHLIGHT_PRESETS.map((preset) => {
+                const isActive =
+                  style.highlightColor.toUpperCase() ===
+                  preset.value.toUpperCase();
+
+                return (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    disabled={disabled}
+                    title={preset.label}
+                    onClick={() =>
+                      update({ highlightColor: preset.value })
                     }
-                  `}
-                  style={{ background: preset.value }}
-                />
-              ))}
+                    className={`
+                      relative h-7 w-7 rounded-full transition-all duration-200
+                      disabled:cursor-not-allowed disabled:opacity-40
+                      ${isActive ? "scale-110" : "hover:scale-105"}
+                    `}
+                    style={{
+                      background: preset.value,
+                      boxShadow: isActive
+                        ? `0 0 0 2px #050508, 0 0 0 3.5px ${preset.value}, 0 0 14px 1px ${preset.value}80`
+                        : "0 0 0 2px rgba(255,255,255,0.12)",
+                    }}
+                  />
+                );
+              })}
 
               <label
                 className={`
                   relative flex h-7 w-7 items-center justify-center
                   overflow-hidden rounded-full border-2 border-dashed
-                  border-white/20 text-[10px] text-zinc-500
-                  ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:border-white/50"}
+                  border-white/20 text-[10px] text-zinc-500 transition
+                  ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:border-white/50 hover:text-zinc-300"}
                 `}
                 title="Custom color"
               >
@@ -1091,24 +1161,30 @@ const CaptionStylePicker: React.FC<{
                 Font
               </p>
 
-              <select
-                value={style.font}
-                disabled={disabled}
-                onChange={(event) =>
-                  update({ font: event.target.value })
-                }
-                className="w-full rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 text-[10px] font-medium text-white outline-none focus:border-violet-500/40 disabled:opacity-40"
-              >
-                {CAPTION_FONTS.map((font) => (
-                  <option
-                    key={font}
-                    value={font}
-                    className="bg-[#0a0a0e]"
-                  >
-                    {font}
-                  </option>
-                ))}
-              </select>
+              <div className="relative">
+                <select
+                  value={style.font}
+                  disabled={disabled}
+                  onChange={(event) =>
+                    update({ font: event.target.value })
+                  }
+                  className="w-full appearance-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 pr-7 text-[10px] font-medium text-white outline-none transition focus:border-violet-500/40 disabled:opacity-40"
+                  style={{ fontFamily: style.font }}
+                >
+                  {CAPTION_FONTS.map((font) => (
+                    <option
+                      key={font}
+                      value={font}
+                      className="bg-[#0a0a0e]"
+                      style={{ fontFamily: font }}
+                    >
+                      {font}
+                    </option>
+                  ))}
+                </select>
+
+                <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-zinc-600" />
+              </div>
             </div>
 
             <div>
@@ -1116,7 +1192,7 @@ const CaptionStylePicker: React.FC<{
                 Position
               </p>
 
-              <div className="flex overflow-hidden rounded-xl border border-white/[0.08]">
+              <div className="flex overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
                 {(["top", "center", "bottom"] as const).map(
                   (position) => (
                     <button
@@ -1125,12 +1201,12 @@ const CaptionStylePicker: React.FC<{
                       disabled={disabled}
                       onClick={() => update({ position })}
                       className={`
-                        flex-1 py-2.5 text-[9px] font-bold capitalize transition
+                        flex-1 py-2.5 text-[9px] font-bold capitalize transition-all duration-200
                         disabled:cursor-not-allowed disabled:opacity-40
                         ${
                           style.position === position
-                            ? "bg-violet-500 text-white"
-                            : "bg-white/[0.02] text-zinc-500 hover:bg-white/[0.05]"
+                            ? "bg-gradient-to-b from-violet-500 to-violet-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
+                            : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-300"
                         }
                       `}
                     >
@@ -1143,7 +1219,7 @@ const CaptionStylePicker: React.FC<{
           </div>
 
           {/* UPPERCASE TOGGLE */}
-          <label className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5">
+          <label className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5 transition hover:border-white/[0.1]">
             <span className="text-[9px] font-medium text-zinc-400">
               Uppercase text
             </span>
@@ -1161,7 +1237,7 @@ const CaptionStylePicker: React.FC<{
                 disabled:cursor-not-allowed disabled:opacity-40
                 ${
                   style.uppercase
-                    ? "border-violet-400/30 bg-violet-500"
+                    ? "border-violet-400/30 bg-gradient-to-r from-violet-600 to-indigo-500"
                     : "border-white/[0.1] bg-white/[0.06]"
                 }
               `}
