@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from "react";
+import { Upload } from "lucide-react";
+import YouTubePublishModal from "./YouTubePublishModal.js";
 import {
   AlertCircle,
   ArrowLeft,
