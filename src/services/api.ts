@@ -1204,6 +1204,71 @@ export async function fetchUsageLogs(): Promise<{
   };
 }
 
+
+// ======================================================
+// YOUTUBE SOCIAL CONNECTION
+// ======================================================
+
+export interface YouTubeStatus {
+  connected: boolean;
+  provider: "youtube";
+  account?: {
+    id: string;
+    name: string;
+    avatar: string;
+  };
+}
+
+export async function connectYouTubeApi(): Promise<void> {
+  const response = await authFetch("/api/social/youtube/connect", {
+    method: "GET",
+  });
+
+  const data = await parseJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error || "Failed to start YouTube connection."
+    );
+  }
+
+  if (!data?.url) {
+    throw new Error("YouTube authorization URL was not returned.");
+  }
+
+  window.location.assign(data.url);
+}
+
+export async function fetchYouTubeStatusApi(): Promise<YouTubeStatus> {
+  const response = await authFetch("/api/social/youtube/status", {
+    method: "GET",
+  });
+
+  const data = await parseJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error || "Failed to fetch YouTube connection status."
+    );
+  }
+
+  return data as YouTubeStatus;
+}
+
+export async function disconnectYouTubeApi(): Promise<void> {
+  const response = await authFetch("/api/social/youtube/disconnect", {
+    method: "DELETE",
+  });
+
+  const data = await parseJsonResponse(response);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.error || "Failed to disconnect YouTube account."
+    );
+  }
+}
+
 // ======================================================
 // STRIPE CHECKOUT
 // ======================================================

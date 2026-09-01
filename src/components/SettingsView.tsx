@@ -3,6 +3,9 @@ import { User, UsageLog } from '../types.js';
 import {
   fetchUsageLogs,
   updateProfileApi,
+  connectYouTubeApi,
+  fetchYouTubeStatusApi,
+  disconnectYouTubeApi,
 } from '../services/api.js';
 
 import {
@@ -222,6 +225,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [connectedPlatforms, setConnectedPlatforms] =
     useState<Record<string, boolean>>({});
 
+  const [youtubeAccount, setYouTubeAccount] = useState<{
+    id: string;
+    name: string;
+    avatar: string;
+  } | null>(null);
+
+  const [youtubeLoading, setYouTubeLoading] = useState(true);
+  const [youtubeBusy, setYouTubeBusy] = useState(false);
+  const [socialMessage, setSocialMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
   /* =======================================================
      LOAD USER / USAGE
   ======================================================= */
@@ -253,10 +269,68 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         );
       });
 
+    const loadYouTubeStatus = async () => {
+      try {
+        setYouTubeLoading(true);
+        const status = await fetchYouTubeStatusApi();
+
+        if (!mounted) return;
+
+        setConnectedPlatforms((prev) => ({
+          ...prev,
+          YouTube: Boolean(status.connected),
+        }));
+
+        setYouTubeAccount(status.connected ? status.account || null : null);
+      } catch (err) {
+        if (!mounted) return;
+        console.error('Failed to load YouTube status:', err);
+      } finally {
+        if (mounted) setYouTubeLoading(false);
+      }
+    };
+
+    if (user) {
+      void loadYouTubeStatus();
+    } else {
+      setYouTubeLoading(false);
+    }
+
     return () => {
       mounted = false;
     };
   }, [user]);
+
+  /* =======================================================
+     HANDLE YOUTUBE OAUTH RETURN
+  ======================================================= */
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const youtubeResult = params.get('youtube');
+    const reason = params.get('reason');
+
+    if (!youtubeResult) return;
+
+    setActiveSection('social');
+
+    if (youtubeResult === 'connected') {
+      setSocialMessage({
+        type: 'success',
+        text: 'YouTube account connected successfully.',
+      });
+    } else if (youtubeResult === 'error') {
+      setSocialMessage({
+        type: 'error',
+        text: reason
+          ? `YouTube connection failed: ${reason}`
+          : 'YouTube connection failed. Please try again.',
+      });
+    }
+
+    const cleanUrl = `${window.location.pathname}${window.location.hash || ''}`;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }, []);
 
   /* =======================================================
      SAVE PROFILE
@@ -410,18 +484,71 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ======================================================= */
 
   const handleConnect = (platform: string) => {
+    setSocialMessage(null);
     setConnectModal(platform);
   };
 
-  const confirmConnect = () => {
+  const startYouTubeConnection = async () => {
+    if (youtubeBusy) return;
+
+    setYouTubeBusy(true);
+    setSocialMessage(null);
+
+    try {
+      await connectYouTubeApi();
+    } catch (err: any) {
+      console.error('YouTube connection failed:', err);
+      setSocialMessage({
+        type: 'error',
+        text: err?.message || 'Failed to connect YouTube.',
+      });
+      setYouTubeBusy(false);
+    }
+  };
+
+  const handleDisconnectYouTube = async () => {
+    if (youtubeBusy) return;
+
+    setYouTubeBusy(true);
+    setSocialMessage(null);
+
+    try {
+      await disconnectYouTubeApi();
+
+      setConnectedPlatforms((prev) => ({
+        ...prev,
+        YouTube: false,
+      }));
+      setYouTubeAccount(null);
+      setConnectModal(null);
+      setSocialMessage({
+        type: 'success',
+        text: 'YouTube account disconnected successfully.',
+      });
+    } catch (err: any) {
+      console.error('YouTube disconnect failed:', err);
+      setSocialMessage({
+        type: 'error',
+        text: err?.message || 'Failed to disconnect YouTube.',
+      });
+    } finally {
+      setYouTubeBusy(false);
+    }
+  };
+
+  const confirmConnect = async () => {
     if (!connectModal) return;
 
-    setConnectedPlatforms((prev) => ({
-      ...prev,
-      [connectModal]: true,
-    }));
+    if (connectModal === 'YouTube') {
+      await startYouTubeConnection();
+      return;
+    }
 
     setConnectModal(null);
+    setSocialMessage({
+      type: 'error',
+      text: `${connectModal} integration is coming soon.`,
+    });
   };
 
   /* =======================================================
@@ -858,6 +985,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       platform.name
                     ];
 
+                  const isYouTube =
+                    platform.name === 'YouTube';
+
+                  const isLoading =
+                    isYouTube && youtubeLoading;
+
                   return (
                     <div
                       key={platform.name}
@@ -895,6 +1028,36 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <p className="mt-1 text-xs text-zinc-600">
                           {platform.desc}
                         </p>
+
+                        {isYouTube && connected && youtubeAccount && (
+                          <div className="mt-4 flex items-center gap-3 rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+                            {youtubeAccount.avatar ? (
+                              <img
+                                src={youtubeAccount.avatar}
+                                alt={youtubeAccount.name}
+                                className="h-9 w-9 rounded-xl object-cover ring-1 ring-red-500/20"
+                                onError={(e) => {
+                                  e.currentTarget.style.display = 'none';
+                                }}
+                              />
+                            ) : (
+                              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-500/10 text-xs font-bold text-red-400">
+                                {(youtubeAccount.name || 'YT')
+                                  .slice(0, 2)
+                                  .toUpperCase()}
+                              </div>
+                            )}
+
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-zinc-200">
+                                {youtubeAccount.name}
+                              </p>
+                              <p className="mt-0.5 text-[10px] text-zinc-600">
+                                YouTube channel
+                              </p>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <button
@@ -904,15 +1067,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                             platform.name
                           )
                         }
+                        disabled={isLoading || (isYouTube && youtubeBusy)}
                         className={`mt-5 flex w-full items-center justify-center gap-2 rounded-xl border px-4 py-2.5 text-xs font-semibold transition ${
                           connected
                             ? 'border-white/[0.06] bg-white/[0.025] text-zinc-400 hover:bg-white/[0.05]'
                             : 'border-violet-500/20 bg-violet-500/10 text-violet-300 hover:bg-violet-500/15'
                         }`}
                       >
-                        {connected
-                          ? 'Manage connection'
-                          : 'Connect account'}
+                        {isLoading
+                          ? 'Checking connection…'
+                          : connected
+                            ? 'Manage connection'
+                            : 'Connect account'}
 
                         <ArrowUpRight className="h-3.5 w-3.5" />
                       </button>
@@ -922,6 +1088,25 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 })}
 
               </div>
+
+              {socialMessage && (
+                <div
+                  className={`mt-6 flex items-start gap-3 rounded-2xl border p-4 ${
+                    socialMessage.type === 'success'
+                      ? 'border-emerald-500/15 bg-emerald-500/[0.04] text-emerald-400'
+                      : 'border-red-500/15 bg-red-500/[0.04] text-red-400'
+                  }`}
+                >
+                  {socialMessage.type === 'success' ? (
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  ) : (
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  )}
+                  <p className="text-xs leading-5">
+                    {socialMessage.text}
+                  </p>
+                </div>
+              )}
 
               <div className="mt-6 flex items-start gap-3 rounded-2xl border border-blue-500/10 bg-blue-500/[0.035] p-4">
 
@@ -1513,50 +1698,83 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
             <div className="p-6">
 
-              <div className="rounded-2xl border border-violet-500/10 bg-violet-500/[0.04] p-5">
-
-                <div className="flex items-start gap-3">
-
-                  <Shield className="mt-0.5 h-5 w-5 text-violet-400" />
-
-                  <div>
-                    <p className="text-sm font-semibold text-white">
-                      Secure authorization
-                    </p>
-
-                    <p className="mt-1 text-xs leading-5 text-zinc-600">
-                      You'll be redirected to authorize
-                      LumoClip. Your login credentials
-                      are never stored by LumoClip.
-                    </p>
+              {connectModal === 'YouTube' && connectedPlatforms.YouTube ? (
+                <>
+                  <div className="rounded-2xl border border-emerald-500/10 bg-emerald-500/[0.04] p-5">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-400" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white">
+                          YouTube is connected
+                        </p>
+                        <p className="mt-1 truncate text-xs text-zinc-600">
+                          {youtubeAccount?.name || 'Connected YouTube channel'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                </div>
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setConnectModal(null)}
+                      className="flex-1 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05]"
+                    >
+                      Close
+                    </button>
 
-              </div>
+                    <button
+                      type="button"
+                      onClick={handleDisconnectYouTube}
+                      disabled={youtubeBusy}
+                      className="flex-1 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-xs font-semibold text-red-400 transition hover:bg-red-500/[0.1] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {youtubeBusy ? 'Disconnecting…' : 'Disconnect'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="rounded-2xl border border-violet-500/10 bg-violet-500/[0.04] p-5">
+                    <div className="flex items-start gap-3">
+                      <Shield className="mt-0.5 h-5 w-5 text-violet-400" />
+                      <div>
+                        <p className="text-sm font-semibold text-white">
+                          Secure authorization
+                        </p>
 
-              <div className="mt-6 flex gap-3">
+                        <p className="mt-1 text-xs leading-5 text-zinc-600">
+                          {connectModal === 'YouTube'
+                            ? "You'll be redirected to Google to authorize LumoClip. Your Google password is never stored by LumoClip."
+                            : `${connectModal} publishing is not connected yet. This integration will be available soon.`}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
 
-                <button
-                  type="button"
-                  onClick={() =>
-                    setConnectModal(null)
-                  }
-                  className="flex-1 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-xs font-semibold text-zinc-400 hover:bg-white/[0.05]"
-                >
-                  Cancel
-                </button>
+                  <div className="mt-6 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setConnectModal(null)}
+                      className="flex-1 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05]"
+                    >
+                      Cancel
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={confirmConnect}
-                  className="flex-1 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-violet-600/20"
-                >
-                  Continue
-                  <ExternalLink className="ml-1.5 inline h-3 w-3" />
-                </button>
-
-              </div>
+                    <button
+                      type="button"
+                      onClick={confirmConnect}
+                      disabled={youtubeBusy || connectModal !== 'YouTube'}
+                      className="flex-1 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:from-violet-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {youtubeBusy ? 'Connecting…' : connectModal === 'YouTube' ? 'Continue' : 'Coming soon'}
+                      {connectModal === 'YouTube' && !youtubeBusy && (
+                        <ExternalLink className="ml-1.5 inline h-3 w-3" />
+                      )}
+                    </button>
+                  </div>
+                </>
+              )}
 
             </div>
           </div>
