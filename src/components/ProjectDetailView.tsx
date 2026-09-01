@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Upload } from "lucide-react";
 import YouTubePublishModal from "./YouTubePublishModal.js";
 import {
   AlertCircle,
@@ -338,7 +339,8 @@ const HeroVideo: React.FC<{
 
 const FullCaptionedVideoResult: React.FC<{
   project: Project;
-}> = ({ project }) => {
+  onPublish: () => void;
+}> = ({ project, onPublish }) => {
   const fullVideoUrl =
     getFullVideoUrl(project);
 
@@ -393,7 +395,16 @@ const FullCaptionedVideoResult: React.FC<{
           </div>
 
           {fullVideoUrl && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onPublish}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-[10px] font-bold text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] transition hover:bg-red-400"
+              >
+                <Youtube className="h-3.5 w-3.5" />
+                Publish to YouTube
+              </button>
+
               <a
                 href={fullVideoUrl}
                 target="_blank"
@@ -806,8 +817,7 @@ const Pipeline: React.FC<{
 const ClipCard: React.FC<{
   clip: Clip;
   index: number;
-  onPublish: (clip: Clip) => void;
-}> = ({ clip, index, onPublish }) => {
+}> = ({ clip, index }) => {
   const [showReason, setShowReason] =
     useState(false);
 
@@ -1033,28 +1043,18 @@ const ClipCard: React.FC<{
         )}
 
         {/* actions */}
-        <div className="mt-4 grid grid-cols-[1fr_1fr_auto] gap-2 border-t border-white/[0.05] pt-3">
+        <div className="mt-4 flex gap-2 border-t border-white/[0.05] pt-3">
           {videoUrl ? (
             <>
               <a
                 href={videoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-[9px] font-bold text-black transition hover:bg-zinc-200"
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-[9px] font-bold text-black transition hover:bg-zinc-200"
               >
                 <Download className="h-3.5 w-3.5" />
                 Export
               </a>
-
-              <button
-                type="button"
-                onClick={() => onPublish(clip)}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-red-400/15 bg-red-500/[0.08] px-3 py-2.5 text-[9px] font-bold text-red-300 transition hover:border-red-400/25 hover:bg-red-500/[0.14] hover:text-red-200"
-                title="Publish to YouTube"
-              >
-                <Youtube className="h-3.5 w-3.5" />
-                Publish
-              </button>
 
               <a
                 href={videoUrl}
@@ -1067,7 +1067,7 @@ const ClipCard: React.FC<{
               </a>
             </>
           ) : (
-            <div className="col-span-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-[9px] font-medium text-zinc-700">
+            <div className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-[9px] font-medium text-zinc-700">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               Processing
             </div>
@@ -1085,11 +1085,9 @@ const ClipCard: React.FC<{
 const ClipsSection: React.FC<{
   clips: Clip[];
   processing?: boolean;
-  onPublish: (clip: Clip) => void;
 }> = ({
   clips,
   processing = false,
-  onPublish,
 }) => {
   const [sort, setSort] =
     useState<"score" | "newest">(
@@ -1190,7 +1188,6 @@ const ClipsSection: React.FC<{
                 key={clip.id}
                 clip={clip}
                 index={index}
-                onPublish={onPublish}
               />
             ),
           )}
@@ -1497,8 +1494,8 @@ export const ProjectDetailView: React.FC<
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
-  const [publishClip, setPublishClip] =
-    useState<Clip | null>(null);
+  const [showYouTubePublish, setShowYouTubePublish] =
+    useState(false);
 
   const safeClips = Array.isArray(clips)
     ? clips
@@ -1669,7 +1666,6 @@ export const ProjectDetailView: React.FC<
                 <ClipsSection
                   clips={safeClips}
                   processing
-                  onPublish={setPublishClip}
                 />
               </>
             )}
@@ -1738,7 +1734,6 @@ export const ProjectDetailView: React.FC<
               safeClips.length > 0 && (
                 <ClipsSection
                   clips={safeClips}
-                  onPublish={setPublishClip}
                 />
               )}
           </>
@@ -1780,6 +1775,7 @@ export const ProjectDetailView: React.FC<
               <>
                 <FullCaptionedVideoResult
                   project={project}
+                  onPublish={() => setShowYouTubePublish(true)}
                 />
 
                 <div className="mt-4">
@@ -1822,7 +1818,6 @@ export const ProjectDetailView: React.FC<
 
                 <ClipsSection
                   clips={safeClips}
-                  onPublish={setPublishClip}
                 />
               </>
             )}
@@ -1875,11 +1870,13 @@ export const ProjectDetailView: React.FC<
             </>
           )}
 
-        <YouTubePublishModal
-          clip={publishClip}
-          open={Boolean(publishClip)}
-          onClose={() => setPublishClip(null)}
-        />
+        {showYouTubePublish && (
+          <YouTubePublishModal
+            clip={null}
+            open={showYouTubePublish}
+            onClose={() => setShowYouTubePublish(false)}
+          />
+        )}
 
         {/* =====================================================
             FOOTER
