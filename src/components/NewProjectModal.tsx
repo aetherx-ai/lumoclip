@@ -851,34 +851,70 @@ const CaptionStylePicker: React.FC<{
     onChange({ ...style, ...patch });
   };
 
+  const selectPreset = (
+    preset: (typeof CAPTION_STYLE_PRESETS)[number],
+  ) => {
+    onChange({
+      ...style,
+      ...preset.style,
+      enabled: true,
+    });
+  };
+
   const scrollRail = (direction: 1 | -1) => {
     presetRailRef.current?.scrollBy({
-      left: direction * 190,
+      left: direction * 250,
       behavior: "smooth",
     });
   };
 
+  const isPresetActive = (
+    preset: (typeof CAPTION_STYLE_PRESETS)[number],
+  ) =>
+    style.enabled &&
+    style.font === preset.style.font &&
+    style.textColor.toUpperCase() ===
+      preset.style.textColor.toUpperCase() &&
+    style.highlightColor.toUpperCase() ===
+      preset.style.highlightColor.toUpperCase() &&
+    style.position === preset.style.position &&
+    style.uppercase === preset.style.uppercase &&
+    style.box === preset.style.box &&
+    style.boxColor.toUpperCase() ===
+      preset.style.boxColor.toUpperCase() &&
+    style.animation === preset.style.animation;
+
   return (
-    <section className="relative overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#101014] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      {/* compact header */}
-      <div className="relative mb-3.5 flex items-center justify-between gap-3">
+    <section className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-[#0f0f12] shadow-[0_18px_70px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.04)]">
+      <style>{`
+        @keyframes lumoCaptionPop {
+          0%, 58%, 100% { transform: scale(1); }
+          72% { transform: scale(1.08); }
+        }
+        @keyframes lumoCaptionGlow {
+          0%, 100% { filter: brightness(1); }
+          50% { filter: brightness(1.16); }
+        }
+      `}</style>
+
+      {/* Header */}
+      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3.5 sm:px-5">
         <div className="flex min-w-0 items-center gap-2.5">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-violet-400/15 bg-violet-500/10">
-            <Captions className="h-3.5 w-3.5 text-violet-300" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.045] text-zinc-300">
+            <Captions className="h-4 w-4" />
           </div>
 
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5">
-              <p className="text-[10px] font-bold text-zinc-200">
-                Captions
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-bold tracking-tight text-white">
+                Caption
               </p>
-              <span className="rounded-full border border-violet-400/15 bg-violet-500/10 px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-[0.12em] text-violet-300">
+              <span className="rounded-md bg-violet-500/10 px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-[0.14em] text-violet-300">
                 AI
               </span>
             </div>
-
-            <p className="mt-0.5 truncate text-[7px] text-zinc-600">
-              Choose a style for your captions
+            <p className="mt-0.5 text-[8px] text-zinc-600">
+              Add stylish captions or translate your content with one click.
             </p>
           </div>
         </div>
@@ -892,80 +928,86 @@ const CaptionStylePicker: React.FC<{
           title={
             lockEnabled
               ? "Captions can't be turned off in full-video mode"
-              : undefined
+              : "Toggle captions"
           }
-          className={`
-            relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-200
-            focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/70
-            disabled:cursor-not-allowed disabled:opacity-60
-            ${
-              style.enabled
-                ? "border-violet-400/30 bg-violet-600"
-                : "border-white/[0.1] bg-white/[0.06]"
-            }
-          `}
+          className={`relative h-6 w-11 shrink-0 rounded-full border transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/70 disabled:cursor-not-allowed disabled:opacity-50 ${
+            style.enabled
+              ? "border-violet-400/30 bg-violet-600 shadow-[0_0_18px_rgba(124,58,237,0.22)]"
+              : "border-white/[0.10] bg-white/[0.06]"
+          }`}
         >
           <span
-            className={`
-              absolute top-1/2 h-4.5 w-4.5 -translate-y-1/2 rounded-full bg-white shadow-md transition-all duration-200
-              ${style.enabled ? "left-[22px]" : "left-1"}
-            `}
+            className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-all duration-200 ${
+              style.enabled ? "left-[22px]" : "left-1"
+            }`}
           />
         </button>
       </div>
 
       {!style.enabled ? (
-        <p className="text-[8px] text-zinc-600">
-          Captions are off.
-        </p>
+        <div className="px-4 py-5 sm:px-5">
+          <div className="flex items-center gap-3 rounded-[16px] border border-white/[0.06] bg-white/[0.02] px-3.5 py-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04] text-zinc-500">
+              <Captions className="h-3.5 w-3.5" />
+            </div>
+            <div>
+              <p className="text-[9px] font-semibold text-zinc-300">No captions</p>
+              <p className="mt-0.5 text-[7px] text-zinc-600">
+                Your video will be exported without subtitles.
+              </p>
+            </div>
+          </div>
+        </div>
       ) : (
-        <div className="relative">
-          <style>{`
-            @keyframes captionPopPreview {
-              0%, 60%, 100% { transform: scale(1); }
-              75% { transform: scale(1.10); }
-            }
-          `}</style>
-
-          {/* Opus-style visual preview */}
-          <div className="relative mb-4 h-[132px] overflow-hidden rounded-[16px] border border-white/[0.08] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black">
+        <div className="p-4 sm:p-5">
+          {/* Preview */}
+          <div className="relative mx-auto h-[190px] max-w-[430px] overflow-hidden rounded-[18px] border border-white/[0.09] bg-[#18181c] shadow-[0_20px_55px_rgba(0,0,0,0.45)]">
+            {/* faux video frame */}
             <div
-              className="absolute inset-0 opacity-80"
+              className="absolute inset-0"
               style={{
-                background: `radial-gradient(circle at 70% 25%, ${style.highlightColor}30, transparent 38%), linear-gradient(135deg, #292933 0%, #111116 48%, #050507 100%)`,
+                background: `
+                  radial-gradient(80% 90% at 72% 18%, ${style.highlightColor}35 0%, transparent 48%),
+                  radial-gradient(60% 70% at 20% 75%, rgba(139,92,246,0.20) 0%, transparent 55%),
+                  linear-gradient(135deg, #34343c 0%, #1b1b20 45%, #08080b 100%)
+                `,
               }}
             />
 
-            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent" />
+            <div className="absolute left-[13%] top-[13%] h-20 w-20 rounded-full bg-white/[0.07] blur-xl" />
+            <div className="absolute right-[16%] top-[19%] h-28 w-20 rotate-12 rounded-[40%] bg-white/[0.055] blur-lg" />
+            <div className="absolute bottom-0 left-0 right-0 h-[62%] bg-gradient-to-t from-black/90 via-black/25 to-transparent" />
 
+            <div className="absolute left-3 top-3 rounded-md border border-white/[0.08] bg-black/35 px-2 py-1 text-[6px] font-bold uppercase tracking-[0.16em] text-white/45 backdrop-blur-md">
+              Live preview
+            </div>
+
+            {/* caption */}
             <div
-              className={`
-                absolute inset-x-3 flex justify-center
-                ${
-                  style.position === "top"
-                    ? "top-4"
-                    : style.position === "center"
-                      ? "top-1/2 -translate-y-1/2"
-                      : "bottom-4"
-                }
-              `}
+              className={`absolute inset-x-4 flex justify-center text-center ${
+                style.position === "top"
+                  ? "top-9"
+                  : style.position === "center"
+                    ? "top-1/2 -translate-y-1/2"
+                    : "bottom-7"
+              }`}
             >
               <p
-                className={`
-                  max-w-[92%] text-center text-[15px] font-extrabold leading-tight
-                  ${style.box ? "rounded-md px-2 py-1" : ""}
-                `}
+                className={`max-w-[92%] text-[18px] font-black leading-[1.05] tracking-[-0.02em] sm:text-[20px] ${
+                  style.box ? "rounded-lg px-2.5 py-1.5" : "px-1"
+                }`}
                 style={{
                   fontFamily: style.font,
                   backgroundColor: style.box
-                    ? `${style.boxColor}B8`
+                    ? `${style.boxColor}D0`
                     : "transparent",
+                  color: style.textColor,
                   textShadow: style.box
                     ? "none"
-                    : "0 2px 8px rgba(0,0,0,.95)",
+                    : "0 2px 9px rgba(0,0,0,.95), 0 0 2px rgba(0,0,0,.9)",
                 }}
               >
-                <span style={{ color: style.textColor }}>
+                <span>
                   {style.uppercase ? "THIS IS " : "This is "}
                 </span>
                 <span
@@ -973,8 +1015,8 @@ const CaptionStylePicker: React.FC<{
                     color: style.highlightColor,
                     animation:
                       style.animation === "pop"
-                        ? "captionPopPreview 1.6s ease-in-out infinite"
-                        : undefined,
+                        ? "lumoCaptionPop 1.6s ease-in-out infinite"
+                        : "lumoCaptionGlow 2.8s ease-in-out infinite",
                   }}
                 >
                   {style.uppercase ? "AWESOME" : "awesome"}
@@ -982,116 +1024,141 @@ const CaptionStylePicker: React.FC<{
               </p>
             </div>
 
-            <span className="absolute left-2.5 top-2 rounded-md bg-black/45 px-1.5 py-1 text-[6px] font-bold uppercase tracking-[0.14em] text-white/50">
-              Preview
-            </span>
+            <div className="absolute bottom-3 left-1/2 h-1 w-20 -translate-x-1/2 rounded-full bg-white/10" />
           </div>
 
-          {/* style rail — the main control, like OpusClip */}
-          <div>
+          {/* Preset rail */}
+          <div className="mt-5">
             <div className="mb-2.5 flex items-center justify-between">
-              <p className="text-[9px] font-bold text-zinc-300">
-                Caption style
-              </p>
+              <div>
+                <p className="text-[9px] font-bold text-zinc-200">Caption</p>
+                <p className="mt-0.5 text-[7px] text-zinc-600">
+                  Choose a style
+                </p>
+              </div>
 
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1.5">
                 <button
                   type="button"
+                  disabled={disabled}
                   onClick={() => scrollRail(-1)}
-                  disabled={disabled}
-                  aria-label="Previous caption styles"
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-zinc-500 transition hover:border-white/20 hover:text-white disabled:opacity-40"
+                  aria-label="Scroll caption styles left"
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-zinc-500 transition hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-white disabled:opacity-35"
                 >
-                  <ChevronLeft className="h-3 w-3" />
+                  <ChevronLeft className="h-3.5 w-3.5" />
                 </button>
-
                 <button
                   type="button"
-                  onClick={() => scrollRail(1)}
                   disabled={disabled}
-                  aria-label="Next caption styles"
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-zinc-500 transition hover:border-white/20 hover:text-white disabled:opacity-40"
+                  onClick={() => scrollRail(1)}
+                  aria-label="Scroll caption styles right"
+                  className="flex h-7 w-7 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-zinc-500 transition hover:border-white/[0.18] hover:bg-white/[0.06] hover:text-white disabled:opacity-35"
                 >
-                  <ChevronRight className="h-3 w-3" />
+                  <ChevronRight className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
 
-            <div className="relative -mx-1">
-              <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-5 bg-gradient-to-r from-[#101014] to-transparent" />
-              <div className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-5 bg-gradient-to-l from-[#101014] to-transparent" />
+            <div className="relative">
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-7 bg-gradient-to-r from-[#0f0f12] to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-7 bg-gradient-to-l from-[#0f0f12] to-transparent" />
 
               <div
                 ref={presetRailRef}
                 className="flex gap-2.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
+                {/* No Caption */}
+                <button
+                  type="button"
+                  disabled={disabled || lockEnabled}
+                  onClick={() => update({ enabled: false })}
+                  className="group flex w-[92px] shrink-0 flex-col gap-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <span
+                    className={`relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-[13px] border bg-[#27272b] transition-all duration-200 ${
+                      !style.enabled
+                        ? "border-white ring-1 ring-white/20"
+                        : "border-white/[0.08] group-hover:border-white/20"
+                    }`}
+                  >
+                    <span className="h-10 w-10 rounded-full border-[3px] border-zinc-500/70" />
+                    <span className="absolute h-[3px] w-11 rotate-45 rounded-full bg-zinc-500/80" />
+                    {!style.enabled && (
+                      <span className="absolute right-1.5 top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white">
+                        <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />
+                      </span>
+                    )}
+                  </span>
+                  <span className={`text-[7px] font-bold ${!style.enabled ? "text-white" : "text-zinc-500"}`}>
+                    No caption
+                  </span>
+                </button>
+
                 {CAPTION_STYLE_PRESETS.map((preset) => {
-                  const isActive =
-                    style.font === preset.style.font &&
-                    style.highlightColor.toUpperCase() ===
-                      preset.style.highlightColor.toUpperCase() &&
-                    style.box === preset.style.box &&
-                    style.animation === preset.style.animation &&
-                    style.position === preset.style.position;
+                  const isActive = isPresetActive(preset);
 
                   return (
                     <button
                       key={preset.id}
                       type="button"
                       disabled={disabled}
-                      onClick={() => update(preset.style)}
+                      onClick={() => selectPreset(preset)}
                       aria-label={`Use ${preset.label} caption style`}
-                      className="group flex w-[84px] shrink-0 flex-col gap-1.5 disabled:cursor-not-allowed disabled:opacity-40"
+                      className="group flex w-[92px] shrink-0 flex-col gap-1.5 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <span
-                        className={`
-                          relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-[12px] border transition-all duration-200
-                          ${
-                            isActive
-                              ? "border-violet-300/80 ring-2 ring-violet-500/30"
-                              : "border-white/[0.08] group-hover:border-white/20"
-                          }
-                        `}
+                        className={`relative flex aspect-[4/5] w-full overflow-hidden rounded-[13px] border transition-all duration-200 ${
+                          isActive
+                            ? "border-white ring-2 ring-violet-500/55 shadow-[0_0_24px_rgba(124,58,237,0.20)]"
+                            : "border-white/[0.08] group-hover:-translate-y-0.5 group-hover:border-white/20"
+                        }`}
                         style={{
-                          background: `linear-gradient(145deg, ${preset.backdrop.a}, ${preset.backdrop.b})`,
+                          background: `radial-gradient(90% 75% at 50% 15%, ${preset.backdrop.a}, transparent 68%), linear-gradient(150deg, ${preset.backdrop.a}, ${preset.backdrop.b})`,
                         }}
                       >
-                        <span className="absolute inset-0 bg-gradient-to-b from-white/[0.05] via-transparent to-black/45" />
+                        {/* subtle person / video silhouette */}
+                        <span className="absolute bottom-0 left-1/2 h-[73%] w-[78%] -translate-x-1/2 opacity-65">
+                          <span className="absolute left-1/2 top-0 h-9 w-9 -translate-x-1/2 rounded-full bg-white/[0.15] blur-[1px]" />
+                          <span className="absolute bottom-0 left-1/2 h-[72%] w-[82%] -translate-x-1/2 rounded-t-[45%] bg-white/[0.11]" />
+                        </span>
+
+                        <span className="absolute inset-0 bg-gradient-to-b from-white/[0.07] via-transparent to-black/60" />
 
                         <span
-                          className={`
-                            relative z-[1] max-w-[90%] text-center text-[9px] font-black leading-[1.05]
-                            ${preset.style.box ? "rounded px-1 py-0.5" : ""}
-                          `}
+                          className={`absolute inset-x-1.5 z-[2] text-center text-[9px] font-black leading-[1.05] ${
+                            preset.style.box ? "rounded px-1 py-1" : "bottom-2"
+                          } ${
+                            preset.style.position === "top"
+                              ? "top-2"
+                              : preset.style.position === "center"
+                                ? "top-1/2 -translate-y-1/2"
+                                : "bottom-2"
+                          }`}
                           style={{
                             fontFamily: preset.style.font,
                             color: preset.style.textColor,
                             backgroundColor: preset.style.box
-                              ? `${preset.style.boxColor}B8`
+                              ? `${preset.style.boxColor}C8`
                               : "transparent",
                             textShadow: preset.style.box
                               ? "none"
                               : "0 2px 5px #000",
                           }}
                         >
-                          {preset.style.uppercase ? "MAKE " : "Make "}
+                          {preset.style.uppercase ? "TO GET " : "To get "}
                           <span style={{ color: preset.style.highlightColor }}>
-                            {preset.style.uppercase ? "IT POP" : "it pop"}
+                            {preset.style.uppercase ? "STARTED" : "started"}
                           </span>
                         </span>
 
                         {isActive && (
-                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 shadow-lg">
-                            <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
+                          <span className="absolute right-1.5 top-1.5 z-[4] flex h-4.5 w-4.5 items-center justify-center rounded-full bg-white shadow-[0_2px_10px_rgba(0,0,0,0.35)]">
+                            <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />
                           </span>
                         )}
                       </span>
 
-                      <span
-                        className={`text-[7px] font-bold ${
-                          isActive ? "text-violet-300" : "text-zinc-500"
-                        }`}
-                      >
+                      <span className={`truncate text-[7px] font-bold ${isActive ? "text-white" : "text-zinc-500"}`}>
                         {preset.label}
                       </span>
                     </button>
@@ -1100,10 +1167,6 @@ const CaptionStylePicker: React.FC<{
               </div>
             </div>
           </div>
-
-          <p className="mt-3 text-[7px] text-zinc-700">
-            Pick a preset — LumoClip applies the font, color and animation automatically.
-          </p>
         </div>
       )}
     </section>
