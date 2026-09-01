@@ -5423,6 +5423,155 @@ app.post(
 );
 
 /* =========================================================
+   YOUTUBE FULL PROJECT VIDEO UPLOAD
+========================================================= */
+
+app.post(
+  "/api/social/youtube/upload-project",
+  async (req, res) => {
+    try {
+      const user = await getAuthenticatedUser(req);
+
+      const projectId =
+        typeof req.body?.projectId === "string"
+          ? req.body.projectId.trim()
+          : "";
+
+      if (!projectId) {
+        return res.status(400).json({
+          error: "projectId is required.",
+        });
+      }
+
+      const title =
+        typeof req.body?.title === "string" && req.body.title.trim()
+          ? req.body.title.trim()
+          : "LumoClip Captioned Video";
+
+      const description =
+        typeof req.body?.description === "string"
+          ? req.body.description.trim()
+          : "";
+
+      const tags =
+        Array.isArray(req.body?.tags)
+          ? req.body.tags
+              .filter((tag: unknown) => typeof tag === "string")
+              .map((tag: string) => tag.trim())
+              .filter(Boolean)
+          : [];
+
+      const allowedPrivacy = [
+        "private",
+        "public",
+        "unlisted",
+      ] as const;
+
+      const privacyStatus = allowedPrivacy.includes(req.body?.privacyStatus)
+        ? req.body.privacyStatus
+        : "private";
+
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id, user_id, processing_mode, full_video_url, duration")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (projectError || !project) {
+        const error: any = new Error("Project not found.");
+        error.statusCode = 404;
+        throw error;
+      }
+
+      const fullVideoUrl = String(project.full_video_url || "");
+
+      if (!fullVideoUrl) {
+        throw new Error("Full captioned video is not ready yet.");
+      }
+
+      if (project.processing_mode !== "full_video_caption") {
+        throw new Error("This project does not contain a full captioned video.");
+      }
+
+      // Full captioned videos are always written to the project media folder
+      // using this fixed server-side filename. Do not trust a client path.
+      const fullVideoPath = path.resolve(
+        mediaDir,
+        safeSegment(project.id),
+        "full-captioned.mp4",
+      );
+
+      const allowedRoot =
+        path.resolve(mediaDir, safeSegment(project.id)) + path.sep;
+
+      if (
+        !fullVideoPath.startsWith(allowedRoot) ||
+        !fs.existsSync(fullVideoPath) ||
+        !fs.statSync(fullVideoPath).isFile()
+      ) {
+        throw new Error("Full captioned video file is not available on the server.");
+      }
+
+      const { oauth2Client } = await getYouTubeClientForUser(user.id);
+
+      const youtube = google.youtube({
+        version: "v3",
+        auth: oauth2Client,
+      });
+
+      const response = await youtube.videos.insert({
+        part: ["snippet", "status"],
+        requestBody: {
+          snippet: {
+            title: title.slice(0, 100),
+            description: description.slice(0, 5000),
+            tags: tags
+              .map((tag: string) => tag.replace(/^#/, "").trim())
+              .filter(Boolean)
+              .slice(0, 500),
+            categoryId: "22",
+          },
+          status: {
+            privacyStatus,
+            selfDeclaredMadeForKids: false,
+          },
+        },
+        media: {
+          body: fs.createReadStream(fullVideoPath),
+        },
+      });
+
+      const youtubeVideoId = response.data.id || "";
+
+      if (!youtubeVideoId) {
+        throw new Error("YouTube upload completed without a video ID.");
+      }
+
+      return res.json({
+        success: true,
+        provider: "youtube",
+        videoId: youtubeVideoId,
+        url: `https://www.youtube.com/watch?v=${youtubeVideoId}`,
+        message: "Full captioned video uploaded to YouTube successfully.",
+      });
+    } catch (error: any) {
+      if (error?.message === "UNAUTHORIZED") {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+
+      console.error("YouTube full project upload failed:", error);
+
+      return res.status(error?.statusCode || 500).json({
+        error:
+          error?.message ||
+          "Failed to upload full captioned video to YouTube.",
+      });
+    }
+  },
+);
+
+/* =========================================================
    GET PROJECT
 ========================================================= */
 
