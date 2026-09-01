@@ -92,6 +92,8 @@ type ActiveTab =
   | "pricing"
   | "settings";
 
+type ProcessingMode = "clips" | "full_video_caption";
+
 /* =========================================================
    BRAND / SEO CONFIG
 ========================================================= */
@@ -285,6 +287,9 @@ function App() {
   const [newProjectInitialUrl, setNewProjectInitialUrl] =
     useState("");
 
+  const [newProjectInitialMode, setNewProjectInitialMode] =
+    useState<ProcessingMode>("clips");
+
   const appInitialized =
     useRef(false);
 
@@ -294,6 +299,9 @@ function App() {
 
   const pendingProjectUrlRef =
     useRef("");
+
+  const pendingProjectModeRef =
+    useRef<ProcessingMode>("clips");
 
   /* =======================================================
      POLLING
@@ -999,6 +1007,9 @@ function App() {
               setNewProjectInitialUrl(
                 pendingUrl,
               );
+              setNewProjectInitialMode(
+                pendingProjectModeRef.current,
+              );
 
               setIsNewProjectModalOpen(
                 true,
@@ -1063,9 +1074,11 @@ function App() {
             setIsAuthModalOpen(false);
 
             setNewProjectInitialUrl("");
+            setNewProjectInitialMode("clips");
 
             pendingProjectUrlRef.current =
               "";
+            pendingProjectModeRef.current = "clips";
           }
         },
       );
@@ -1197,9 +1210,11 @@ function App() {
         setIsAuthModalOpen(false);
 
         setNewProjectInitialUrl("");
+        setNewProjectInitialMode("clips");
 
         pendingProjectUrlRef.current =
           "";
+        pendingProjectModeRef.current = "clips";
       } catch (error) {
         console.error(
           "Logout error:",
@@ -1324,15 +1339,17 @@ function App() {
   ======================================================= */
 
   const openNewProject =
-    (url = "") => {
+    (url = "", mode: ProcessingMode = "clips") => {
       const cleanUrl =
         normalizeYouTubeUrl(url);
 
       if (!cleanUrl) {
         setNewProjectInitialUrl("");
+        setNewProjectInitialMode(mode);
 
         pendingProjectUrlRef.current =
           "";
+        pendingProjectModeRef.current = mode;
 
         setIsNewProjectModalOpen(
           true,
@@ -1387,10 +1404,12 @@ function App() {
       setNewProjectInitialUrl(
         cleanUrl,
       );
+      setNewProjectInitialMode(mode);
 
       if (!user) {
         pendingProjectUrlRef.current =
           cleanUrl;
+        pendingProjectModeRef.current = mode;
 
         setIsAuthModalOpen(true);
 
@@ -1399,6 +1418,7 @@ function App() {
 
       pendingProjectUrlRef.current =
         "";
+      pendingProjectModeRef.current = mode;
 
       setIsNewProjectModalOpen(
         true,
@@ -1449,15 +1469,23 @@ function App() {
         {activeTab === "landing" && (
           <LandingPage
             onGetStarted={() => {
-              openNewProject();
+              openNewProject("", "clips");
             }}
             onOpenPricing={() => {
               setActiveTab("pricing");
             }}
             onOpenNewProjectWithUrl={(
               url: string,
+              captionStyle?: unknown,
             ) => {
-              openNewProject(url);
+              const mode: ProcessingMode =
+                typeof captionStyle === "string" &&
+                (captionStyle === "clips" ||
+                  captionStyle === "full_video_caption")
+                  ? captionStyle
+                  : "clips";
+
+              openNewProject(url, mode);
             }}
           />
         )}
@@ -1689,15 +1717,20 @@ function App() {
             setNewProjectInitialUrl(
               "",
             );
+            setNewProjectInitialMode("clips");
 
             pendingProjectUrlRef.current =
               "";
+            pendingProjectModeRef.current = "clips";
           }}
           credits={
             user?.credits ?? 0
           }
           initialUrl={
             newProjectInitialUrl
+          }
+          initialMode={
+            newProjectInitialMode
           }
           onSuccess={(data: any) => {
             if (data?.project) {
@@ -1745,9 +1778,11 @@ function App() {
             setNewProjectInitialUrl(
               "",
             );
+            setNewProjectInitialMode("clips");
 
             pendingProjectUrlRef.current =
               "";
+            pendingProjectModeRef.current = "clips";
 
             setIsNewProjectModalOpen(
               false,
