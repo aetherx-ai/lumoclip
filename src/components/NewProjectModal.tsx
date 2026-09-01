@@ -123,14 +123,6 @@ const CAPTION_FONTS = [
   "Impact",
 ];
 
-const CAPTION_HIGHLIGHT_PRESETS = [
-  { label: "Neon green", value: "#39FF14" },
-  { label: "Electric yellow", value: "#FFE600" },
-  { label: "Hot pink", value: "#FF2E9A" },
-  { label: "Sky blue", value: "#3AB0FF" },
-  { label: "Orange", value: "#FF7A00" },
-  { label: "White", value: "#FFFFFF" },
-];
 
 const DEFAULT_PROCESSING_MODE: ProcessingMode = "clips";
 
@@ -805,40 +797,6 @@ const SourceCard: React.FC<
 };
 
 /* =========================================================
-   AI FEATURE
-========================================================= */
-
-const AiFeature: React.FC<{
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-}> = ({
-  icon,
-  title,
-  description,
-}) => {
-  return (
-    <div className="group rounded-[17px] border border-white/[0.05] bg-black/20 p-3 transition-all duration-300 hover:border-white/[0.1] hover:bg-white/[0.035]">
-      <div className="flex items-start gap-2.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.05] bg-white/[0.025]">
-          {icon}
-        </div>
-
-        <div className="min-w-0">
-          <p className="text-[9px] font-bold text-zinc-300">
-            {title}
-          </p>
-
-          <p className="mt-0.5 text-[7px] leading-3.5 text-zinc-700">
-            {description}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* =========================================================
    PARTICLES
 ========================================================= */
 
@@ -895,39 +853,32 @@ const CaptionStylePicker: React.FC<{
 
   const scrollRail = (direction: 1 | -1) => {
     presetRailRef.current?.scrollBy({
-      left: direction * 168,
+      left: direction * 190,
       behavior: "smooth",
     });
   };
 
   return (
-    <section className="relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-gradient-to-br from-white/[0.035] via-white/[0.015] to-transparent p-4.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-      <div className="pointer-events-none absolute -right-10 -top-10 h-44 w-44 rounded-full bg-violet-500/[0.09] blur-3xl" />
-      <div className="pointer-events-none absolute -left-12 bottom-0 h-32 w-32 rounded-full bg-fuchsia-500/[0.05] blur-3xl" />
-
-      {/* HEADER + TOGGLE */}
-      <div className="relative mb-4 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-violet-400/15 bg-gradient-to-br from-violet-500/20 to-violet-500/5">
+    <section className="relative overflow-hidden rounded-[22px] border border-white/[0.07] bg-[#101014] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+      {/* compact header */}
+      <div className="relative mb-3.5 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] border border-violet-400/15 bg-violet-500/10">
             <Captions className="h-3.5 w-3.5 text-violet-300" />
           </div>
 
-          <div>
+          <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-300">
-                AI captions
+              <p className="text-[10px] font-bold text-zinc-200">
+                Captions
               </p>
-
-              <span className="flex items-center gap-0.5 rounded-full border border-amber-300/25 bg-gradient-to-r from-amber-400/15 to-yellow-300/10 px-1.5 py-[1px] text-[6px] font-bold uppercase tracking-[0.12em] text-amber-200">
-                <Sparkles className="h-2 w-2" />
-                Premium
+              <span className="rounded-full border border-violet-400/15 bg-violet-500/10 px-1.5 py-0.5 text-[6px] font-bold uppercase tracking-[0.12em] text-violet-300">
+                AI
               </span>
             </div>
 
-            <p className="mt-0.5 text-[7px] text-zinc-700">
-              {lockEnabled
-                ? "Required for full-video caption mode"
-                : "Word-by-word highlight, burned into every clip"}
+            <p className="mt-0.5 truncate text-[7px] text-zinc-600">
+              Choose a style for your captions
             </p>
           </div>
         </div>
@@ -937,29 +888,26 @@ const CaptionStylePicker: React.FC<{
           role="switch"
           aria-checked={style.enabled}
           disabled={disabled || lockEnabled}
-          onClick={() =>
-            update({ enabled: !style.enabled })
-          }
+          onClick={() => update({ enabled: !style.enabled })}
           title={
             lockEnabled
               ? "Captions can't be turned off in full-video mode"
               : undefined
           }
           className={`
-            relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-300
+            relative h-6 w-11 shrink-0 rounded-full border transition-colors duration-200
             focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/70
             disabled:cursor-not-allowed disabled:opacity-60
             ${
               style.enabled
-                ? "border-violet-400/30 bg-gradient-to-r from-violet-600 to-indigo-500"
+                ? "border-violet-400/30 bg-violet-600"
                 : "border-white/[0.1] bg-white/[0.06]"
             }
           `}
         >
           <span
             className={`
-              absolute top-1/2 h-4.5 w-4.5 -translate-y-1/2 rounded-full bg-white
-              shadow-md transition-all duration-300
+              absolute top-1/2 h-4.5 w-4.5 -translate-y-1/2 rounded-full bg-white shadow-md transition-all duration-200
               ${style.enabled ? "left-[22px]" : "left-1"}
             `}
           />
@@ -967,122 +915,102 @@ const CaptionStylePicker: React.FC<{
       </div>
 
       {!style.enabled ? (
-        <p className="relative text-[9px] text-zinc-600">
-          Captions are off — clips will render without on-screen text.
+        <p className="text-[8px] text-zinc-600">
+          Captions are off.
         </p>
       ) : (
-        <div className="relative space-y-5">
+        <div className="relative">
           <style>{`
             @keyframes captionPopPreview {
               0%, 60%, 100% { transform: scale(1); }
-              75% { transform: scale(1.14); }
-            }
-            @keyframes captionScreenGlow {
-              0%, 100% { opacity: 0.55; }
-              50% { opacity: 0.9; }
-            }
-            @keyframes captionCardSheen {
-              0% { transform: translateX(-120%) skewX(-12deg); }
-              100% { transform: translateX(220%) skewX(-12deg); }
+              75% { transform: scale(1.10); }
             }
           `}</style>
 
-          {/* PREVIEW — DEVICE FRAME */}
-          <div className="relative mx-auto w-full max-w-[200px]">
+          {/* Opus-style visual preview */}
+          <div className="relative mb-4 h-[132px] overflow-hidden rounded-[16px] border border-white/[0.08] bg-gradient-to-br from-zinc-800 via-zinc-900 to-black">
             <div
-              className="pointer-events-none absolute inset-x-6 -top-3 -bottom-3 rounded-[32px] blur-2xl transition-colors duration-500"
+              className="absolute inset-0 opacity-80"
               style={{
-                background: `radial-gradient(60% 60% at 50% 40%, ${style.highlightColor}33, transparent 70%)`,
-                animation: "captionScreenGlow 3.2s ease-in-out infinite",
+                background: `radial-gradient(circle at 70% 25%, ${style.highlightColor}30, transparent 38%), linear-gradient(135deg, #292933 0%, #111116 48%, #050507 100%)`,
               }}
             />
 
-            <div className="relative overflow-hidden rounded-[26px] border border-white/[0.12] bg-black p-[3px] shadow-[0_18px_45px_rgba(0,0,0,0.55)]">
-              <div className="relative flex aspect-[9/16] w-full flex-col overflow-hidden rounded-[23px] bg-gradient-to-b from-zinc-900 via-black to-zinc-950">
-                {/* dynamic island */}
-                <div className="absolute left-1/2 top-2 z-10 h-3.5 w-16 -translate-x-1/2 rounded-full bg-black/90" />
+            <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent" />
 
-                {/* subtle screen sheen */}
-                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/[0.05] via-transparent to-transparent" />
-
-                <div
-                  className={`
-                    relative z-[1] flex h-full w-full flex-col p-3.5
-                    ${
-                      style.position === "top"
-                        ? "justify-start pt-7"
-                        : style.position === "center"
-                          ? "justify-center"
-                          : "justify-end pb-6"
-                    }
-                  `}
+            <div
+              className={`
+                absolute inset-x-3 flex justify-center
+                ${
+                  style.position === "top"
+                    ? "top-4"
+                    : style.position === "center"
+                      ? "top-1/2 -translate-y-1/2"
+                      : "bottom-4"
+                }
+              `}
+            >
+              <p
+                className={`
+                  max-w-[92%] text-center text-[15px] font-extrabold leading-tight
+                  ${style.box ? "rounded-md px-2 py-1" : ""}
+                `}
+                style={{
+                  fontFamily: style.font,
+                  backgroundColor: style.box
+                    ? `${style.boxColor}B8`
+                    : "transparent",
+                  textShadow: style.box
+                    ? "none"
+                    : "0 2px 8px rgba(0,0,0,.95)",
+                }}
+              >
+                <span style={{ color: style.textColor }}>
+                  {style.uppercase ? "THIS IS " : "This is "}
+                </span>
+                <span
+                  style={{
+                    color: style.highlightColor,
+                    animation:
+                      style.animation === "pop"
+                        ? "captionPopPreview 1.6s ease-in-out infinite"
+                        : undefined,
+                  }}
                 >
-                  <p
-                    className={`
-                      mx-auto text-center text-[13px] font-extrabold leading-tight
-                      ${style.box ? "rounded-lg px-2.5 py-1.5" : ""}
-                    `}
-                    style={{
-                      fontFamily: style.font,
-                      backgroundColor: style.box
-                        ? `${style.boxColor}80`
-                        : "transparent",
-                      textShadow: style.box
-                        ? "none"
-                        : "0 0 2px #000, 0 0 6px #000, 0 2px 3px #000",
-                    }}
-                  >
-                    <span style={{ color: style.textColor }}>
-                      {style.uppercase ? "THIS IS " : "This is "}
-                    </span>
-                    <span
-                      className="inline-block"
-                      style={{
-                        color: style.highlightColor,
-                        animation:
-                          style.animation === "pop"
-                            ? "captionPopPreview 1.6s ease-in-out infinite"
-                            : undefined,
-                      }}
-                    >
-                      {style.uppercase ? "AWESOME" : "awesome"}
-                    </span>
-                  </p>
-                </div>
-              </div>
+                  {style.uppercase ? "AWESOME" : "awesome"}
+                </span>
+              </p>
             </div>
 
-            <p className="mt-2 text-center text-[6.5px] font-medium uppercase tracking-[0.14em] text-zinc-700">
-              Live preview
-            </p>
+            <span className="absolute left-2.5 top-2 rounded-md bg-black/45 px-1.5 py-1 text-[6px] font-bold uppercase tracking-[0.14em] text-white/50">
+              Preview
+            </span>
           </div>
 
-          {/* STYLE PRESETS — scrollable rail of clip-style thumbnails */}
+          {/* style rail — the main control, like OpusClip */}
           <div>
-            <div className="mb-2 flex items-center justify-between">
-              <div>
-                <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                  Caption style
-                </p>
-                <p className="mt-0.5 text-[7px] text-zinc-700">
-                  Tap a look — every setting below updates with it
-                </p>
-              </div>
+            <div className="mb-2.5 flex items-center justify-between">
+              <p className="text-[9px] font-bold text-zinc-300">
+                Caption style
+              </p>
 
-              <div className="flex shrink-0 items-center gap-1">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   onClick={() => scrollRail(-1)}
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500 transition hover:border-white/20 hover:text-zinc-200"
-                  aria-label="Scroll styles left"
+                  disabled={disabled}
+                  aria-label="Previous caption styles"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-zinc-500 transition hover:border-white/20 hover:text-white disabled:opacity-40"
                 >
                   <ChevronLeft className="h-3 w-3" />
                 </button>
+
                 <button
                   type="button"
                   onClick={() => scrollRail(1)}
-                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500 transition hover:border-white/20 hover:text-zinc-200"
-                  aria-label="Scroll styles right"
+                  disabled={disabled}
+                  aria-label="Next caption styles"
+                  className="flex h-6 w-6 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.035] text-zinc-500 transition hover:border-white/20 hover:text-white disabled:opacity-40"
                 >
                   <ChevronRight className="h-3 w-3" />
                 </button>
@@ -1090,13 +1018,12 @@ const CaptionStylePicker: React.FC<{
             </div>
 
             <div className="relative -mx-1">
-              <div className="pointer-events-none absolute inset-y-0 left-0 z-[1] w-4 bg-gradient-to-r from-[#07070a] to-transparent" />
-              <div className="pointer-events-none absolute inset-y-0 right-0 z-[1] w-4 bg-gradient-to-l from-[#07070a] to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-[2] w-5 bg-gradient-to-r from-[#101014] to-transparent" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-[2] w-5 bg-gradient-to-l from-[#101014] to-transparent" />
 
               <div
                 ref={presetRailRef}
-                className="flex gap-2.5 overflow-x-auto scroll-smooth px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                style={{ scrollSnapType: "x proximity" }}
+                className="flex gap-2.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
                 {CAPTION_STYLE_PRESETS.map((preset) => {
                   const isActive =
@@ -1113,91 +1040,55 @@ const CaptionStylePicker: React.FC<{
                       type="button"
                       disabled={disabled}
                       onClick={() => update(preset.style)}
-                      title={preset.label}
-                      style={{ scrollSnapAlign: "start" }}
-                      className={`
-                        group relative flex w-[88px] shrink-0 flex-col items-center gap-1.5 transition-all duration-200
-                        disabled:cursor-not-allowed disabled:opacity-40
-                      `}
+                      aria-label={`Use ${preset.label} caption style`}
+                      className="group flex w-[84px] shrink-0 flex-col gap-1.5 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <span
                         className={`
-                          relative flex aspect-[4/5] w-full overflow-hidden rounded-[13px] transition-all duration-200
+                          relative flex aspect-[4/5] w-full items-center justify-center overflow-hidden rounded-[12px] border transition-all duration-200
                           ${
                             isActive
-                              ? "shadow-[0_0_0_2px_#07070a,0_0_0_3.5px_rgba(167,139,250,0.85),0_10px_22px_rgba(124,58,237,0.25)]"
-                              : "shadow-[0_0_0_1px_rgba(255,255,255,0.07)] group-hover:-translate-y-0.5 group-hover:shadow-[0_0_0_1px_rgba(255,255,255,0.18),0_8px_18px_rgba(0,0,0,0.35)]"
+                              ? "border-violet-300/80 ring-2 ring-violet-500/30"
+                              : "border-white/[0.08] group-hover:border-white/20"
                           }
                         `}
+                        style={{
+                          background: `linear-gradient(145deg, ${preset.backdrop.a}, ${preset.backdrop.b})`,
+                        }}
                       >
-                        {/* fake "clip frame" backdrop, standing in for a video thumbnail */}
+                        <span className="absolute inset-0 bg-gradient-to-b from-white/[0.05] via-transparent to-black/45" />
+
                         <span
-                          className="absolute inset-0"
+                          className={`
+                            relative z-[1] max-w-[90%] text-center text-[9px] font-black leading-[1.05]
+                            ${preset.style.box ? "rounded px-1 py-0.5" : ""}
+                          `}
                           style={{
-                            background: `radial-gradient(120% 90% at 50% 8%, ${preset.backdrop.a}, ${preset.backdrop.b} 65%)`,
+                            fontFamily: preset.style.font,
+                            color: preset.style.textColor,
+                            backgroundColor: preset.style.box
+                              ? `${preset.style.boxColor}B8`
+                              : "transparent",
+                            textShadow: preset.style.box
+                              ? "none"
+                              : "0 2px 5px #000",
                           }}
-                        />
-
-                        {/* subject silhouette so the tile reads like a real clip, not a swatch */}
-                        <svg
-                          viewBox="0 0 80 100"
-                          className="absolute inset-x-0 bottom-0 h-[78%] w-full opacity-70"
-                          preserveAspectRatio="xMidYMax slice"
                         >
-                          <circle cx="40" cy="32" r="17" fill="rgba(255,255,255,0.14)" />
-                          <path
-                            d="M4 100 C4 66 18 52 40 52 C62 52 76 66 76 100 Z"
-                            fill="rgba(255,255,255,0.11)"
-                          />
-                        </svg>
-
-                        {/* top vignette for depth */}
-                        <span className="absolute inset-0 bg-gradient-to-b from-black/35 via-transparent to-black/55" />
+                          {preset.style.uppercase ? "MAKE " : "Make "}
+                          <span style={{ color: preset.style.highlightColor }}>
+                            {preset.style.uppercase ? "IT POP" : "it pop"}
+                          </span>
+                        </span>
 
                         {isActive && (
-                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-500 shadow-sm">
+                          <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-violet-500 shadow-lg">
                             <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />
                           </span>
                         )}
-
-                        {/* the actual caption, rendered with the real style values */}
-                        <span
-                          className={`
-                            relative z-[1] flex h-full w-full flex-col px-1.5 pb-2
-                            ${
-                              preset.style.position === "top"
-                                ? "justify-start pt-2.5"
-                                : preset.style.position === "center"
-                                  ? "justify-center"
-                                  : "justify-end"
-                            }
-                          `}
-                        >
-                          <span
-                            className={`mx-auto text-center text-[9px] font-extrabold leading-[1.15] ${
-                              preset.style.box ? "rounded px-1 py-0.5" : ""
-                            }`}
-                            style={{
-                              fontFamily: preset.style.font,
-                              backgroundColor: preset.style.box
-                                ? `${preset.style.boxColor}90`
-                                : "transparent",
-                              color: preset.style.textColor,
-                              textShadow: preset.style.box
-                                ? "none"
-                                : "0 0 2px #000, 0 1px 3px #000",
-                            }}
-                          >
-                            {preset.style.uppercase ? "TO GET " : "To get "}
-                            <span style={{ color: preset.style.highlightColor }}>
-                              {preset.style.uppercase ? "STARTED" : "started"}
-                            </span>
-                          </span>
-                        </span>
                       </span>
 
                       <span
-                        className={`text-[7px] font-bold leading-tight ${
+                        className={`text-[7px] font-bold ${
                           isActive ? "text-violet-300" : "text-zinc-500"
                         }`}
                       >
@@ -1210,162 +1101,9 @@ const CaptionStylePicker: React.FC<{
             </div>
           </div>
 
-          {/* HIGHLIGHT COLOR */}
-          <div>
-            <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-              Fine-tune highlight color
-            </p>
-
-            <div className="flex flex-wrap items-center gap-2.5">
-              {CAPTION_HIGHLIGHT_PRESETS.map((preset) => {
-                const isActive =
-                  style.highlightColor.toUpperCase() ===
-                  preset.value.toUpperCase();
-
-                return (
-                  <button
-                    key={preset.value}
-                    type="button"
-                    disabled={disabled}
-                    title={preset.label}
-                    onClick={() =>
-                      update({ highlightColor: preset.value })
-                    }
-                    className={`
-                      relative h-7 w-7 rounded-full transition-all duration-200
-                      disabled:cursor-not-allowed disabled:opacity-40
-                      ${isActive ? "scale-110" : "hover:scale-105"}
-                    `}
-                    style={{
-                      background: preset.value,
-                      boxShadow: isActive
-                        ? `0 0 0 2px #050508, 0 0 0 3.5px ${preset.value}, 0 0 14px 1px ${preset.value}80`
-                        : "0 0 0 2px rgba(255,255,255,0.12)",
-                    }}
-                  />
-                );
-              })}
-
-              <label
-                className={`
-                  relative flex h-7 w-7 items-center justify-center
-                  overflow-hidden rounded-full border-2 border-dashed
-                  border-white/20 text-[10px] text-zinc-500 transition
-                  ${disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:border-white/50 hover:text-zinc-300"}
-                `}
-                title="Custom color"
-              >
-                +
-                <input
-                  type="color"
-                  disabled={disabled}
-                  value={style.highlightColor}
-                  onChange={(event) =>
-                    update({ highlightColor: event.target.value })
-                  }
-                  className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                />
-              </label>
-            </div>
-          </div>
-
-          {/* FONT + POSITION */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                Font
-              </p>
-
-              <div className="relative">
-                <select
-                  value={style.font}
-                  disabled={disabled}
-                  onChange={(event) =>
-                    update({ font: event.target.value })
-                  }
-                  className="w-full appearance-none rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 pr-7 text-[10px] font-medium text-white outline-none transition focus:border-violet-500/40 disabled:opacity-40"
-                  style={{ fontFamily: style.font }}
-                >
-                  {CAPTION_FONTS.map((font) => (
-                    <option
-                      key={font}
-                      value={font}
-                      className="bg-[#0a0a0e]"
-                      style={{ fontFamily: font }}
-                    >
-                      {font}
-                    </option>
-                  ))}
-                </select>
-
-                <ChevronRight className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2 rotate-90 text-zinc-600" />
-              </div>
-            </div>
-
-            <div>
-              <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                Position
-              </p>
-
-              <div className="flex overflow-hidden rounded-xl border border-white/[0.08] bg-white/[0.02]">
-                {(["top", "center", "bottom"] as const).map(
-                  (position) => (
-                    <button
-                      key={position}
-                      type="button"
-                      disabled={disabled}
-                      onClick={() => update({ position })}
-                      className={`
-                        flex-1 py-2.5 text-[9px] font-bold capitalize transition-all duration-200
-                        disabled:cursor-not-allowed disabled:opacity-40
-                        ${
-                          style.position === position
-                            ? "bg-gradient-to-b from-violet-500 to-violet-600 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]"
-                            : "text-zinc-500 hover:bg-white/[0.05] hover:text-zinc-300"
-                        }
-                      `}
-                    >
-                      {position}
-                    </button>
-                  ),
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* UPPERCASE TOGGLE */}
-          <label className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-black/20 px-3.5 py-2.5 transition hover:border-white/[0.1]">
-            <span className="text-[9px] font-medium text-zinc-400">
-              Uppercase text
-            </span>
-
-            <button
-              type="button"
-              role="switch"
-              aria-checked={style.uppercase}
-              disabled={disabled}
-              onClick={() =>
-                update({ uppercase: !style.uppercase })
-              }
-              className={`
-                relative h-5 w-9 shrink-0 rounded-full border transition-colors duration-300
-                disabled:cursor-not-allowed disabled:opacity-40
-                ${
-                  style.uppercase
-                    ? "border-violet-400/30 bg-gradient-to-r from-violet-600 to-indigo-500"
-                    : "border-white/[0.1] bg-white/[0.06]"
-                }
-              `}
-            >
-              <span
-                className={`
-                  absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white
-                  shadow-md transition-all duration-300
-                  ${style.uppercase ? "left-[18px]" : "left-1"}
-                `}
-              />
-            </button>
-          </label>
+          <p className="mt-3 text-[7px] text-zinc-700">
+            Pick a preset — LumoClip applies the font, color and animation automatically.
+          </p>
         </div>
       )}
     </section>
@@ -2186,8 +1924,8 @@ export const NewProjectModal: React.FC<
         ref={modalRef}
         tabIndex={-1}
         className="
-          relative flex w-full max-w-[850px]
-          max-h-[94vh]
+          relative flex w-full max-w-[680px]
+          max-h-[92vh]
           flex-col overflow-hidden
           rounded-[32px]
           border border-white/[0.11]
@@ -2874,244 +2612,6 @@ export const NewProjectModal: React.FC<
             />
 
             {/* =================================================
-                AI FEATURES
-            ================================================= */}
-
-            <section className="relative overflow-hidden rounded-[23px] border border-white/[0.06] bg-gradient-to-br from-white/[0.025] to-transparent p-4.5">
-              <div className="pointer-events-none absolute -right-8 -top-8 h-40 w-40 rounded-full bg-violet-500/[0.08] blur-3xl" />
-
-              <div className="relative mb-4 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-400/10 bg-violet-500/10">
-                    <Sparkles className="h-3.5 w-3.5 text-violet-400" />
-                  </div>
-
-                  <div>
-                    <p className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-300">
-                      LumoClip AI
-                    </p>
-
-                    <p className="mt-0.5 text-[7px] text-zinc-700">
-                      {isFullVideoMode
-                        ? "Full video kept intact, captions added"
-                        : "Automatically optimized for short-form"}
-                    </p>
-                  </div>
-                </div>
-
-                <span className="hidden rounded-full border border-emerald-500/10 bg-emerald-500/[0.04] px-2 py-1 text-[7px] font-bold text-emerald-400 sm:block">
-                  AI READY
-                </span>
-              </div>
-
-              <div className="relative grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {isFullVideoMode ? (
-                  <AiFeature
-                    icon={
-                      <Video className="h-3.5 w-3.5 text-violet-400" />
-                    }
-                    title="No clipping"
-                    description="Your full video, untouched"
-                  />
-                ) : (
-                  <AiFeature
-                    icon={
-                      <Film className="h-3.5 w-3.5 text-violet-400" />
-                    }
-                    title="Best moments"
-                    description="Finds high-value scenes"
-                  />
-                )}
-
-                <AiFeature
-                  icon={
-                    <Captions className="h-3.5 w-3.5 text-indigo-400" />
-                  }
-                  title="Auto captions"
-                  description="Readable dynamic subtitles"
-                />
-
-                {isFullVideoMode ? (
-                  <AiFeature
-                    icon={
-                      <FileCheck2 className="h-3.5 w-3.5 text-fuchsia-400" />
-                    }
-                    title="Single export"
-                    description="One ready-to-share file"
-                  />
-                ) : (
-                  <AiFeature
-                    icon={
-                      <Smartphone className="h-3.5 w-3.5 text-fuchsia-400" />
-                    }
-                    title="9:16 format"
-                    description="Built for vertical feeds"
-                  />
-                )}
-
-                {isFullVideoMode ? (
-                  <AiFeature
-                    icon={
-                      <Zap className="h-3.5 w-3.5 text-amber-400" />
-                    }
-                    title="Faster turnaround"
-                    description="No per-clip re-encoding"
-                  />
-                ) : (
-                  <AiFeature
-                    icon={
-                      <WandSparkles className="h-3.5 w-3.5 text-amber-400" />
-                    }
-                    title="Viral scoring"
-                    description="Ranks potential winners"
-                  />
-                )}
-              </div>
-            </section>
-
-            {/* =================================================
-                WORKFLOW PREVIEW
-            ================================================= */}
-
-            <section className="relative overflow-hidden rounded-[23px] border border-white/[0.05] bg-black/20 p-4">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-[10px] font-bold text-zinc-300">
-                    What happens next
-                  </p>
-
-                  <p className="mt-1 text-[8px] text-zinc-700">
-                    LumoClip handles the heavy lifting.
-                  </p>
-                </div>
-
-                <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-zinc-700">
-                  AUTOMATED
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {[
-                  {
-                    number: "01",
-                    icon: Upload,
-                    label: "Import",
-                  },
-                  {
-                    number: "02",
-                    icon: Mic,
-                    label: "Transcribe",
-                  },
-                  {
-                    number: "03",
-                    icon: Sparkles,
-                    label: "Analyze",
-                  },
-                  {
-                    number: "04",
-                    icon: Film,
-                    label: "Generate",
-                  },
-                ].map((step) => {
-                  const Icon =
-                    step.icon;
-
-                  return (
-                    <div
-                      key={step.number}
-                      className="group relative rounded-[16px] border border-white/[0.04] bg-white/[0.018] p-3 transition hover:border-white/[0.09] hover:bg-white/[0.035]"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.025]">
-                          <Icon className="h-3.5 w-3.5 text-zinc-500 transition group-hover:text-violet-300" />
-                        </div>
-
-                        <span className="text-[7px] font-bold text-zinc-800">
-                          {step.number}
-                        </span>
-                      </div>
-
-                      <p className="mt-3 text-[8px] font-bold text-zinc-500">
-                        {step.label}
-                      </p>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
-
-            {/* =================================================
-                SAMPLES
-            ================================================= */}
-
-            {sourceType === "youtube" &&
-              !hasInitialUrl && (
-                <section>
-                  <div className="mb-3.5 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-xs font-bold text-white">
-                        Try a sample
-                      </p>
-
-                      <p className="mt-1 text-[9px] text-zinc-600">
-                        Explore the workflow with one
-                        click.
-                      </p>
-                    </div>
-
-                    <span className="flex items-center gap-1.5 rounded-full border border-violet-500/15 bg-violet-500/[0.06] px-2.5 py-1 text-[8px] font-bold text-violet-300">
-                      <Sparkles className="h-3 w-3" />
-                      Demo
-                    </span>
-                  </div>
-
-                  <div className="grid gap-2.5 sm:grid-cols-3">
-                    {SAMPLE_VIDEOS.map(
-                      (sample) => (
-                        <button
-                          key={sample.id}
-                          type="button"
-                          onClick={() =>
-                            handleSampleClick(
-                              sample.url,
-                              sample.title,
-                            )
-                          }
-                          disabled={loading}
-                          className="group relative overflow-hidden rounded-[20px] border border-white/[0.07] bg-white/[0.025] p-3.5 text-left transition-all duration-300 hover:-translate-y-1 hover:border-violet-500/30 hover:bg-violet-500/[0.035] hover:shadow-[0_20px_50px_rgba(124,58,237,0.08)] disabled:pointer-events-none disabled:opacity-50"
-                        >
-                          <div className="pointer-events-none absolute -right-5 -top-5 h-20 w-20 rounded-full bg-violet-500/[0.06] blur-2xl opacity-0 transition group-hover:opacity-100" />
-
-                          <div className="relative flex items-start justify-between gap-2">
-                            <span className="rounded-md border border-white/[0.06] bg-black/30 px-2 py-1 text-[7px] font-bold uppercase tracking-wider text-zinc-500">
-                              {sample.tag}
-                            </span>
-
-                            <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.05] bg-white/[0.025]">
-                              <Play className="h-3 w-3 text-zinc-700 transition group-hover:text-violet-300" />
-                            </div>
-                          </div>
-
-                          <p className="relative mt-3 line-clamp-2 text-[10px] font-bold leading-4 text-zinc-200">
-                            {sample.title}
-                          </p>
-
-                          <p className="relative mt-1.5 line-clamp-1 text-[8px] text-zinc-700">
-                            {sample.description}
-                          </p>
-
-                          <div className="relative mt-3 flex items-center gap-1 text-[7px] font-bold text-zinc-700 transition group-hover:text-violet-300">
-                            Use sample
-                            <ArrowRight className="h-2.5 w-2.5" />
-                          </div>
-                        </button>
-                      ),
-                    )}
-                  </div>
-                </section>
-              )}
-
-            {/* =================================================
                 ERROR
             ================================================= */}
 
@@ -3327,7 +2827,7 @@ export const NewProjectModal: React.FC<
                       <Sparkles className="h-3.5 w-3.5" />
 
                       <span>
-                        Start AI repurposing
+                        Create my clips
                       </span>
 
                       <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1" />
