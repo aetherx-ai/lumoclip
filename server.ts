@@ -1006,7 +1006,7 @@ const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   textColor: "#FFFFFF",
   highlightColor: "#39FF14",
   position: "bottom",
-  fontSize: 44,
+  fontSize: 58,
   uppercase: true,
 };
 
@@ -1144,7 +1144,7 @@ function groupWordsIntoLines(
   words: { word: string; duration: number }[],
 ): { word: string; duration: number }[][] {
   const MAX_WORDS_PER_LINE = 4;
-  const MAX_CHARS_PER_LINE = 22;
+  const MAX_CHARS_PER_LINE = 18;
 
   const lines: { word: string; duration: number }[][] = [];
   let current: { word: string; duration: number }[] = [];
@@ -1201,6 +1201,11 @@ function buildKaraokeAss(
   const primary = hexToAssColor(style.highlightColor);
   const secondary = hexToAssColor(style.textColor);
 
+  // BorderStyle 3 = opaque background box behind the text (the
+  // "caption card" look used by most short-form editors). The box
+  // color comes from OutlineColour; Outline controls the box padding.
+  const boxColor = "&H50000000&"; // semi-transparent black
+
   const header = `[Script Info]
 ScriptType: v4.00+
 PlayResX: ${videoWidth}
@@ -1210,7 +1215,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.font},${style.fontSize},${primary},${secondary},&H00000000&,&H00000000&,-1,0,0,0,100,100,0,0,1,3,1,${alignment},30,30,${marginV},1
+Style: Default,${style.font},${style.fontSize},${primary},${secondary},${boxColor},&H00000000&,-1,0,0,0,100,100,0.5,0,3,14,0,${alignment},26,26,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1232,6 +1237,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     for (const line of lines) {
       const lineStart = cursor;
 
+      // Cumulative offset (ms) of each word from the start of this
+      // line's Dialogue event — used to time the per-word pop/bounce
+      // so it fires exactly when that word becomes "active".
+      let offsetMs = 0;
+
       const lineText = line
         .map((item) => {
           const centiseconds = Math.max(
@@ -1239,11 +1249,33 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             Math.round(item.duration * 100),
           );
 
+          const wordDurationMs = Math.round(
+            item.duration * 1000,
+          );
+
+          const popDuration = Math.min(
+            140,
+            Math.max(60, Math.round(wordDurationMs * 0.5)),
+          );
+
+          const popStart = offsetMs;
+          const popEnd = popStart + popDuration;
+
+          offsetMs += wordDurationMs;
+
           const word = style.uppercase
             ? item.word.toUpperCase()
             : item.word;
 
-          return `{\\k${centiseconds}}${escapeAssText(word)}`;
+          // Reset scale, then bounce up and settle back down right as
+          // the word's karaoke highlight begins — a quick, punchy pop
+          // rather than a static color swap.
+          return (
+            `{\\fscx100\\fscy100` +
+            `\\t(${popStart},${popEnd},\\fscx112\\fscy112)` +
+            `\\t(${popEnd},${popEnd + popDuration},\\fscx100\\fscy100)` +
+            `\\k${centiseconds}}${escapeAssText(word)}`
+          );
         })
         .join(" ");
 
@@ -2228,8 +2260,21 @@ ${duration.toFixed(2)} seconds
 
 TASK:
 Analyze the entire video and return:
-1. A concise timestamped transcript.
+1. A timestamped transcript, broken into VERY SHORT chunks.
 2. Up to ${MAX_CLIPS} high-retention short-form clips.
+
+TRANSCRIPT GRANULARITY (critical — used to sync on-screen captions):
+- Each transcript entry must cover ONLY 2 to 4 spoken words, never a full sentence.
+- Split a sentence into multiple consecutive entries, e.g.
+  "Hello everyone welcome back to my channel" becomes:
+  {"start":0.00,"end":0.55,"text":"Hello everyone"}
+  {"start":0.55,"end":1.10,"text":"welcome back"}
+  {"start":1.10,"end":1.85,"text":"to my channel"}
+- start/end for each chunk MUST match the moment those exact words are
+  actually spoken in the audio — not evenly guessed durations.
+- Do not merge separate breaths/pauses into one chunk.
+- These chunks are burned onto the video as karaoke-style captions, so
+  timing accuracy per chunk matters more than transcript readability.
 
 PROCESSING MODE:
 ${processingMode === "full_video_caption"
@@ -2274,8 +2319,13 @@ EXACT JSON SHAPE:
   "transcript": [
     {
       "start": 0.0,
-      "end": 4.2,
+      "end": 0.6,
       "text": "spoken words"
+    },
+    {
+      "start": 0.6,
+      "end": 1.3,
+      "text": "next few words"
     }
   ],
   "clips": [
