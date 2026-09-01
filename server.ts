@@ -920,6 +920,9 @@ interface SubtitleStyle {
   position: "bottom" | "center" | "top";
   fontSize: number;
   uppercase: boolean;
+  box: boolean;            // opaque caption "card" background behind text
+  boxColor: string;        // hex, only used when box is true
+  animation: "pop" | "none"; // per-word bounce as it's highlighted
 }
 
 const ALLOWED_CAPTION_FONTS = new Set([
@@ -971,6 +974,12 @@ function normalizeCaptionStyle(value: unknown): SubtitleStyle {
       : DEFAULT_SUBTITLE_STYLE.position,
     fontSize: DEFAULT_SUBTITLE_STYLE.fontSize,
     uppercase: raw?.uppercase === false ? false : true,
+    box: raw?.box === false ? false : true,
+    boxColor: normalizeHexColor(
+      raw?.boxColor,
+      DEFAULT_SUBTITLE_STYLE.boxColor,
+    ),
+    animation: raw?.animation === "none" ? "none" : "pop",
   };
 }
 
@@ -1008,6 +1017,9 @@ const DEFAULT_SUBTITLE_STYLE: SubtitleStyle = {
   position: "bottom",
   fontSize: 58,
   uppercase: true,
+  box: true,
+  boxColor: "#000000",
+  animation: "pop",
 };
 
 interface ClipRelativeSegment {
@@ -1029,6 +1041,25 @@ function hexToAssColor(hex: string): string {
 
   // ASS colors are &H00BBGGRR&
   return `&H00${b}${g}${r}&`.toUpperCase();
+}
+
+// Same as hexToAssColor but with an explicit alpha channel. ASS alpha is
+// inverted: 00 = fully opaque, FF = fully transparent.
+function hexToAssColorWithAlpha(
+  hex: string,
+  alphaHex: string,
+): string {
+  const clean = (hex || "").replace("#", "").trim();
+
+  if (!/^[0-9a-fA-F]{6}$/.test(clean)) {
+    return `&H${alphaHex}000000&`;
+  }
+
+  const r = clean.slice(0, 2);
+  const g = clean.slice(2, 4);
+  const b = clean.slice(4, 6);
+
+  return `&H${alphaHex}${b}${g}${r}&`.toUpperCase();
 }
 
 function escapeAssText(text: string): string {
@@ -1201,10 +1232,19 @@ function buildKaraokeAss(
   const primary = hexToAssColor(style.highlightColor);
   const secondary = hexToAssColor(style.textColor);
 
+  const useBox = style.box !== false;
+  const useAnimation = style.animation !== "none";
+
   // BorderStyle 3 = opaque background box behind the text (the
-  // "caption card" look used by most short-form editors). The box
-  // color comes from OutlineColour; Outline controls the box padding.
-  const boxColor = "&H50000000&"; // semi-transparent black
+  // "caption card" look). BorderStyle 1 = classic outlined text only,
+  // no card — a cleaner, more minimal look for styles that want it.
+  const borderStyle = useBox ? 3 : 1;
+  const outlineValue = useBox ? 14 : 4;
+  const shadowValue = useBox ? 0 : 1;
+
+  const boxColorAss = useBox
+    ? hexToAssColorWithAlpha(style.boxColor, "50")
+    : "&H00000000&";
 
   const header = `[Script Info]
 ScriptType: v4.00+
@@ -1215,7 +1255,7 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,${style.font},${style.fontSize},${primary},${secondary},${boxColor},&H00000000&,-1,0,0,0,100,100,0.5,0,3,14,0,${alignment},26,26,${marginV},1
+Style: Default,${style.font},${style.fontSize},${primary},${secondary},${boxColorAss},&H00000000&,-1,0,0,0,100,100,0.5,0,${borderStyle},${outlineValue},${shadowValue},${alignment},26,26,${marginV},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1253,6 +1293,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             item.duration * 1000,
           );
 
+          const word = style.uppercase
+            ? item.word.toUpperCase()
+            : item.word;
+
+          if (!useAnimation) {
+            offsetMs += wordDurationMs;
+            return `{\\k${centiseconds}}${escapeAssText(word)}`;
+          }
+
           const popDuration = Math.min(
             140,
             Math.max(60, Math.round(wordDurationMs * 0.5)),
@@ -1262,10 +1311,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
           const popEnd = popStart + popDuration;
 
           offsetMs += wordDurationMs;
-
-          const word = style.uppercase
-            ? item.word.toUpperCase()
-            : item.word;
 
           // Reset scale, then bounce up and settle back down right as
           // the word's karaoke highlight begins — a quick, punchy pop

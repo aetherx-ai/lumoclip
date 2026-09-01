@@ -82,6 +82,9 @@ interface CaptionStyle {
   highlightColor: string;
   position: "bottom" | "center" | "top";
   uppercase: boolean;
+  box: boolean;
+  boxColor: string;
+  animation: "pop" | "none";
 }
 
 // Must match ProcessingMode on the server (server.ts).
@@ -137,7 +140,100 @@ const DEFAULT_CAPTION_STYLE: CaptionStyle = {
   highlightColor: "#39FF14",
   position: "bottom",
   uppercase: true,
+  box: true,
+  boxColor: "#000000",
+  animation: "pop",
 };
+
+/* =========================================================
+   CAPTION STYLE PRESETS
+   Named looks like OpusClip/CapCut caption templates — each bundles
+   font + colors + box + animation into one click. "enabled" is left
+   out here since that's controlled separately by the on/off toggle.
+========================================================= */
+
+const CAPTION_STYLE_PRESETS: {
+  id: string;
+  label: string;
+  preview: { bg: string; text: string; highlight: string };
+  style: Omit<CaptionStyle, "enabled">;
+}[] = [
+  {
+    id: "bold-pop",
+    label: "Bold Pop",
+    preview: { bg: "#111", text: "#FFFFFF", highlight: "#39FF14" },
+    style: {
+      font: "Liberation Sans",
+      textColor: "#FFFFFF",
+      highlightColor: "#39FF14",
+      position: "bottom",
+      uppercase: true,
+      box: true,
+      boxColor: "#000000",
+      animation: "pop",
+    },
+  },
+  {
+    id: "clean-minimal",
+    label: "Clean Minimal",
+    preview: { bg: "transparent", text: "#FFFFFF", highlight: "#FFE600" },
+    style: {
+      font: "Arial",
+      textColor: "#FFFFFF",
+      highlightColor: "#FFE600",
+      position: "bottom",
+      uppercase: false,
+      box: false,
+      boxColor: "#000000",
+      animation: "none",
+    },
+  },
+  {
+    id: "neon-nights",
+    label: "Neon Nights",
+    preview: { bg: "#111", text: "#FFFFFF", highlight: "#FF2E9A" },
+    style: {
+      font: "Montserrat",
+      textColor: "#FFFFFF",
+      highlightColor: "#FF2E9A",
+      position: "center",
+      uppercase: true,
+      box: true,
+      boxColor: "#1A0B2E",
+      animation: "pop",
+    },
+  },
+  {
+    id: "impact-bold",
+    label: "Impact Bold",
+    preview: { bg: "transparent", text: "#FFFFFF", highlight: "#FFD400" },
+    style: {
+      font: "Impact",
+      textColor: "#FFFFFF",
+      highlightColor: "#FFD400",
+      position: "bottom",
+      uppercase: true,
+      box: false,
+      boxColor: "#000000",
+      animation: "pop",
+    },
+  },
+  {
+    id: "karaoke-blue",
+    label: "Karaoke Blue",
+    preview: { bg: "#111", text: "#FFFFFF", highlight: "#3AB0FF" },
+    style: {
+      font: "Poppins",
+      textColor: "#FFFFFF",
+      highlightColor: "#3AB0FF",
+      position: "bottom",
+      uppercase: true,
+      box: true,
+      boxColor: "#000000",
+      animation: "none",
+    },
+  },
+];
 
 /* =========================================================
    HELPERS
@@ -811,6 +907,13 @@ const CaptionStylePicker: React.FC<{
         </p>
       ) : (
         <div className="relative space-y-4">
+          <style>{`
+            @keyframes captionPopPreview {
+              0%, 60%, 100% { transform: scale(1); }
+              75% { transform: scale(1.14); }
+            }
+          `}</style>
+
           {/* PREVIEW */}
           <div className="mx-auto flex w-full max-w-[220px] flex-col items-center overflow-hidden rounded-[18px] border border-white/[0.08] bg-black">
             <div
@@ -826,27 +929,112 @@ const CaptionStylePicker: React.FC<{
               `}
             >
               <p
-                className="text-center text-[13px] font-extrabold leading-tight"
+                className={`
+                  mx-auto text-center text-[13px] font-extrabold leading-tight
+                  ${style.box ? "rounded-lg px-2.5 py-1.5" : ""}
+                `}
                 style={{
                   fontFamily: style.font,
-                  textShadow:
-                    "0 0 2px #000, 0 0 6px #000, 0 2px 3px #000",
+                  backgroundColor: style.box
+                    ? `${style.boxColor}80`
+                    : "transparent",
+                  textShadow: style.box
+                    ? "none"
+                    : "0 0 2px #000, 0 0 6px #000, 0 2px 3px #000",
                 }}
               >
                 <span style={{ color: style.textColor }}>
                   {style.uppercase ? "THIS IS " : "This is "}
                 </span>
-                <span style={{ color: style.highlightColor }}>
+                <span
+                  className="inline-block"
+                  style={{
+                    color: style.highlightColor,
+                    animation:
+                      style.animation === "pop"
+                        ? "captionPopPreview 1.6s ease-in-out infinite"
+                        : undefined,
+                  }}
+                >
                   {style.uppercase ? "AWESOME" : "awesome"}
                 </span>
               </p>
             </div>
           </div>
 
+          {/* STYLE PRESETS */}
+          <div>
+            <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+              Style
+            </p>
+
+            <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {CAPTION_STYLE_PRESETS.map((preset) => {
+                const isActive =
+                  style.font === preset.style.font &&
+                  style.highlightColor.toUpperCase() ===
+                    preset.style.highlightColor.toUpperCase() &&
+                  style.box === preset.style.box &&
+                  style.animation === preset.style.animation &&
+                  style.position === preset.style.position;
+
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => update(preset.style)}
+                    title={preset.label}
+                    className={`
+                      group flex flex-col items-center gap-1.5 rounded-xl border p-2 transition
+                      disabled:cursor-not-allowed disabled:opacity-40
+                      ${
+                        isActive
+                          ? "border-violet-400/50 bg-violet-500/10"
+                          : "border-white/[0.06] bg-black/20 hover:border-white/20"
+                      }
+                    `}
+                  >
+                    <span
+                      className="flex h-9 w-full items-center justify-center rounded-lg"
+                      style={{
+                        background:
+                          preset.preview.bg === "transparent"
+                            ? "repeating-conic-gradient(#1a1a1a 0% 25%, #0a0a0a 0% 50%) 50% / 8px 8px"
+                            : preset.preview.bg,
+                      }}
+                    >
+                      <span
+                        className="text-[9px] font-extrabold"
+                        style={{ color: preset.preview.text }}
+                      >
+                        A
+                        <span
+                          style={{ color: preset.preview.highlight }}
+                        >
+                          B
+                        </span>
+                        C
+                      </span>
+                    </span>
+
+                    <span
+                      className={`text-[7px] font-bold leading-tight ${
+                        isActive ? "text-violet-300" : "text-zinc-500"
+                      }`}
+                    >
+                      {preset.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* HIGHLIGHT COLOR */}
           <div>
             <p className="mb-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-              Highlight color
+              Fine-tune highlight color
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
