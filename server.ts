@@ -1347,11 +1347,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
   const events: string[] = [];
 
+  let segmentsWithRealWords = 0;
+  let segmentsUsingFallback = 0;
+  let segmentsSkippedEmpty = 0;
+
   for (const segment of segments) {
+    const hasRealWords =
+      Array.isArray(segment.words) && segment.words.length > 0;
+
     const words = getTimedWordsForSegment(segment);
 
     if (!words.length) {
+      segmentsSkippedEmpty += 1;
       continue;
+    }
+
+    if (hasRealWords) {
+      segmentsWithRealWords += 1;
+    } else {
+      segmentsUsingFallback += 1;
     }
 
     const lines = groupWordsIntoLines(words);
@@ -1443,6 +1457,30 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         )},Default,,0,0,0,,${lineText}`,
       );
     }
+  }
+
+  console.log(
+    `Captions: built ${events.length} dialogue event(s) from ${segments.length} segment(s) ` +
+      `(${segmentsWithRealWords} with real Gemini word-timestamps, ` +
+      `${segmentsUsingFallback} using length-based fallback, ` +
+      `${segmentsSkippedEmpty} skipped/empty).`,
+  );
+
+  if (segments.length > 0 && segmentsWithRealWords === 0) {
+    console.warn(
+      "Captions: Gemini did NOT return per-word timestamps for any segment in this burn — " +
+        "falling back to length-based approximation for all of them. This is the most " +
+        "common cause of captions feeling out of sync; the model isn't complying with the " +
+        "word-level timing instruction in the prompt.",
+    );
+  }
+
+  if (segments.length > 0 && events.length === 0) {
+    console.error(
+      "Captions: 0 dialogue events were produced even though " +
+        `${segments.length} transcript segment(s) were available — the output video will ` +
+        "encode 'successfully' but show NO burned-in captions at all. Check the segment text/word data logged above.",
+    );
   }
 
   return header + events.join("\n") + "\n";
