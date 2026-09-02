@@ -823,6 +823,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           MAIN LAYOUT
       ================================================= */}
 
+      <div className="mb-4 overflow-x-auto lg:hidden">
+        <div className="flex min-w-max gap-2 rounded-2xl border border-white/[0.06] bg-zinc-950/70 p-2 backdrop-blur-xl">
+          {sections.map((section) => {
+            const Icon = section.icon;
+            const active = activeSection === section.id;
+
+            return (
+              <button
+                key={`mobile-${section.id}`}
+                type="button"
+                onClick={() => setActiveSection(section.id)}
+                className={`inline-flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-xs font-semibold transition ${
+                  active
+                    ? 'bg-violet-500/15 text-violet-300 shadow-lg shadow-violet-950/20'
+                    : 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-200'
+                }`}
+              >
+                <Icon className="h-3.5 w-3.5" />
+                {section.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       <div className="grid gap-6 lg:grid-cols-[250px_minmax(0,1fr)]">
 
         {/* =================================================
@@ -1658,6 +1683,104 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </p>
                 </div>
 
+              </section>
+
+              <section className="rounded-3xl border border-white/[0.06] bg-zinc-950/70 p-6">
+                <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400">
+                      Plans
+                    </p>
+                    <h3 className="mt-1 text-lg font-bold text-white">
+                      Choose the workspace that fits your workflow
+                    </h3>
+                    <p className="mt-1 max-w-2xl text-xs leading-5 text-zinc-600">
+                      Upgrade when you need more AI processing capacity and a faster content workflow.
+                    </p>
+                  </div>
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.025] px-3 py-1.5 text-[10px] font-semibold text-zinc-500">
+                    <Zap className="h-3 w-3 text-amber-400" />
+                    {currentCredits} credits available
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <p className="text-sm font-bold text-white">Free</p>
+                        <p className="mt-1 text-xs text-zinc-600">
+                          Start creating with the essentials.
+                        </p>
+                      </div>
+                      {String(user?.plan || 'Free').toLowerCase() === 'free' && (
+                        <span className="rounded-full border border-white/[0.07] bg-white/[0.03] px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-zinc-500">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-5 space-y-2.5">
+                      {['AI clip generation', 'YouTube input', 'Core account tools'].map((item) => (
+                        <div key={item} className="flex items-center gap-2 text-xs text-zinc-500">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="relative overflow-hidden rounded-2xl border border-violet-500/20 bg-gradient-to-br from-violet-500/[0.09] via-white/[0.025] to-indigo-500/[0.06] p-5">
+                    <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-violet-500/15 blur-3xl" />
+                    <div className="relative flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <Crown className="h-4 w-4 text-violet-300" />
+                          <p className="text-sm font-bold text-white">Pro</p>
+                        </div>
+                        <p className="mt-1 text-xs text-zinc-500">
+                          More room for serious content production.
+                        </p>
+                      </div>
+                      {String(user?.plan || '').toLowerCase() === 'pro' ? (
+                        <span className="rounded-full border border-emerald-500/15 bg-emerald-500/[0.06] px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-emerald-400">
+                          Current
+                        </span>
+                      ) : (
+                        <span className="rounded-full border border-violet-500/20 bg-violet-500/10 px-2.5 py-1 text-[9px] font-bold uppercase tracking-wider text-violet-300">
+                          Recommended
+                        </span>
+                      )}
+                    </div>
+                    <div className="relative mt-5 space-y-2.5">
+                      {['Higher processing capacity', 'Premium workflow experience', 'Built for frequent creators'].map((item) => (
+                        <div key={item} className="flex items-center gap-2 text-xs text-zinc-400">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-violet-300" />
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                    {String(user?.plan || 'Free').toLowerCase() !== 'pro' && (
+                      <button
+                        type="button"
+                        onClick={handleUpgrade}
+                        disabled={upgrading}
+                        className="relative mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-2.5 text-xs font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:from-violet-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {upgrading ? (
+                          <>
+                            <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                            Opening checkout…
+                          </>
+                        ) : (
+                          <>
+                            Upgrade to Pro
+                            <ArrowUpRight className="h-3.5 w-3.5" />
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </section>
 
               <section className="rounded-3xl border border-white/[0.06] bg-zinc-950/70 p-6">
