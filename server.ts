@@ -129,6 +129,16 @@ const GEMINI_RETRY_MAX_MS = Number(
   process.env.GEMINI_RETRY_MAX_MS || 60000,
 );
 
+// If the primary model exhausts its retries on a transient error
+// (429/5xx/"high demand"), fall back to these models in order before
+// giving up entirely. Comma-separated, e.g. "gemini-2.5-flash,gemini-2.0-flash".
+const GEMINI_FALLBACK_MODELS = (
+  process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash"
+)
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
+
 // =========================================================
 // FFMPEG SPEED CONFIG
 // =========================================================
@@ -1543,7 +1553,7 @@ const WHISPER_CACHE_DIR =
 // cold model download + transcription). If it's not done by then, we
 // kill it and fall back — callers never hang waiting on this.
 const WHISPER_TIMEOUT_MS = Number(
-  process.env.WHISPER_TIMEOUT_MS || 4 * 60 * 1000,
+  process.env.WHISPER_TIMEOUT_MS || 10 * 60 * 1000,
 );
 
 // Cap the child's own V8 heap so a runaway allocation there fails
@@ -1552,7 +1562,7 @@ const WHISPER_TIMEOUT_MS = Number(
 // guarantee — the real protection is that this all runs in a
 // disposable child process, never in the main server process.
 const WHISPER_CHILD_MAX_OLD_SPACE_MB = Number(
-  process.env.WHISPER_CHILD_MAX_OLD_SPACE_MB || 384,
+  process.env.WHISPER_CHILD_MAX_OLD_SPACE_MB || 768,
 );
 
 try {
@@ -1952,57 +1962,97 @@ function isRetryableGeminiError(error: any): boolean {
 async function generateGeminiWithRetry(
   params: Parameters<typeof ai.models.generateContent>[0],
 ) {
+  const primaryModel = (params as any).model;
+
+  // Try the requested model first, then any configured fallback models
+  // (skipping duplicates) if the primary model exhausts its retries on
+  // a transient (retryable) error.
+  const modelsToTry = [
+    primaryModel,
+    ...GEMINI_FALLBACK_MODELS.filter(
+      (m) => m !== primaryModel,
+    ),
+  ];
+
   let lastError: unknown;
 
   const attempts = Math.max(1, GEMINI_GENERATE_RETRIES);
 
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    try {
-      console.log(
-        `Gemini generateContent attempt ${attempt}/${attempts}`,
-      );
+  for (
+    let modelIndex = 0;
+    modelIndex < modelsToTry.length;
+    modelIndex++
+  ) {
+    const model = modelsToTry[modelIndex];
+    const isFallback = modelIndex > 0;
 
-      return await ai.models.generateContent(params);
-    } catch (error: any) {
-      lastError = error;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      try {
+        console.log(
+          `Gemini generateContent${
+            isFallback ? " [fallback]" : ""
+          } model=${model} attempt ${attempt}/${attempts}`,
+        );
 
-      const status = getGeminiErrorStatus(error);
+        return await ai.models.generateContent({
+          ...params,
+          model,
+        } as any);
+      } catch (error: any) {
+        lastError = error;
 
-      console.error(
-        `Gemini generateContent attempt ${attempt} failed (status ${status ?? "unknown"}):`,
-        error?.message || error,
-      );
+        const status = getGeminiErrorStatus(error);
 
-      if (
-        !isRetryableGeminiError(error) ||
-        attempt >= attempts
-      ) {
-        throw error;
+        console.error(
+          `Gemini generateContent model=${model} attempt ${attempt} failed (status ${status ?? "unknown"}):`,
+          error?.message || error,
+        );
+
+        const retryable = isRetryableGeminiError(error);
+
+        if (!retryable) {
+          // Non-transient error (bad request, invalid content, etc.)
+          // Retrying or switching models won't help.
+          throw error;
+        }
+
+        if (attempt >= attempts) {
+          // Exhausted retries on this model. Move on to the next
+          // fallback model, if any, instead of failing immediately.
+          console.warn(
+            `Model ${model} exhausted after ${attempts} attempts.${
+              modelIndex < modelsToTry.length - 1
+                ? " Trying fallback model..."
+                : " No more fallback models."
+            }`,
+          );
+          break;
+        }
+
+        const exponentialDelay = Math.min(
+          GEMINI_RETRY_BASE_MS *
+            Math.pow(2, attempt - 1),
+          GEMINI_RETRY_MAX_MS,
+        );
+
+        // Small jitter avoids repeatedly hitting the service at the same instant.
+        const jitter = Math.floor(
+          Math.random() * 1000,
+        );
+
+        const delay = Math.min(
+          exponentialDelay + jitter,
+          GEMINI_RETRY_MAX_MS,
+        );
+
+        console.warn(
+          `Gemini model=${model} temporarily unavailable${
+            status ? ` (HTTP ${status})` : ""
+          }. Retrying in ${delay}ms...`,
+        );
+
+        await sleep(delay);
       }
-
-      const exponentialDelay = Math.min(
-        GEMINI_RETRY_BASE_MS *
-          Math.pow(2, attempt - 1),
-        GEMINI_RETRY_MAX_MS,
-      );
-
-      // Small jitter avoids repeatedly hitting the service at the same instant.
-      const jitter = Math.floor(
-        Math.random() * 1000,
-      );
-
-      const delay = Math.min(
-        exponentialDelay + jitter,
-        GEMINI_RETRY_MAX_MS,
-      );
-
-      console.warn(
-        `Gemini temporarily unavailable${
-          status ? ` (HTTP ${status})` : ""
-        }. Retrying in ${delay}ms...`,
-      );
-
-      await sleep(delay);
     }
   }
 
@@ -7027,6 +7077,14 @@ app.listen(
     );
     console.log(
       `Gemini model: ${GEMINI_MODEL}`,
+    );
+
+    console.log(
+      `Gemini fallback models: ${
+        GEMINI_FALLBACK_MODELS.length
+          ? GEMINI_FALLBACK_MODELS.join(", ")
+          : "none"
+      }`,
     );
 
     console.log(
