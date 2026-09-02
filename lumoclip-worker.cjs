@@ -1,19 +1,26 @@
 /*
+  ============================================================
   LumoClip PC Worker
   Windows PC Worker
+  ============================================================
 
   Requirements:
     npm install youtube-dl-exec ffmpeg-static ffprobe-static
 
   Environment:
+
     LUMOCLIP_API_URL=https://lumo-clip.com
     LUMO_WORKER_TOKEN=YOUR_SECRET
+
     WORKER_POLL_MS=5000
     WORKER_MAX_HEIGHT=480
 
   Optional:
+
     FFMPEG_PATH=C:\path\to\ffmpeg.exe
     WORKER_DOWNLOAD_DIR=C:\path\to\downloads
+
+  ============================================================
 */
 
 const fs = require("node:fs");
@@ -32,7 +39,7 @@ const ffprobeStatic = require("ffprobe-static");
 
 const API_URL = (
   process.env.LUMOCLIP_API_URL || "https://lumo-clip.com"
-).replace(/\/+$/, "");
+).trim().replace(/\/+$/, "");
 
 const WORKER_TOKEN = (
   process.env.LUMO_WORKER_TOKEN || ""
@@ -56,7 +63,10 @@ const DOWNLOAD_DIR = path.resolve(
     "./lumoclip-worker-downloads"
 );
 
-// Network
+// ============================================================
+// NETWORK CONFIG
+// ============================================================
+
 const API_TIMEOUT_MS = 30000;
 const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -83,39 +93,86 @@ const FFPROBE_PATH =
 // VALIDATION
 // ============================================================
 
-if (!WORKER_TOKEN) {
-  console.error(
-    "[worker] ERROR: LUMO_WORKER_TOKEN is missing."
-  );
-  process.exit(1);
-}
+function validateConfig() {
+  console.log("");
+  console.log("========================================");
+  console.log("        LumoClip Worker Config");
+  console.log("========================================");
 
-if (!FFMPEG_PATH) {
-  console.error(
-    "[worker] ERROR: FFmpeg executable was not found."
+  console.log(`API URL: ${API_URL}`);
+  console.log(
+    `Worker token: ${WORKER_TOKEN ? "configured" : "MISSING"}`
   );
-  console.error(
-    "[worker] Install ffmpeg-static or set FFMPEG_PATH."
-  );
-  process.exit(1);
-}
+  console.log(`Poll interval: ${POLL_MS}ms`);
+  console.log(`Max height: ${MAX_HEIGHT}p`);
+  console.log(`Download directory: ${DOWNLOAD_DIR}`);
+  console.log(`FFmpeg: ${FFMPEG_PATH || "MISSING"}`);
+  console.log(`FFprobe: ${FFPROBE_PATH || "not available"}`);
 
-if (!fs.existsSync(FFMPEG_PATH)) {
-  console.error(
-    `[worker] ERROR: FFmpeg does not exist: ${FFMPEG_PATH}`
-  );
-  process.exit(1);
-}
+  console.log("========================================");
+  console.log("");
 
-if (FFPROBE_PATH && !fs.existsSync(FFPROBE_PATH)) {
-  console.warn(
-    `[worker] WARNING: FFprobe path does not exist: ${FFPROBE_PATH}`
-  );
-}
+  if (!WORKER_TOKEN) {
+    console.error(
+      "[worker] ERROR: LUMO_WORKER_TOKEN is missing."
+    );
 
-fs.mkdirSync(DOWNLOAD_DIR, {
-  recursive: true,
-});
+    process.exit(1);
+  }
+
+  if (!FFMPEG_PATH) {
+    console.error(
+      "[worker] ERROR: FFmpeg executable was not found."
+    );
+
+    console.error(
+      "[worker] Install ffmpeg-static or set FFMPEG_PATH."
+    );
+
+    process.exit(1);
+  }
+
+  if (!fs.existsSync(FFMPEG_PATH)) {
+    console.error(
+      `[worker] ERROR: FFmpeg does not exist: ${FFMPEG_PATH}`
+    );
+
+    process.exit(1);
+  }
+
+  if (FFPROBE_PATH && !fs.existsSync(FFPROBE_PATH)) {
+    console.warn(
+      `[worker] WARNING: FFprobe path does not exist: ${FFPROBE_PATH}`
+    );
+  }
+
+  try {
+    const parsed = new URL(API_URL);
+
+    if (
+      parsed.protocol !== "http:" &&
+      parsed.protocol !== "https:"
+    ) {
+      throw new Error(
+        "LUMOCLIP_API_URL must use http:// or https://"
+      );
+    }
+  } catch (error) {
+    console.error(
+      `[worker] ERROR: Invalid API URL: ${API_URL}`
+    );
+
+    console.error(
+      `[worker] ${getErrorMessage(error)}`
+    );
+
+    process.exit(1);
+  }
+
+  fs.mkdirSync(DOWNLOAD_DIR, {
+    recursive: true,
+  });
+}
 
 // ============================================================
 // HELPERS
@@ -140,8 +197,43 @@ function getErrorMessage(error) {
   return String(error);
 }
 
+function getDetailedNetworkError(error) {
+  const message = getErrorMessage(error);
+
+  const code =
+    error?.code ||
+    error?.cause?.code ||
+    "";
+
+  const causeMessage =
+    error?.cause?.message ||
+    "";
+
+  const details = [];
+
+  if (code) {
+    details.push(`code=${code}`);
+  }
+
+  if (causeMessage && causeMessage !== message) {
+    details.push(`cause=${causeMessage}`);
+  }
+
+  if (details.length > 0) {
+    return `${message} (${details.join(", ")})`;
+  }
+
+  return message;
+}
+
 function isRetryableError(error) {
-  const message = getErrorMessage(error).toLowerCase();
+  const message = (
+    getErrorMessage(error) +
+    " " +
+    (error?.code || "") +
+    " " +
+    (error?.cause?.code || "")
+  ).toLowerCase();
 
   const patterns = [
     "fetch failed",
@@ -154,6 +246,9 @@ function isRetryableError(error) {
     "aborted",
     "enotfound",
     "eai_again",
+    "ehostunreach",
+    "enetunreach",
+    "epipe",
     "502",
     "503",
     "504",
@@ -166,7 +261,23 @@ function isRetryableError(error) {
 }
 
 // ============================================================
-// API JSON
+// API URL HELPERS
+// ============================================================
+
+function makeApiUrl(route) {
+  try {
+    return new URL(route, API_URL);
+  } catch (error) {
+    throw new Error(
+      `Invalid API route "${route}" against "${API_URL}": ${getErrorMessage(
+        error
+      )}`
+    );
+  }
+}
+
+// ============================================================
+// API JSON REQUEST
 // ============================================================
 
 async function apiJson(
@@ -180,7 +291,7 @@ async function apiJson(
     timeoutMs = API_TIMEOUT_MS,
   } = options;
 
-  const url = new URL(route, API_URL);
+  const url = makeApiUrl(route);
 
   let lastError;
 
@@ -197,7 +308,7 @@ async function apiJson(
 
     try {
       console.log(
-        `[worker] API ${method} ${url.pathname} (attempt ${attempt}/${retries})`
+        `[worker] API ${method} ${url.href} (attempt ${attempt}/${retries})`
       );
 
       const response = await fetch(url, {
@@ -206,6 +317,7 @@ async function apiJson(
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
+          "User-Agent": "LumoClip-PC-Worker/1.0",
           "x-lumo-worker-token": WORKER_TOKEN,
         },
 
@@ -222,7 +334,9 @@ async function apiJson(
       let data = null;
 
       try {
-        data = text ? JSON.parse(text) : null;
+        data = text
+          ? JSON.parse(text)
+          : null;
       } catch {
         data = {
           error:
@@ -240,20 +354,80 @@ async function apiJson(
 
         error.status = response.status;
 
+        /*
+          HTTP errors such as 401/403 should not be
+          reported as "fetch failed".
+        */
+
         throw error;
       }
 
       return data;
-
     } catch (error) {
       lastError = error;
 
       const message =
-        getErrorMessage(error);
+        getDetailedNetworkError(error);
 
       console.error(
         `[worker] API request failed: ${message}`
       );
+
+      /*
+        Helpful diagnostics for network errors.
+      */
+
+      if (
+        error?.name === "AbortError"
+      ) {
+        console.error(
+          `[worker] API request timed out after ${timeoutMs}ms.`
+        );
+      }
+
+      if (
+        error?.cause?.code === "ENOTFOUND"
+      ) {
+        console.error(
+          `[worker] DNS lookup failed for ${url.hostname}.`
+        );
+
+        console.error(
+          `[worker] Check your internet connection and API domain.`
+        );
+      }
+
+      if (
+        error?.cause?.code === "ECONNREFUSED"
+      ) {
+        console.error(
+          `[worker] Connection refused by ${url.hostname}.`
+        );
+
+        console.error(
+          `[worker] Check whether the Render service is running.`
+        );
+      }
+
+      if (
+        error?.cause?.code === "ETIMEDOUT"
+      ) {
+        console.error(
+          `[worker] Connection timed out while reaching ${url.hostname}.`
+        );
+      }
+
+      /*
+        Don't retry authentication/configuration errors.
+      */
+
+      if (
+        error?.status === 401 ||
+        error?.status === 403 ||
+        error?.status === 400
+      ) {
+        throw error;
+      }
 
       if (
         attempt >= retries ||
@@ -269,7 +443,6 @@ async function apiJson(
       );
 
       await sleep(delay);
-
     } finally {
       clearTimeout(timeout);
     }
@@ -279,17 +452,135 @@ async function apiJson(
 }
 
 // ============================================================
+// API CONNECTION TEST
+// ============================================================
+
+async function testApiConnection() {
+  console.log("");
+  console.log("========================================");
+  console.log("        Testing LumoClip API");
+  console.log("========================================");
+
+  console.log(
+    `[worker] API endpoint: ${API_URL}`
+  );
+
+  try {
+    const result = await apiJson(
+      "POST",
+      "/api/worker/claim",
+      undefined,
+      {
+        retries: 1,
+        timeoutMs: 15000,
+      }
+    );
+
+    console.log("");
+    console.log(
+      "[worker] API CONNECTION: OK"
+    );
+
+    if (result?.job) {
+      console.log(
+        `[worker] Existing job detected: ${result.job.id}`
+      );
+    } else {
+      console.log(
+        "[worker] No queued job currently."
+      );
+    }
+
+    console.log(
+      "========================================"
+    );
+    console.log("");
+
+    return true;
+  } catch (error) {
+    console.error("");
+    console.error(
+      "========================================"
+    );
+    console.error(
+      "[worker] API CONNECTION: FAILED"
+    );
+    console.error(
+      "========================================"
+    );
+
+    console.error(
+      `[worker] URL: ${API_URL}`
+    );
+
+    console.error(
+      `[worker] Error: ${getDetailedNetworkError(error)}`
+    );
+
+    if (error?.status === 401) {
+      console.error(
+        "[worker] Server is reachable, but WORKER TOKEN is invalid."
+      );
+    } else if (error?.status === 503) {
+      console.error(
+        "[worker] Server is reachable, but LUMO_WORKER_TOKEN is not configured on Render."
+      );
+    } else if (error?.status) {
+      console.error(
+        `[worker] Server returned HTTP ${error.status}.`
+      );
+    } else {
+      console.error(
+        "[worker] The PC could not receive an HTTP response."
+      );
+
+      console.error(
+        "[worker] Check DNS, internet, domain, Render service and firewall."
+      );
+    }
+
+    console.error(
+      "========================================"
+    );
+    console.error("");
+
+    return false;
+  }
+}
+
+// ============================================================
 // UPLOAD
 // ============================================================
 
-function uploadFileOnce(route, filePath) {
+function uploadFileOnce(
+  route,
+  filePath
+) {
   return new Promise((resolve, reject) => {
-    const url = new URL(route, API_URL);
+    let url;
+
+    try {
+      url = makeApiUrl(route);
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    if (!fs.existsSync(filePath)) {
+      reject(
+        new Error(
+          `Upload file does not exist: ${filePath}`
+        )
+      );
+
+      return;
+    }
 
     const stat = fs.statSync(filePath);
 
     const boundary =
-      "LUMOCLIP_BOUNDARY";
+      "----LumoClipWorkerBoundary" +
+      Date.now().toString(16);
 
     const fileName = path
       .basename(filePath)
@@ -320,6 +611,9 @@ function uploadFileOnce(route, filePath) {
         WORKER_TOKEN,
 
       Accept: "application/json",
+
+      "User-Agent":
+        "LumoClip-PC-Worker/1.0",
     };
 
     const client =
@@ -405,14 +699,18 @@ function uploadFileOnce(route, filePath) {
       );
     });
 
-    req.on("error", fail);
+    req.on("error", (error) => {
+      fail(error);
+    });
 
     req.write(preamble);
 
     const stream =
       fs.createReadStream(filePath);
 
-    stream.on("error", fail);
+    stream.on("error", (error) => {
+      fail(error);
+    });
 
     stream.on("end", () => {
       if (!finished) {
@@ -446,16 +744,23 @@ async function uploadFile(
         route,
         filePath
       );
-
     } catch (error) {
       lastError = error;
 
       const message =
-        getErrorMessage(error);
+        getDetailedNetworkError(error);
 
       console.error(
         `[worker] Upload failed: ${message}`
       );
+
+      if (
+        error?.status === 401 ||
+        error?.status === 403 ||
+        error?.status === 400
+      ) {
+        throw error;
+      }
 
       if (
         attempt >= UPLOAD_RETRIES ||
@@ -547,16 +852,6 @@ async function downloadVideo(
   const yt =
     youtubedl.create(bundled);
 
-  /*
-    Prefer MP4 video + M4A audio.
-
-    Maximum video height is controlled by
-    WORKER_MAX_HEIGHT.
-
-    FFmpeg is explicitly provided so that
-    yt-dlp can merge separate video/audio streams.
-  */
-
   const format =
     `best[height<=${MAX_HEIGHT}][ext=mp4]` +
     `/bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
@@ -574,17 +869,6 @@ async function downloadVideo(
     forceOverwrites: true,
 
     mergeOutputFormat: "mp4",
-
-    /*
-      IMPORTANT:
-      Do not use:
-        noPart: false
-        noContinue: false
-        noWarnings: false
-
-      youtube-dl-exec can turn those into invalid
-      flags such as --no-no-part.
-    */
 
     retries: 5,
 
@@ -610,17 +894,13 @@ async function downloadVideo(
       ],
     },
 
-    /*
-      Use bundled FFmpeg.
-      This does NOT require FFmpeg to be in
-      the Windows PATH.
-    */
-
-    ffmpegLocation: FFMPEG_PATH,
+    ffmpegLocation:
+      FFMPEG_PATH,
   };
 
+  console.log("");
   console.log(
-    `\n[worker] Downloading: ${sourceUrl}`
+    `[worker] Downloading: ${sourceUrl}`
   );
 
   console.log(
@@ -650,12 +930,6 @@ async function downloadVideo(
       sourceUrl,
       options
     );
-
-    /*
-      youtube-dl-exec returns a child process.
-      Listen to stdout/stderr so progress
-      remains visible in PowerShell.
-    */
 
     if (subprocess.stdout) {
       let buffer = "";
@@ -704,7 +978,6 @@ async function downloadVideo(
     console.log(
       "\n[worker] yt-dlp process completed."
     );
-
   } catch (error) {
     console.error(
       "\n[worker] yt-dlp download error:"
@@ -716,14 +989,6 @@ async function downloadVideo(
 
     throw error;
   }
-
-  /*
-    yt-dlp may leave separate files if the
-    merge fails.
-
-    We only continue when the final output
-    actually exists.
-  */
 
   if (!fs.existsSync(outputPath)) {
     throw new Error(
@@ -744,7 +1009,9 @@ async function downloadVideo(
   }
 
   console.log(
-    `[worker] Download complete: ${(stat.size / 1024 / 1024).toFixed(2)} MB`
+    `[worker] Download complete: ${(stat.size / 1024 / 1024).toFixed(
+      2
+    )} MB`
   );
 }
 
@@ -807,10 +1074,9 @@ async function handleJob(job) {
     console.log(
       `[worker] Project ${projectId} sent to Render successfully.`
     );
-
   } catch (error) {
     const message =
-      getErrorMessage(error);
+      getDetailedNetworkError(error);
 
     console.error(
       `[worker] Job ${projectId} failed: ${message}`
@@ -842,24 +1108,20 @@ async function handleJob(job) {
       console.log(
         `[worker] Failure reported for ${projectId}.`
       );
-
     } catch (failError) {
       console.error(
         "[worker] Failed to report failure:",
-        getErrorMessage(failError)
+        getDetailedNetworkError(
+          failError
+        )
       );
     }
-
   } finally {
     // --------------------------------------------------------
     // CLEANUP
     // --------------------------------------------------------
 
     try {
-      /*
-        Remove final file.
-      */
-
       if (fs.existsSync(outputPath)) {
         fs.unlinkSync(outputPath);
 
@@ -867,11 +1129,6 @@ async function handleJob(job) {
           `[worker] Cleaned up ${outputPath}`
         );
       }
-
-      /*
-        Remove stale yt-dlp temporary files
-        for this project.
-      */
 
       const files =
         fs.readdirSync(
@@ -898,17 +1155,17 @@ async function handleJob(job) {
             console.log(
               `[worker] Cleaned temp file: ${file}`
             );
-
           } catch {
             // Ignore individual cleanup errors.
           }
         }
       }
-
     } catch (cleanupError) {
       console.error(
         "[worker] Cleanup failed:",
-        getErrorMessage(cleanupError)
+        getErrorMessage(
+          cleanupError
+        )
       );
     }
   }
@@ -919,6 +1176,9 @@ async function handleJob(job) {
 // ============================================================
 
 async function main() {
+  validateConfig();
+
+  console.log("");
   console.log(
     "========================================"
   );
@@ -969,6 +1229,27 @@ async function main() {
     "========================================"
   );
 
+  // ==========================================================
+  // STARTUP API TEST
+  // ==========================================================
+
+  const connected =
+    await testApiConnection();
+
+  if (!connected) {
+    console.error(
+      "[worker] Startup API test failed."
+    );
+
+    console.error(
+      "[worker] Worker will continue retrying instead of exiting."
+    );
+  }
+
+  // ==========================================================
+  // POLLING LOOP
+  // ==========================================================
+
   while (true) {
     try {
       const result =
@@ -985,13 +1266,28 @@ async function main() {
         await handleJob(
           result.job
         );
+      } else {
+        console.log(
+          `[worker] No job. Next poll in ${POLL_MS}ms...`
+        );
       }
-
     } catch (error) {
       console.error(
         "[worker] Poll error:",
-        getErrorMessage(error)
+        getDetailedNetworkError(error)
       );
+
+      if (error?.status === 401) {
+        console.error(
+          "[worker] ERROR: Worker token is invalid."
+        );
+      }
+
+      if (error?.status === 503) {
+        console.error(
+          "[worker] ERROR: Worker token is not configured on the server."
+        );
+      }
 
       console.log(
         `[worker] Continuing. Next poll in ${POLL_MS}ms...`
@@ -1009,7 +1305,7 @@ async function main() {
 main().catch((error) => {
   console.error(
     "[worker] Fatal error:",
-    error
+    getDetailedNetworkError(error)
   );
 
   process.exit(1);
