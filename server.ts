@@ -47,15 +47,6 @@ const PORT = Number(process.env.PORT || 3000);
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
-// Production fallback model for temporary 429/5xx/high-demand failures.
-// The same uploaded Gemini file is reused; no second video upload is needed.
-const GEMINI_FALLBACK_MODEL =
-  process.env.GEMINI_FALLBACK_MODEL || "gemini-3.5-flash";
-
-const GEMINI_FALLBACK_RETRIES = Number(
-  process.env.GEMINI_FALLBACK_RETRIES || 2,
-);
-
 // Backend-enforced billing rules.
 // Do not trust frontend values or environment overrides for these limits.
 
@@ -1963,44 +1954,30 @@ async function generateGeminiWithRetry(
 ) {
   let lastError: unknown;
 
-  const primaryAttempts = Math.max(
-    1,
-    GEMINI_GENERATE_RETRIES,
-  );
+  const attempts = Math.max(1, GEMINI_GENERATE_RETRIES);
 
-  // First try the configured primary model.
-  for (
-    let attempt = 1;
-    attempt <= primaryAttempts;
-    attempt++
-  ) {
+  for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
       console.log(
-        `Gemini generateContent attempt ${attempt}/${primaryAttempts} [${GEMINI_MODEL}]`,
+        `Gemini generateContent attempt ${attempt}/${attempts}`,
       );
 
-      return await ai.models.generateContent({
-        ...params,
-        model: GEMINI_MODEL,
-      });
+      return await ai.models.generateContent(params);
     } catch (error: any) {
       lastError = error;
 
       const status = getGeminiErrorStatus(error);
 
       console.error(
-        `Gemini generateContent attempt ${attempt} failed [${GEMINI_MODEL}] (status ${status ?? "unknown"}):`,
+        `Gemini generateContent attempt ${attempt} failed (status ${status ?? "unknown"}):`,
         error?.message || error,
       );
 
-      const retryable = isRetryableGeminiError(error);
-
-      if (!retryable) {
+      if (
+        !isRetryableGeminiError(error) ||
+        attempt >= attempts
+      ) {
         throw error;
-      }
-
-      if (attempt >= primaryAttempts) {
-        break;
       }
 
       const exponentialDelay = Math.min(
@@ -2020,82 +1997,12 @@ async function generateGeminiWithRetry(
       );
 
       console.warn(
-        `Gemini primary model temporarily unavailable${
+        `Gemini temporarily unavailable${
           status ? ` (HTTP ${status})` : ""
         }. Retrying in ${delay}ms...`,
       );
 
       await sleep(delay);
-    }
-  }
-
-  // If the primary model is temporarily overloaded, switch models instead of
-  // failing the user's video job. The uploaded Gemini file/URI is reused.
-  if (
-    GEMINI_FALLBACK_MODEL &&
-    GEMINI_FALLBACK_MODEL !== GEMINI_MODEL
-  ) {
-    console.warn(
-      `Gemini primary model unavailable after ${primaryAttempts} attempt(s). Switching to fallback: ${GEMINI_FALLBACK_MODEL}`,
-    );
-
-    const fallbackAttempts = Math.max(
-      1,
-      GEMINI_FALLBACK_RETRIES,
-    );
-
-    for (
-      let attempt = 1;
-      attempt <= fallbackAttempts;
-      attempt++
-    ) {
-      try {
-        console.log(
-          `Gemini fallback attempt ${attempt}/${fallbackAttempts} [${GEMINI_FALLBACK_MODEL}]`,
-        );
-
-        return await ai.models.generateContent({
-          ...params,
-          model: GEMINI_FALLBACK_MODEL,
-        });
-      } catch (error: any) {
-        lastError = error;
-
-        const status = getGeminiErrorStatus(error);
-
-        console.error(
-          `Gemini fallback attempt ${attempt} failed [${GEMINI_FALLBACK_MODEL}] (status ${status ?? "unknown"}):`,
-          error?.message || error,
-        );
-
-        if (
-          !isRetryableGeminiError(error) ||
-          attempt >= fallbackAttempts
-        ) {
-          throw error;
-        }
-
-        const exponentialDelay = Math.min(
-          GEMINI_RETRY_BASE_MS *
-            Math.pow(2, attempt - 1),
-          GEMINI_RETRY_MAX_MS,
-        );
-
-        const jitter = Math.floor(
-          Math.random() * 1000,
-        );
-
-        const delay = Math.min(
-          exponentialDelay + jitter,
-          GEMINI_RETRY_MAX_MS,
-        );
-
-        console.warn(
-          `Gemini fallback temporarily unavailable (HTTP ${status ?? "unknown"}). Retrying in ${delay}ms...`,
-        );
-
-        await sleep(delay);
-      }
     }
   }
 
@@ -3132,6 +3039,7 @@ and never return an empty string for it.
         ]),
       config: {
         responseMimeType: "application/json",
+        temperature: 0.2,
       },
     });
 
@@ -4734,9 +4642,6 @@ app.get(
 
       geminiModel:
         GEMINI_MODEL,
-
-      geminiFallbackModel:
-        GEMINI_FALLBACK_MODEL,
 
       ffmpeg: true,
 
@@ -7122,9 +7027,6 @@ app.listen(
     );
     console.log(
       `Gemini model: ${GEMINI_MODEL}`,
-    );
-    console.log(
-      `Gemini fallback model: ${GEMINI_FALLBACK_MODEL}`,
     );
 
     console.log(
