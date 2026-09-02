@@ -4061,6 +4061,250 @@ app.get(
 );
 
 /* =========================================================
+   PREFERENCES
+========================================================= */
+
+app.get("/api/auth/preferences", async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req);
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("preferences")
+      .eq("id", user.id)
+      .single();
+
+    if (error) throw error;
+
+    return res.json({
+      preferences: data?.preferences || {
+        email_notifications: true,
+        marketing_emails: false,
+        language: "English",
+        appearance: "dark",
+      },
+    });
+  } catch (error: any) {
+    if (error?.message === "UNAUTHORIZED") {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+
+    return res.status(500).json({
+      error: error?.message || "Failed to fetch preferences.",
+    });
+  }
+});
+
+app.patch("/api/auth/preferences", async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req);
+
+    const allowedKeys = [
+      "email_notifications",
+      "marketing_emails",
+      "language",
+      "appearance",
+    ];
+
+    const updates = req.body || {};
+    const sanitized: Record<string, any> = {};
+
+    for (const key of allowedKeys) {
+      if (key in updates) sanitized[key] = updates[key];
+    }
+
+    if (Object.keys(sanitized).length === 0) {
+      return res.status(400).json({
+        error: "No valid preference fields provided.",
+      });
+    }
+
+    const { data: current, error: fetchError } = await supabase
+      .from("profiles")
+      .select("preferences")
+      .eq("id", user.id)
+      .single();
+
+    if (fetchError) throw fetchError;
+
+    const merged = {
+      ...(current?.preferences || {}),
+      ...sanitized,
+    };
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .update({ preferences: merged })
+      .eq("id", user.id)
+      .select("preferences")
+      .single();
+
+    if (error) throw error;
+
+    return res.json({ preferences: data.preferences });
+  } catch (error: any) {
+    if (error?.message === "UNAUTHORIZED") {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+
+    return res.status(500).json({
+      error: error?.message || "Failed to update preferences.",
+    });
+  }
+});
+
+/* =========================================================
+   ACCOUNT DATA EXPORT
+========================================================= */
+
+app.get("/api/auth/export", async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req);
+
+    const [profileRes, projectsRes, usageRes, notificationsRes] =
+      await Promise.all([
+        supabase.from("profiles").select("*").eq("id", user.id).single(),
+        supabase.from("projects").select("*").eq("user_id", user.id),
+        supabase.from("usage_logs").select("*").eq("user_id", user.id),
+        supabase.from("notifications").select("*").eq("user_id", user.id),
+      ]);
+
+    if (profileRes.error) throw profileRes.error;
+
+    const projectIds = (projectsRes.data || []).map((p: any) => p.id);
+
+    let clips: any[] = [];
+
+    if (projectIds.length > 0) {
+      const { data: clipsData, error: clipsError } = await supabase
+        .from("clips")
+        .select("*")
+        .in("project_id", projectIds);
+
+      if (clipsError) throw clipsError;
+
+      clips = clipsData || [];
+    }
+
+    return res.json({
+      exported_at: new Date().toISOString(),
+      profile: profileRes.data,
+      projects: projectsRes.data || [],
+      clips,
+      usage_logs: usageRes.data || [],
+      notifications: notificationsRes.data || [],
+    });
+  } catch (error: any) {
+    if (error?.message === "UNAUTHORIZED") {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+
+    return res.status(500).json({
+      error: error?.message || "Failed to export account data.",
+    });
+  }
+});
+
+/* =========================================================
+   API KEY
+========================================================= */
+
+app.post("/api/auth/api-key", async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req);
+
+    // Shown to the user once — only the hash is stored.
+    const rawKey = `lc_${crypto.randomBytes(24).toString("hex")}`;
+    const keyHash = crypto
+      .createHash("sha256")
+      .update(rawKey)
+      .digest("hex");
+    const keyPrefix = rawKey.slice(0, 10);
+
+    const { error } = await supabase.from("api_keys").insert({
+      user_id: user.id,
+      key_hash: keyHash,
+      key_prefix: keyPrefix,
+    });
+
+    if (error) throw error;
+
+    return res.json({ apiKey: rawKey });
+  } catch (error: any) {
+    if (error?.message === "UNAUTHORIZED") {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+
+    return res.status(500).json({
+      error: error?.message || "Failed to generate API key.",
+    });
+  }
+});
+
+/* =========================================================
+   DELETE ACCOUNT
+========================================================= */
+
+app.delete("/api/auth/account", async (req, res) => {
+  try {
+    const user = await getAuthenticatedUser(req);
+    const userId = user.id;
+
+    const { data: projects } = await supabase
+      .from("projects")
+      .select("id")
+      .eq("user_id", userId);
+
+    const projectIds = (projects || []).map((p: any) => p.id);
+
+    if (projectIds.length > 0) {
+      await supabase.from("clips").delete().in("project_id", projectIds);
+    }
+
+    await supabase.from("api_keys").delete().eq("user_id", userId);
+    await supabase.from("usage_logs").delete().eq("user_id", userId);
+    await supabase.from("notifications").delete().eq("user_id", userId);
+    await supabase.from("social_connections").delete().eq("user_id", userId);
+    await supabase.from("subscriptions").delete().eq("user_id", userId);
+    await supabase.from("projects").delete().eq("user_id", userId);
+    await supabase.from("profiles").delete().eq("id", userId);
+
+    const { error: authError } =
+      await supabase.auth.admin.deleteUser(userId);
+
+    if (authError) {
+      console.error("Failed to delete auth user:", authError);
+
+      return res.status(500).json({
+        error:
+          "Account data deleted but auth cleanup failed. Contact support.",
+      });
+    }
+
+    // Best-effort cleanup of any locally stored media for this user's
+    // projects; failures here should never block account deletion.
+    for (const projectId of projectIds) {
+      try {
+        fs.rmSync(
+          path.join(mediaDir, safeSegment(projectId)),
+          { recursive: true, force: true },
+        );
+      } catch {}
+    }
+
+    return res.json({ success: true });
+  } catch (error: any) {
+    if (error?.message === "UNAUTHORIZED") {
+      return res.status(401).json({ error: "Unauthorized." });
+    }
+
+    return res.status(500).json({
+      error: error?.message || "Failed to delete account.",
+    });
+  }
+});
+
+/* =========================================================
    USAGE
 ========================================================= */
 
