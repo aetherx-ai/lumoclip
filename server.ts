@@ -46,6 +46,34 @@ const PORT = Number(process.env.PORT || 3000);
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
+/* =========================================================
+   LOW-MEMORY RUNTIME PROFILE
+
+   Render's free web service in the current deployment is limited
+   to 512 MB RAM. Heavy local Whisper inference can exceed that
+   limit before a request even starts.
+
+   The server therefore uses a conservative Render profile:
+   - local Whisper is OFF by default on Render
+   - only 1 clip is encoded at a time
+   - 1 FFmpeg thread per clip
+   - fewer YouTube download fragments
+
+   You can explicitly override Whisper with
+   ALLOW_RENDER_WHISPER=true, but this is NOT recommended on a
+   512 MB instance.
+========================================================= */
+
+const IS_RENDER_RUNTIME =
+  process.env.RENDER === "true" ||
+  Boolean(process.env.RENDER_SERVICE_ID);
+
+const ALLOW_RENDER_WHISPER =
+  process.env.ALLOW_RENDER_WHISPER === "true";
+
+const LOW_MEMORY_RUNTIME =
+  IS_RENDER_RUNTIME && !ALLOW_RENDER_WHISPER;
+
 // Backend-enforced billing rules.
 // Do not trust frontend values or environment overrides for these limits.
 
@@ -73,8 +101,15 @@ const YOUTUBE_MAX_HEIGHT = Number(
   process.env.YOUTUBE_MAX_HEIGHT || 480,
 );
 
-const YOUTUBE_CONCURRENT_FRAGMENTS = Number(
-  process.env.YOUTUBE_CONCURRENT_FRAGMENTS || 4,
+const YOUTUBE_CONCURRENT_FRAGMENTS = Math.max(
+  1,
+  Math.min(
+    Number(
+      process.env.YOUTUBE_CONCURRENT_FRAGMENTS ||
+        (LOW_MEMORY_RUNTIME ? 2 : 4),
+    ),
+    LOW_MEMORY_RUNTIME ? 2 : 8,
+  ),
 );
 
 const YOUTUBE_RETRIES = Number(
@@ -141,8 +176,11 @@ const CPU_COUNT = Math.max(1, os.cpus().length);
 const CLIP_CONCURRENCY = Math.max(
   1,
   Math.min(
-    Number(process.env.CLIP_CONCURRENCY || 2),
-    4,
+    Number(
+      process.env.CLIP_CONCURRENCY ||
+        (LOW_MEMORY_RUNTIME ? 1 : 2),
+    ),
+    LOW_MEMORY_RUNTIME ? 1 : 4,
   ),
 );
 
@@ -151,9 +189,13 @@ const FFMPEG_THREADS_PER_CLIP = Math.max(
   Math.min(
     Number(
       process.env.FFMPEG_THREADS_PER_CLIP ||
-        (CPU_COUNT >= 4 ? 2 : 1),
+        (LOW_MEMORY_RUNTIME
+          ? 1
+          : CPU_COUNT >= 4
+            ? 2
+            : 1),
     ),
-    4,
+    LOW_MEMORY_RUNTIME ? 1 : 4,
   ),
 );
 
@@ -1509,20 +1551,25 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
    transcript timing so caption generation never hard-fails.
 ========================================================= */
 
-const WHISPER_CAPTIONS_ENABLED =
-  process.env.WHISPER_CAPTIONS_ENABLED !== "false";
+const WHISPER_ENV = process.env.WHISPER_CAPTIONS_ENABLED?.trim();
 
-// "Xenova/whisper-base" is multilingual and a reasonable CPU speed/
-// accuracy tradeoff. Set WHISPER_MODEL to "Xenova/whisper-tiny" for
-// faster/lower-RAM, or "Xenova/whisper-small" for higher accuracy if
-// your server has the CPU/RAM to spare.
+const WHISPER_CAPTIONS_ENABLED =
+  LOW_MEMORY_RUNTIME
+    ? false
+    : WHISPER_ENV !== "false";
+
+// "Xenova/whisper-base" is multilingual and accurate, but it is
+// too heavy for Render's 512 MB runtime. Keep it available for
+// local/high-memory deployments. On Render, Whisper is disabled
+// unless ALLOW_RENDER_WHISPER=true.
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-base";
 
-// Start Whisper loading in the background when the server starts.
-// This does not block Express startup, and processing requests share
-// the same promise while the model is downloading/loading.
+// Never preload Whisper on the 512 MB Render runtime. Loading it at
+// boot was the direct cause of the repeated OOM/restart cycle seen
+// in production. Local/high-memory deployments can still opt in.
 const WHISPER_PRELOAD =
+  !LOW_MEMORY_RUNTIME &&
   process.env.WHISPER_PRELOAD !== "false";
 
 let whisperTranscriberPromise: Promise<any> | null = null;
@@ -1563,6 +1610,11 @@ async function getWhisperTranscriber(): Promise<any> {
 
 function warmupWhisper(): void {
   if (!WHISPER_CAPTIONS_ENABLED || !WHISPER_PRELOAD) {
+    if (LOW_MEMORY_RUNTIME) {
+      console.log(
+        "Whisper: disabled on low-memory Render runtime; using Gemini transcript timing.",
+      );
+    }
     return;
   }
 
@@ -1693,13 +1745,19 @@ async function transcribeWithWhisper(
     return null;
   }
 
+  if (LOW_MEMORY_RUNTIME) {
+    console.warn(
+      "Whisper: skipped on low-memory Render runtime; using Gemini transcript timing.",
+    );
+    return null;
+  }
+
   let audioPath = "";
 
   try {
-    // Start model loading immediately. If the server warm-up is already
-    // running, this reuses the same promise. Audio extraction happens in
-    // parallel with model loading, reducing first-job waiting time.
-    const transcriberPromise = getWhisperTranscriber();
+    // Load the model and audio sequentially to avoid a large peak-memory
+    // spike. On the Render low-memory profile this function returns above.
+    const transcriber = await getWhisperTranscriber();
 
     console.log(
       "Whisper: extracting audio for local transcription...",
@@ -1708,7 +1766,6 @@ async function transcribeWithWhisper(
     audioPath = await extractAudioForWhisper(videoPath);
 
     const audioData = await loadWavAsFloat32(audioPath);
-    const transcriber = await transcriberPromise;
 
     console.log(
       "Whisper: transcribing audio locally (no API cost)...",
@@ -6943,7 +7000,8 @@ app.listen(
   PORT,
   "0.0.0.0",
   () => {
-    // Warm Whisper in the background. Server startup remains immediate.
+    // IMPORTANT: Render 512 MB must never preload Whisper.
+    // warmupWhisper() is retained for local/high-memory deployments.
     warmupWhisper();
 
     console.log(
@@ -6996,6 +7054,16 @@ app.listen(
     );
     console.log(
       `FFmpeg tuning: preset=${FFMPEG_PRESET}, crf=${FFMPEG_CRF}, threads/clip=${FFMPEG_THREADS_PER_CLIP}, detected CPUs=${CPU_COUNT}`,
+    );
+
+    console.log(
+      `Runtime profile: ${LOW_MEMORY_RUNTIME ? "LOW-MEMORY / RENDER 512MB" : "STANDARD"}`,
+    );
+    console.log(
+      `Whisper: ${WHISPER_CAPTIONS_ENABLED ? "ENABLED" : "DISABLED"}`,
+    );
+    console.log(
+      `Whisper preload: ${WHISPER_PRELOAD ? "ENABLED" : "DISABLED"}`,
     );
 
     console.log(
