@@ -11,10 +11,22 @@ import {
   Youtube,
 } from "lucide-react";
 import { supabase } from "../lib/supabase.js";
-import { Clip } from "../types.js";
+
+/**
+ * A PublishTarget is anything we can push to YouTube: either a single
+ * generated short clip, or the full captioned video for a project.
+ * `kind` tells the backend which record to look up (`clipId` vs
+ * `projectId`) when it goes to fetch the actual media file to upload.
+ */
+export interface PublishTarget {
+  id: string;
+  title: string;
+  caption?: string;
+  kind: "clip" | "full_video";
+}
 
 interface YouTubePublishModalProps {
-  clip: Clip | null;
+  target: PublishTarget | null;
   open: boolean;
   onClose: () => void;
 }
@@ -41,20 +53,12 @@ interface YouTubeUploadResponse {
   error?: string;
 }
 
-function clipTitle(clip: Clip) {
-  return String(
-    clip.title ||
-      (clip as any).name ||
-      "LumoClip Short",
-  ).trim();
+function targetTitle(target: PublishTarget) {
+  return String(target.title || "LumoClip Short").trim();
 }
 
-function clipCaption(clip: Clip) {
-  return String(
-    (clip as any).caption ||
-      (clip as any).description ||
-      "",
-  ).trim();
+function targetCaption(target: PublishTarget) {
+  return String(target.caption || "").trim();
 }
 
 function normalizeTags(value: string): string[] {
@@ -67,8 +71,8 @@ function normalizeTags(value: string): string[] {
     .slice(0, 30);
 }
 
-function defaultDescription(clip: Clip) {
-  const caption = clipCaption(clip);
+function defaultDescription(target: PublishTarget) {
+  const caption = targetCaption(target);
 
   if (caption) {
     return `${caption}\n\nCreated with LumoClip AI.\n#shorts #lumoClip`;
@@ -83,7 +87,7 @@ function defaultTags() {
 
 export const YouTubePublishModal: React.FC<
   YouTubePublishModalProps
-> = ({ clip, open, onClose }) => {
+> = ({ target, open, onClose }) => {
   const [connected, setConnected] = useState(false);
   const [accountName, setAccountName] = useState("");
   const [accountAvatar, setAccountAvatar] = useState("");
@@ -181,11 +185,11 @@ export const YouTubePublishModal: React.FC<
   };
 
   useEffect(() => {
-    if (!open || !clip) return;
+    if (!open || !target) return;
 
-    setTitle(clipTitle(clip).slice(0, 100));
+    setTitle(targetTitle(target).slice(0, 100));
     setDescription(
-      defaultDescription(clip).slice(0, 5000),
+      defaultDescription(target).slice(0, 5000),
     );
     setTags(defaultTags());
     setPrivacyStatus("public");
@@ -196,7 +200,7 @@ export const YouTubePublishModal: React.FC<
     setAccountAvatar("");
 
     void checkYouTubeStatus();
-  }, [open, clip?.id]);
+  }, [open, target?.id, target?.kind]);
 
   const connectYouTube = async () => {
     setConnecting(true);
@@ -234,8 +238,8 @@ export const YouTubePublishModal: React.FC<
   };
 
   const publishToYouTube = async () => {
-    if (!clip?.id) {
-      setError("Clip ID is missing.");
+    if (!target?.id) {
+      setError("Nothing selected to publish.");
       return;
     }
 
@@ -256,21 +260,31 @@ export const YouTubePublishModal: React.FC<
     setPublishedUrl("");
 
     try {
-      const response = await apiFetch(
-        "/api/social/youtube/upload",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            clipId: clip.id,
-            title: cleanTitle.slice(0, 100),
-            description: description
-              .trim()
-              .slice(0, 5000),
-            tags: normalizeTags(tags),
-            privacyStatus,
-          }),
-        },
-      );
+      // The backend exposes two separate endpoints: one for a single
+      // generated clip (clipId) and one for the full captioned video
+      // (projectId). Route to the right one based on the target kind.
+      const endpoint =
+        target.kind === "clip"
+          ? "/api/social/youtube/upload"
+          : "/api/social/youtube/upload-project";
+
+      const body: Record<string, unknown> = {
+        title: cleanTitle.slice(0, 100),
+        description: description.trim().slice(0, 5000),
+        tags: normalizeTags(tags),
+        privacyStatus,
+      };
+
+      if (target.kind === "clip") {
+        body.clipId = target.id;
+      } else {
+        body.projectId = target.id;
+      }
+
+      const response = await apiFetch(endpoint, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
 
       const data =
         (await response.json()) as YouTubeUploadResponse;
@@ -278,7 +292,7 @@ export const YouTubePublishModal: React.FC<
       if (!response.ok) {
         throw new Error(
           data.error ||
-            "Failed to publish clip to YouTube.",
+            "Failed to publish to YouTube.",
         );
       }
 
@@ -293,14 +307,16 @@ export const YouTubePublishModal: React.FC<
       console.error("YouTube publish failed:", err);
       setError(
         err?.message ||
-          "Failed to publish clip to YouTube.",
+          "Failed to publish to YouTube.",
       );
     } finally {
       setPublishing(false);
     }
   };
 
-  if (!open || !clip) return null;
+  if (!open || !target) return null;
+
+  const isFullVideo = target.kind === "full_video";
 
   return (
     <div
@@ -327,7 +343,9 @@ export const YouTubePublishModal: React.FC<
                 Publish
               </p>
               <h2 className="mt-1 truncate text-base font-semibold text-white">
-                Publish to YouTube
+                {isFullVideo
+                  ? "Publish captioned video to YouTube"
+                  : "Publish clip to YouTube"}
               </h2>
             </div>
           </div>
@@ -518,10 +536,11 @@ export const YouTubePublishModal: React.FC<
 
               <div className="rounded-xl border border-white/[0.05] bg-white/[0.015] px-3.5 py-3">
                 <p className="text-[9px] leading-5 text-zinc-600">
-                  LumoClip uploads the generated clip directly from the
-                  server to your connected YouTube channel. Your original
-                  clip file does not need to be uploaded again from the
-                  browser.
+                  {isFullVideo
+                    ? "LumoClip uploads the full captioned video directly from the server to your connected YouTube channel."
+                    : "LumoClip uploads the generated clip directly from the server to your connected YouTube channel."}{" "}
+                  Your original file does not need to be uploaded again from
+                  the browser.
                 </p>
               </div>
 
@@ -568,7 +587,7 @@ export const YouTubePublishModal: React.FC<
                     Published successfully
                   </p>
                   <h3 className="mt-1 text-base font-semibold text-white">
-                    Your clip is on YouTube
+                    Your video is on YouTube
                   </h3>
                 </div>
               </div>

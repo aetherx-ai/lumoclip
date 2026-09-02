@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 
 import { Project, Clip } from "../types.js";
+import { PublishTarget } from "./YouTubePublishModal.js";
 
 interface ProjectDetailViewProps {
   project: Project;
@@ -817,7 +818,8 @@ const Pipeline: React.FC<{
 const ClipCard: React.FC<{
   clip: Clip;
   index: number;
-}> = ({ clip, index }) => {
+  onPublish: (clip: Clip) => void;
+}> = ({ clip, index, onPublish }) => {
   const [showReason, setShowReason] =
     useState(false);
 
@@ -1046,14 +1048,23 @@ const ClipCard: React.FC<{
         <div className="mt-4 flex gap-2 border-t border-white/[0.05] pt-3">
           {videoUrl ? (
             <>
+              <button
+                type="button"
+                onClick={() => onPublish(clip)}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-red-500 px-3 py-2.5 text-[9px] font-bold text-white transition hover:bg-red-400"
+              >
+                <Youtube className="h-3.5 w-3.5" />
+                Publish
+              </button>
+
               <a
                 href={videoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-[9px] font-bold text-black transition hover:bg-zinc-200"
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
+                title="Export"
               >
                 <Download className="h-3.5 w-3.5" />
-                Export
               </a>
 
               <a
@@ -1085,9 +1096,11 @@ const ClipCard: React.FC<{
 const ClipsSection: React.FC<{
   clips: Clip[];
   processing?: boolean;
+  onPublishClip: (clip: Clip) => void;
 }> = ({
   clips,
   processing = false,
+  onPublishClip,
 }) => {
   const [sort, setSort] =
     useState<"score" | "newest">(
@@ -1188,6 +1201,7 @@ const ClipsSection: React.FC<{
                 key={clip.id}
                 clip={clip}
                 index={index}
+                onPublish={onPublishClip}
               />
             ),
           )}
@@ -1494,8 +1508,32 @@ export const ProjectDetailView: React.FC<
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
-  const [showYouTubePublish, setShowYouTubePublish] =
-    useState(false);
+  // Tracks what we're publishing: a specific clip, the full captioned
+  // video, or nothing (null = modal closed).
+  const [publishTarget, setPublishTarget] =
+    useState<PublishTarget | null>(null);
+
+  const clipToPublishTarget = (
+    clip: Clip,
+  ): PublishTarget => ({
+    id: String(clip.id),
+    title: getClipTitle(clip),
+    caption: (clip as any).caption || "",
+    kind: "clip",
+  });
+
+  const projectToPublishTarget = (
+    proj: Project,
+  ): PublishTarget => ({
+    id: String(proj.id),
+    title: proj.name || "LumoClip Video",
+    caption:
+      (proj as any).ai_summary ||
+      (proj as any).summary ||
+      (proj as any).description ||
+      "",
+    kind: "full_video",
+  });
 
   const safeClips = Array.isArray(clips)
     ? clips
@@ -1666,6 +1704,9 @@ export const ProjectDetailView: React.FC<
                 <ClipsSection
                   clips={safeClips}
                   processing
+                  onPublishClip={(clip) =>
+                    setPublishTarget(clipToPublishTarget(clip))
+                  }
                 />
               </>
             )}
@@ -1734,6 +1775,9 @@ export const ProjectDetailView: React.FC<
               safeClips.length > 0 && (
                 <ClipsSection
                   clips={safeClips}
+                  onPublishClip={(clip) =>
+                    setPublishTarget(clipToPublishTarget(clip))
+                  }
                 />
               )}
           </>
@@ -1775,7 +1819,13 @@ export const ProjectDetailView: React.FC<
               <>
                 <FullCaptionedVideoResult
                   project={project}
-                  onPublish={() => setShowYouTubePublish(true)}
+                  onPublish={() =>
+                    setPublishTarget(
+                      projectToPublishTarget(
+                        project,
+                      ),
+                    )
+                  }
                 />
 
                 <div className="mt-4">
@@ -1818,6 +1868,9 @@ export const ProjectDetailView: React.FC<
 
                 <ClipsSection
                   clips={safeClips}
+                  onPublishClip={(clip) =>
+                    setPublishTarget(clipToPublishTarget(clip))
+                  }
                 />
               </>
             )}
@@ -1870,13 +1923,13 @@ export const ProjectDetailView: React.FC<
             </>
           )}
 
-        {showYouTubePublish && (
-          <YouTubePublishModal
-            clip={null}
-            open={showYouTubePublish}
-            onClose={() => setShowYouTubePublish(false)}
-          />
-        )}
+        <YouTubePublishModal
+          target={publishTarget}
+          open={publishTarget !== null}
+          onClose={() =>
+            setPublishTarget(null)
+          }
+        />
 
         {/* =====================================================
             FOOTER
