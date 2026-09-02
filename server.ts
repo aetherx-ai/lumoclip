@@ -1487,6 +1487,277 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 }
 
 /* =========================================================
+   WORD-LEVEL CAPTION TIMING (self-hosted Whisper, no API cost)
+
+   Gemini estimates transcript timing by "watching" the video, which
+   gets noticeably less accurate the faster someone talks and can
+   occasionally skip chunks of speech entirely — that's the root
+   cause of captions drifting out of sync or sometimes not showing
+   up at all.
+
+   To fix this without paying for a hosted STT API, we extract the
+   audio and run it through a Whisper model locally via
+   @huggingface/transformers (ONNX runtime, CPU-only, no external
+   API calls, no per-request cost — only your own compute). This
+   gives real per-word timestamps derived from the actual audio
+   waveform, independent of talking speed.
+
+   Gemini is still used for everything else (clip selection, the
+   social caption text) — only the caption TIMING is replaced when
+   Whisper succeeds. If Whisper fails for any reason (model not
+   installed yet, out of memory, etc.) we fall back to Gemini's own
+   transcript timing so caption generation never hard-fails.
+========================================================= */
+
+const WHISPER_CAPTIONS_ENABLED =
+  process.env.WHISPER_CAPTIONS_ENABLED !== "false";
+
+// "Xenova/whisper-base" is multilingual and a reasonable CPU speed/
+// accuracy tradeoff. Set WHISPER_MODEL to "Xenova/whisper-tiny" for
+// faster/lower-RAM, or "Xenova/whisper-small" for higher accuracy if
+// your server has the CPU/RAM to spare.
+const WHISPER_MODEL =
+  process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-base";
+
+let whisperTranscriberPromise: Promise<any> | null = null;
+
+// Lazily loads (and caches) the local Whisper pipeline. The first
+// call downloads + caches the ONNX model weights, which can take a
+// while — subsequent calls reuse the same in-memory pipeline.
+async function getWhisperTranscriber(): Promise<any> {
+  if (!whisperTranscriberPromise) {
+    whisperTranscriberPromise = (async () => {
+      // Dynamic import so a missing/not-yet-installed dependency
+      // can never crash the whole server at boot — it just makes
+      // Whisper transcription unavailable for this run.
+      const { pipeline } = await import("@huggingface/transformers");
+
+      console.log(
+        `Whisper: loading local model "${WHISPER_MODEL}" ` +
+          "(first run downloads + caches it, this can take a while)...",
+      );
+
+      const transcriber = await pipeline(
+        "automatic-speech-recognition",
+        WHISPER_MODEL,
+      );
+
+      console.log("Whisper: model ready.");
+
+      return transcriber;
+    })().catch((error) => {
+      // Reset so a later call can retry instead of being stuck on a
+      // permanently-rejected promise.
+      whisperTranscriberPromise = null;
+      throw error;
+    });
+  }
+
+  return whisperTranscriberPromise;
+}
+
+// Extracts a 16kHz mono WAV from the source video — the format
+// Whisper expects — using the same ffmpeg binary already used
+// elsewhere in this file.
+async function extractAudioForWhisper(
+  videoPath: string,
+): Promise<string> {
+  const outPath = path.join(
+    tempDir,
+    `${generateId()}-whisper.wav`,
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(videoPath)
+      .noVideo()
+      .audioChannels(1)
+      .audioFrequency(16000)
+      .format("wav")
+      .on("error", (error) => reject(error))
+      .on("end", () => resolve())
+      .save(outPath);
+  });
+
+  return outPath;
+}
+
+// Reads a WAV file into the Float32Array format the Whisper pipeline
+// expects, downmixing to mono if needed. Mirrors the official
+// transformers.js Node.js audio guide.
+async function loadWavAsFloat32(
+  wavPath: string,
+): Promise<Float32Array> {
+  const wavefileModule: any = await import("wavefile");
+  const WaveFile =
+    wavefileModule.WaveFile || wavefileModule.default?.WaveFile;
+
+  const buffer = fs.readFileSync(wavPath);
+  const wav = new WaveFile(buffer);
+
+  wav.toBitDepth("32f");
+  wav.toSampleRate(16000);
+
+  let audioData: any = wav.getSamples();
+
+  if (Array.isArray(audioData)) {
+    if (audioData.length > 1) {
+      const SCALING_FACTOR = Math.sqrt(2);
+
+      for (let i = 0; i < audioData[0].length; i++) {
+        audioData[0][i] =
+          (SCALING_FACTOR *
+            (audioData[0][i] + audioData[1][i])) /
+          2;
+      }
+    }
+
+    audioData = audioData[0];
+  }
+
+  return audioData as Float32Array;
+}
+
+// Groups Whisper's flat per-word output back into the existing
+// 2-4-word TranscriptSegment shape used everywhere else (ClipCard
+// UI, saveTranscript, clip-relative slicing) so nothing downstream
+// needs to change.
+function chunkWhisperWordsIntoSegments(
+  words: TranscriptWord[],
+): TranscriptSegment[] {
+  const WORDS_PER_CHUNK = 3;
+  const segments: TranscriptSegment[] = [];
+
+  for (
+    let i = 0;
+    i < words.length;
+    i += WORDS_PER_CHUNK
+  ) {
+    const chunk = words.slice(i, i + WORDS_PER_CHUNK);
+
+    if (!chunk.length) continue;
+
+    segments.push({
+      start: chunk[0].start,
+      end: chunk[chunk.length - 1].end,
+      text: chunk
+        .map((w) => w.word)
+        .join(" ")
+        .trim(),
+      words: chunk,
+    });
+  }
+
+  return segments;
+}
+
+// Runs the full local pipeline: extract audio -> decode -> transcribe
+// with real per-word timestamps -> reshape into our transcript
+// format. Returns null (never throws) if anything goes wrong, so the
+// caller can safely fall back to Gemini's own transcript.
+async function transcribeWithWhisper(
+  videoPath: string,
+  duration: number,
+): Promise<TranscriptSegment[] | null> {
+  if (!WHISPER_CAPTIONS_ENABLED) {
+    return null;
+  }
+
+  let audioPath = "";
+
+  try {
+    console.log(
+      "Whisper: extracting audio for local transcription...",
+    );
+
+    audioPath = await extractAudioForWhisper(videoPath);
+
+    const audioData = await loadWavAsFloat32(audioPath);
+    const transcriber = await getWhisperTranscriber();
+
+    console.log(
+      "Whisper: transcribing audio locally (no API cost)...",
+    );
+
+    const output: any = await transcriber(audioData, {
+      return_timestamps: "word",
+      chunk_length_s: 30,
+      stride_length_s: 5,
+    });
+
+    const chunks: any[] = Array.isArray(output?.chunks)
+      ? output.chunks
+      : [];
+
+    const words: TranscriptWord[] = chunks
+      .map((c) => {
+        const word = String(c?.text ?? "").trim();
+        const ts = Array.isArray(c?.timestamp)
+          ? c.timestamp
+          : [null, null];
+
+        const start = Number(ts[0]);
+
+        // Whisper occasionally leaves the last word's end timestamp
+        // null when it runs to the edge of a chunk — fall back to a
+        // short default duration instead of dropping the word.
+        const end = Number.isFinite(Number(ts[1]))
+          ? Number(ts[1])
+          : start + 0.3;
+
+        return { word, start, end };
+      })
+      .filter(
+        (w) =>
+          w.word.length > 0 &&
+          Number.isFinite(w.start) &&
+          Number.isFinite(w.end) &&
+          w.end > w.start &&
+          w.start >= 0 &&
+          w.start < duration,
+      )
+      .map((w) => ({
+        word: w.word,
+        start: Math.max(0, Math.min(duration, w.start)),
+        end: Math.max(0, Math.min(duration, w.end)),
+      }));
+
+    if (!words.length) {
+      console.warn(
+        "Whisper: transcription produced no usable words — " +
+          "falling back to Gemini's own transcript timing.",
+      );
+      return null;
+    }
+
+    const segments =
+      chunkWhisperWordsIntoSegments(words);
+
+    console.log(
+      `Whisper: produced ${words.length} word-level timestamp(s) ` +
+        `across ${segments.length} caption segment(s).`,
+    );
+
+    return segments;
+  } catch (error) {
+    console.error(
+      "Whisper: local transcription failed — falling back to " +
+        "Gemini's own transcript timing:",
+      error instanceof Error ? error.message : error,
+    );
+
+    return null;
+  } finally {
+    if (audioPath) {
+      try {
+        fs.unlinkSync(audioPath);
+      } catch {
+        // best-effort cleanup only
+      }
+    }
+  }
+}
+
+/* =========================================================
    MULTER
 ========================================================= */
 
@@ -3498,6 +3769,38 @@ async function processVideo(
             Number(a?.score || 0),
         )
         .slice(0, MAX_CLIPS);
+    }
+
+    // ---------------------------------------------------------
+    // Caption timing: prefer real per-word timestamps from a local
+    // Whisper pass over Gemini's own (approximate, video-based)
+    // transcript timing. Gemini's clips/captions text are untouched
+    // either way — only the timing used for burned-in captions
+    // changes here.
+    // ---------------------------------------------------------
+
+    await updateProject(
+      projectId,
+      42,
+      "Transcribing audio for accurate caption sync",
+    );
+
+    const whisperTranscript = await transcribeWithWhisper(
+      sourcePath,
+      duration,
+    );
+
+    if (whisperTranscript && whisperTranscript.length) {
+      console.log(
+        `Using local Whisper transcript for caption timing ` +
+          `(${whisperTranscript.length} segment(s)) instead of Gemini's estimate.`,
+      );
+
+      analysis.transcript = whisperTranscript;
+    } else {
+      console.log(
+        "Whisper transcript unavailable — using Gemini's own transcript timing for captions.",
+      );
     }
 
     await saveTranscript(
