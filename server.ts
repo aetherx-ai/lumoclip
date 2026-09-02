@@ -46,34 +46,6 @@ const PORT = Number(process.env.PORT || 3000);
 const GEMINI_MODEL =
   process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
-/* =========================================================
-   LOW-MEMORY RUNTIME PROFILE
-
-   Render's free web service in the current deployment is limited
-   to 512 MB RAM. Heavy local Whisper inference can exceed that
-   limit before a request even starts.
-
-   The server therefore uses a conservative Render profile:
-   - local Whisper is OFF by default on Render
-   - only 1 clip is encoded at a time
-   - 1 FFmpeg thread per clip
-   - fewer YouTube download fragments
-
-   You can explicitly override Whisper with
-   ALLOW_RENDER_WHISPER=true, but this is NOT recommended on a
-   512 MB instance.
-========================================================= */
-
-const IS_RENDER_RUNTIME =
-  process.env.RENDER === "true" ||
-  Boolean(process.env.RENDER_SERVICE_ID);
-
-const ALLOW_RENDER_WHISPER =
-  process.env.ALLOW_RENDER_WHISPER === "true";
-
-const LOW_MEMORY_RUNTIME =
-  IS_RENDER_RUNTIME && !ALLOW_RENDER_WHISPER;
-
 // Backend-enforced billing rules.
 // Do not trust frontend values or environment overrides for these limits.
 
@@ -101,15 +73,8 @@ const YOUTUBE_MAX_HEIGHT = Number(
   process.env.YOUTUBE_MAX_HEIGHT || 480,
 );
 
-const YOUTUBE_CONCURRENT_FRAGMENTS = Math.max(
-  1,
-  Math.min(
-    Number(
-      process.env.YOUTUBE_CONCURRENT_FRAGMENTS ||
-        (LOW_MEMORY_RUNTIME ? 2 : 4),
-    ),
-    LOW_MEMORY_RUNTIME ? 2 : 8,
-  ),
+const YOUTUBE_CONCURRENT_FRAGMENTS = Number(
+  process.env.YOUTUBE_CONCURRENT_FRAGMENTS || 4,
 );
 
 const YOUTUBE_RETRIES = Number(
@@ -176,11 +141,8 @@ const CPU_COUNT = Math.max(1, os.cpus().length);
 const CLIP_CONCURRENCY = Math.max(
   1,
   Math.min(
-    Number(
-      process.env.CLIP_CONCURRENCY ||
-        (LOW_MEMORY_RUNTIME ? 1 : 2),
-    ),
-    LOW_MEMORY_RUNTIME ? 1 : 4,
+    Number(process.env.CLIP_CONCURRENCY || 2),
+    4,
   ),
 );
 
@@ -189,13 +151,9 @@ const FFMPEG_THREADS_PER_CLIP = Math.max(
   Math.min(
     Number(
       process.env.FFMPEG_THREADS_PER_CLIP ||
-        (LOW_MEMORY_RUNTIME
-          ? 1
-          : CPU_COUNT >= 4
-            ? 2
-            : 1),
+        (CPU_COUNT >= 4 ? 2 : 1),
     ),
-    LOW_MEMORY_RUNTIME ? 1 : 4,
+    4,
   ),
 );
 
@@ -952,6 +910,19 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
+// Gemini audio-only timing is used on low-memory runtimes (such as
+// Render) because it avoids loading a local Whisper model into RAM.
+const GEMINI_AUDIO_TIMING_ENABLED =
+  process.env.GEMINI_AUDIO_TIMING_ENABLED !== "false";
+
+// Render and other constrained runtimes should avoid loading the local
+// Whisper model. Allow an explicit override while retaining automatic
+// detection for Render deployments.
+const LOW_MEMORY_RUNTIME =
+  process.env.LOW_MEMORY_RUNTIME === "true" ||
+  (process.env.LOW_MEMORY_RUNTIME !== "false" &&
+    Boolean(process.env.RENDER));
+
 type ProcessingMode = "clips" | "full_video_caption";
 
 interface SubtitleStyle {
@@ -1551,25 +1522,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
    transcript timing so caption generation never hard-fails.
 ========================================================= */
 
-const WHISPER_ENV = process.env.WHISPER_CAPTIONS_ENABLED?.trim();
-
 const WHISPER_CAPTIONS_ENABLED =
-  LOW_MEMORY_RUNTIME
-    ? false
-    : WHISPER_ENV !== "false";
+  process.env.WHISPER_CAPTIONS_ENABLED !== "false";
 
-// "Xenova/whisper-base" is multilingual and accurate, but it is
-// too heavy for Render's 512 MB runtime. Keep it available for
-// local/high-memory deployments. On Render, Whisper is disabled
-// unless ALLOW_RENDER_WHISPER=true.
+// "Xenova/whisper-base" is multilingual and a reasonable CPU speed/
+// accuracy tradeoff. Set WHISPER_MODEL to "Xenova/whisper-tiny" for
+// faster/lower-RAM, or "Xenova/whisper-small" for higher accuracy if
+// your server has the CPU/RAM to spare.
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-base";
 
-// Never preload Whisper on the 512 MB Render runtime. Loading it at
-// boot was the direct cause of the repeated OOM/restart cycle seen
-// in production. Local/high-memory deployments can still opt in.
+// Start Whisper loading in the background when the server starts.
+// This does not block Express startup, and processing requests share
+// the same promise while the model is downloading/loading.
 const WHISPER_PRELOAD =
-  !LOW_MEMORY_RUNTIME &&
   process.env.WHISPER_PRELOAD !== "false";
 
 let whisperTranscriberPromise: Promise<any> | null = null;
@@ -1610,11 +1576,6 @@ async function getWhisperTranscriber(): Promise<any> {
 
 function warmupWhisper(): void {
   if (!WHISPER_CAPTIONS_ENABLED || !WHISPER_PRELOAD) {
-    if (LOW_MEMORY_RUNTIME) {
-      console.log(
-        "Whisper: disabled on low-memory Render runtime; using Gemini transcript timing.",
-      );
-    }
     return;
   }
 
@@ -1733,6 +1694,243 @@ function chunkWhisperWordsIntoSegments(
   return segments;
 }
 
+// Gemini-only audio timing pass.
+//
+// This deliberately sends ONLY the extracted audio to Gemini instead of
+// asking Gemini to infer timestamps from the video frames.  On Render this
+// replaces local Whisper, which is disabled in low-memory mode.
+//
+// Returns null on failure so the normal Gemini video transcript remains a
+// safe fallback.
+async function transcribeWithGeminiAudioTiming(
+  videoPath: string,
+  duration: number,
+): Promise<TranscriptSegment[] | null> {
+  if (!GEMINI_AUDIO_TIMING_ENABLED) {
+    return null;
+  }
+
+  let audioPath = "";
+
+  try {
+    console.log(
+      "Gemini Audio Timing: extracting 16kHz mono WAV...",
+    );
+
+    audioPath = await extractAudioForWhisper(videoPath);
+
+    let file = await ai.files.upload({
+      file: audioPath,
+      config: {
+        mimeType: "audio/wav",
+      },
+    });
+
+    console.log(
+      "Gemini Audio Timing file:",
+      file.name,
+    );
+
+    while (
+      file.state &&
+      file.state.toString() !== "ACTIVE"
+    ) {
+      const state = file.state.toString();
+
+      console.log(
+        "Gemini Audio Timing processing state:",
+        state,
+      );
+
+      if (state === "FAILED") {
+        throw new Error(
+          "Gemini audio processing failed.",
+        );
+      }
+
+      await sleep(GEMINI_POLL_MS);
+
+      file = await ai.files.get({
+        name: file.name!,
+      });
+    }
+
+    const prompt = `
+You are LumoClip's professional speech-timing engine.
+
+Return ONLY valid JSON. No markdown. No code fences. No commentary.
+
+AUDIO DURATION:
+${duration.toFixed(3)} seconds
+
+TASK:
+Create a COMPLETE transcript of the spoken audio and provide accurate
+word-level timestamps for burned-in captions.
+
+CRITICAL TIMING RULES:
+- Listen to the AUDIO itself. Do not estimate timing from text length.
+- Do NOT translate the speech. Keep the exact spoken language.
+- Do NOT summarize or paraphrase.
+- Do NOT skip spoken words, even filler words.
+- Every spoken word MUST have its own start and end timestamp.
+- Timestamps are absolute seconds from the beginning of the audio.
+- A word's start MUST be when that word is actually spoken.
+- A word's end MUST be when that word stops being spoken.
+- Preserve natural pauses and silence. Do not invent speech during silence.
+- Do not use evenly distributed timestamps.
+- Do not gradually shift timestamps to make them fit a sentence.
+- If a word is difficult to hear, keep the word only when reasonably certain;
+  never invent a replacement.
+- Keep timestamps monotonically increasing.
+- Keep every timestamp between 0 and ${duration.toFixed(3)} seconds.
+
+CAPTION CHUNKING:
+- Group 2 to 4 consecutive spoken words per transcript entry.
+- Each entry MUST contain a words array.
+- The entry start must equal the first word start.
+- The entry end must equal the last word end.
+- Adjacent entries should follow the actual speech; do not create artificial
+  gaps or overlaps.
+
+OUTPUT EXACTLY THIS SHAPE:
+{
+  "transcript": [
+    {
+      "start": 0.00,
+      "end": 0.85,
+      "text": "spoken words here",
+      "words": [
+        {"word":"spoken","start":0.00,"end":0.40},
+        {"word":"words","start":0.42,"end":0.85}
+      ]
+    }
+  ],
+  "clips": []
+}
+
+Before returning, check the entire audio from 0 to ${duration.toFixed(3)}
+seconds and make sure the transcript does not silently stop early.
+`;
+
+    const response =
+      await generateGeminiWithRetry({
+        model: GEMINI_MODEL,
+        contents: createUserContent([
+          createPartFromUri(
+            file.uri!,
+            file.mimeType || "audio/wav",
+          ),
+          prompt,
+        ]),
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0,
+        },
+      });
+
+    const text = response.text || "";
+
+    if (!text.trim()) {
+      throw new Error(
+        "Gemini audio timing returned an empty response.",
+      );
+    }
+
+    const parsed = JSON.parse(cleanJson(text));
+
+    // Gemini can occasionally place the last timestamp a few milliseconds
+    // outside the measured duration. Clamp those values before validation.
+    if (Array.isArray(parsed?.transcript)) {
+      parsed.transcript = parsed.transcript.map((segment: any) => ({
+        ...segment,
+        start: Math.max(
+          0,
+          Math.min(duration, Number(segment?.start)),
+        ),
+        end: Math.max(
+          0,
+          Math.min(duration, Number(segment?.end)),
+        ),
+        words: Array.isArray(segment?.words)
+          ? segment.words.map((word: any) => ({
+              ...word,
+              start: Math.max(
+                0,
+                Math.min(duration, Number(word?.start)),
+              ),
+              end: Math.max(
+                0,
+                Math.min(duration, Number(word?.end)),
+              ),
+            }))
+          : segment?.words,
+      }));
+    }
+
+    const validated =
+      validateAnalysis(
+        {
+          transcript: parsed?.transcript,
+          clips: [],
+        },
+        duration,
+        { requireClips: false },
+      );
+
+    const wordBearingSegments =
+      validated.transcript.filter(
+        (segment) =>
+          Array.isArray(segment.words) &&
+          segment.words.length > 0,
+      );
+
+    if (!wordBearingSegments.length) {
+      throw new Error(
+        "Gemini audio timing returned no usable word timestamps.",
+      );
+    }
+
+    const lastEnd =
+      validated.transcript.reduce(
+        (max, segment) => Math.max(max, segment.end),
+        0,
+      );
+
+    console.log(
+      `Gemini Audio Timing: ${validated.transcript.length} segment(s), ` +
+        `${wordBearingSegments.reduce(
+          (sum, segment) => sum + (segment.words?.length || 0),
+          0,
+        )} word timestamp(s), transcript end=${lastEnd.toFixed(2)}s/${duration.toFixed(2)}s.`,
+    );
+
+    // If Gemini stopped substantially before the end, using this incomplete
+    // transcript would create a large caption blackout. Fall back instead.
+    if (lastEnd < Math.max(0, duration - 2.0)) {
+      throw new Error(
+        `Gemini audio timing transcript ended too early at ${lastEnd.toFixed(2)}s.`,
+      );
+    }
+
+    return validated.transcript;
+  } catch (error) {
+    console.warn(
+      "Gemini Audio Timing failed — falling back to existing transcript:",
+      error instanceof Error ? error.message : error,
+    );
+
+    return null;
+  } finally {
+    if (audioPath) {
+      try {
+        fs.unlinkSync(audioPath);
+      } catch {
+        // best-effort cleanup
+      }
+    }
+  }
+}
+
 // Runs the full local pipeline: extract audio -> decode -> transcribe
 // with real per-word timestamps -> reshape into our transcript
 // format. Returns null (never throws) if anything goes wrong, so the
@@ -1745,19 +1943,13 @@ async function transcribeWithWhisper(
     return null;
   }
 
-  if (LOW_MEMORY_RUNTIME) {
-    console.warn(
-      "Whisper: skipped on low-memory Render runtime; using Gemini transcript timing.",
-    );
-    return null;
-  }
-
   let audioPath = "";
 
   try {
-    // Load the model and audio sequentially to avoid a large peak-memory
-    // spike. On the Render low-memory profile this function returns above.
-    const transcriber = await getWhisperTranscriber();
+    // Start model loading immediately. If the server warm-up is already
+    // running, this reuses the same promise. Audio extraction happens in
+    // parallel with model loading, reducing first-job waiting time.
+    const transcriberPromise = getWhisperTranscriber();
 
     console.log(
       "Whisper: extracting audio for local transcription...",
@@ -1766,6 +1958,7 @@ async function transcribeWithWhisper(
     audioPath = await extractAudioForWhisper(videoPath);
 
     const audioData = await loadWavAsFloat32(audioPath);
+    const transcriber = await transcriberPromise;
 
     console.log(
       "Whisper: transcribing audio locally (no API cost)...",
@@ -3878,21 +4071,49 @@ async function processVideo(
       "Transcribing audio for accurate caption sync",
     );
 
-    const whisperTranscript = await transcribeWithWhisper(
-      sourcePath,
-      duration,
-    );
+    // On Render/low-memory runtimes Whisper is disabled to avoid OOM.
+    // Use an audio-only Gemini pass there so caption timing comes from the
+    // speech signal instead of the video-analysis model's rough timestamps.
+    let captionTranscript: TranscriptSegment[] | null = null;
 
-    if (whisperTranscript && whisperTranscript.length) {
+    if (LOW_MEMORY_RUNTIME) {
       console.log(
-        `Using local Whisper transcript for caption timing ` +
-          `(${whisperTranscript.length} segment(s)) instead of Gemini's estimate.`,
+        "Caption timing: low-memory runtime detected — using Gemini Audio Timing.",
       );
 
-      analysis.transcript = whisperTranscript;
+      captionTranscript =
+        await transcribeWithGeminiAudioTiming(
+          sourcePath,
+          duration,
+        );
     } else {
+      // Keep local Whisper as the highest-accuracy local option when RAM is
+      // available. Gemini Audio Timing becomes the next fallback.
+      captionTranscript =
+        await transcribeWithWhisper(
+          sourcePath,
+          duration,
+        );
+
+      if (!captionTranscript?.length) {
+        captionTranscript =
+          await transcribeWithGeminiAudioTiming(
+            sourcePath,
+            duration,
+          );
+      }
+    }
+
+    if (captionTranscript && captionTranscript.length) {
       console.log(
-        "Whisper transcript unavailable — using Gemini's own transcript timing for captions.",
+        `Using dedicated audio-based transcript for caption timing ` +
+          `(${captionTranscript.length} segment(s)).`,
+      );
+
+      analysis.transcript = captionTranscript;
+    } else {
+      console.warn(
+        "Audio-based caption timing unavailable — using Gemini video transcript as final fallback.",
       );
     }
 
@@ -7000,8 +7221,7 @@ app.listen(
   PORT,
   "0.0.0.0",
   () => {
-    // IMPORTANT: Render 512 MB must never preload Whisper.
-    // warmupWhisper() is retained for local/high-memory deployments.
+    // Warm Whisper in the background. Server startup remains immediate.
     warmupWhisper();
 
     console.log(
@@ -7054,16 +7274,6 @@ app.listen(
     );
     console.log(
       `FFmpeg tuning: preset=${FFMPEG_PRESET}, crf=${FFMPEG_CRF}, threads/clip=${FFMPEG_THREADS_PER_CLIP}, detected CPUs=${CPU_COUNT}`,
-    );
-
-    console.log(
-      `Runtime profile: ${LOW_MEMORY_RUNTIME ? "LOW-MEMORY / RENDER 512MB" : "STANDARD"}`,
-    );
-    console.log(
-      `Whisper: ${WHISPER_CAPTIONS_ENABLED ? "ENABLED" : "DISABLED"}`,
-    );
-    console.log(
-      `Whisper preload: ${WHISPER_PRELOAD ? "ENABLED" : "DISABLED"}`,
     );
 
     console.log(
