@@ -1026,6 +1026,7 @@ interface ClipRelativeSegment {
   start: number;
   end: number;
   text: string;
+  words?: TranscriptWord[];
 }
 
 function hexToAssColor(hex: string): string {
@@ -1103,31 +1104,81 @@ function getClipRelativeSegments(
   clipEnd: number,
 ): ClipRelativeSegment[] {
   if (!Array.isArray(transcript) || !transcript.length) {
+    console.warn(
+      `Captions: transcript is empty — clip ${clipStart}s-${clipEnd}s will have no burned-in captions.`,
+    );
     return [];
   }
 
-  return transcript
-    .filter(
-      (segment) =>
-        segment.end > clipStart && segment.start < clipEnd,
-    )
-    .map((segment) => ({
-      start: Math.max(segment.start, clipStart) - clipStart,
-      end: Math.min(segment.end, clipEnd) - clipStart,
-      text: String(segment.text || "").trim(),
-    }))
+  const overlapping = transcript.filter(
+    (segment) =>
+      segment.end > clipStart && segment.start < clipEnd,
+  );
+
+  if (!overlapping.length) {
+    const transcriptStart = transcript[0]?.start ?? 0;
+    const transcriptEnd =
+      transcript[transcript.length - 1]?.end ?? 0;
+
+    console.warn(
+      `Captions: no transcript overlap for clip ${clipStart}s-${clipEnd}s ` +
+        `(transcript only covers ${transcriptStart}s-${transcriptEnd}s). ` +
+        `This clip will have no burned-in captions.`,
+    );
+
+    return [];
+  }
+
+  return overlapping
+    .map((segment) => {
+      const shiftedWords = Array.isArray(segment.words)
+        ? segment.words
+            .filter(
+              (w) => w.end > clipStart && w.start < clipEnd,
+            )
+            .map((w) => ({
+              word: w.word,
+              start: Math.max(w.start, clipStart) - clipStart,
+              end: Math.min(w.end, clipEnd) - clipStart,
+            }))
+            .filter((w) => w.end > w.start)
+        : undefined;
+
+      return {
+        start: Math.max(segment.start, clipStart) - clipStart,
+        end: Math.min(segment.end, clipEnd) - clipStart,
+        text: String(segment.text || "").trim(),
+        words:
+          shiftedWords && shiftedWords.length
+            ? shiftedWords
+            : undefined,
+      };
+    })
     .filter(
       (segment) =>
         segment.end > segment.start && segment.text.length > 0,
     );
 }
 
-// Approximate a per-word duration for a segment by weighting on
-// word length, so longer words get slightly more screen time.
-function computeWordTimings(
+interface TimedWordItem {
+  word: string;
+  start: number;
+  end: number;
+}
+
+// Fallback ONLY: used when Gemini didn't return real per-word
+// timestamps for a segment. Approximates a per-word duration by
+// weighting on word length, so longer words get slightly more
+// screen time. Real word timestamps (from segment.words) are always
+// preferred when available — this is a best-effort guess, not a
+// replacement for actual timing.
+function synthesizeWordTimings(
   text: string,
-  duration: number,
-): { word: string; duration: number }[] {
+  segStart: number,
+  segEnd: number,
+): TimedWordItem[] {
+  const duration = segEnd - segStart;
+
   const words = text
     .split(/\s+/)
     .map((word) => word.trim())
@@ -1162,23 +1213,52 @@ function computeWordTimings(
 
   const scale = rawTotal > 0 ? duration / rawTotal : 1;
 
-  return words.map((word, index) => ({
-    word,
-    duration: rawDurations[index] * scale,
-  }));
+  let cursor = segStart;
+
+  return words.map((word, index) => {
+    const wordDuration = rawDurations[index] * scale;
+    const start = cursor;
+    const end = start + wordDuration;
+    cursor = end;
+
+    return { word, start, end };
+  });
+}
+
+// Prefer Gemini's real per-word timestamps; only fall back to the
+// length-based guess when the segment has no usable word-level data.
+function getTimedWordsForSegment(
+  segment: ClipRelativeSegment,
+): TimedWordItem[] {
+  if (Array.isArray(segment.words) && segment.words.length) {
+    return segment.words
+      .map((w) => ({
+        word: w.word,
+        start: w.start,
+        end: w.end,
+      }))
+      .filter((w) => w.end > w.start)
+      .sort((a, b) => a.start - b.start);
+  }
+
+  return synthesizeWordTimings(
+    segment.text,
+    segment.start,
+    segment.end,
+  );
 }
 
 // Group timed words into short on-screen lines (like CapCut/
 // OpusClip auto-captions), so each highlight event only shows
 // a handful of words at a time.
 function groupWordsIntoLines(
-  words: { word: string; duration: number }[],
-): { word: string; duration: number }[][] {
+  words: TimedWordItem[],
+): TimedWordItem[][] {
   const MAX_WORDS_PER_LINE = 4;
   const MAX_CHARS_PER_LINE = 18;
 
-  const lines: { word: string; duration: number }[][] = [];
-  let current: { word: string; duration: number }[] = [];
+  const lines: TimedWordItem[][] = [];
+  let current: TimedWordItem[] = [];
   let currentChars = 0;
 
   for (const item of words) {
@@ -1205,7 +1285,11 @@ function groupWordsIntoLines(
 }
 
 // Build a full .ass subtitle document with karaoke (\k) tags so
-// libass highlights each word as it's "spoken".
+// libass highlights each word as it's "spoken". When real per-word
+// timestamps are available (segment.words), silent gaps between
+// words are preserved as invisible \k holds so the highlight lands
+// on the exact moment each word is actually spoken instead of
+// drifting across a phrase.
 function buildKaraokeAss(
   segments: ClipRelativeSegment[],
   style: SubtitleStyle,
@@ -1264,33 +1348,61 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   const events: string[] = [];
 
   for (const segment of segments) {
-    const duration = segment.end - segment.start;
-    const words = computeWordTimings(segment.text, duration);
+    const words = getTimedWordsForSegment(segment);
 
     if (!words.length) {
       continue;
     }
 
     const lines = groupWordsIntoLines(words);
-    let cursor = segment.start;
 
     for (const line of lines) {
-      const lineStart = cursor;
+      const lineStart = line[0].start;
+      const lineEnd = Math.max(
+        lineStart + 0.05,
+        line[line.length - 1].end,
+      );
 
-      // Cumulative offset (ms) of each word from the start of this
-      // line's Dialogue event — used to time the per-word pop/bounce
-      // so it fires exactly when that word becomes "active".
-      let offsetMs = 0;
+      // Cumulative offset (ms) from the start of this line's
+      // Dialogue event, including any silent gaps between words —
+      // used both for the \k hold durations and to time the
+      // per-word pop/bounce so it fires exactly when that word
+      // becomes "active".
+      let cursorMs = 0;
 
       const lineText = line
-        .map((item) => {
-          const centiseconds = Math.max(
-            1,
-            Math.round(item.duration * 100),
+        .map((item, index) => {
+          const prevEnd =
+            index === 0 ? lineStart : line[index - 1].end;
+
+          const gapMs = Math.max(
+            0,
+            Math.round((item.start - prevEnd) * 1000),
           );
 
-          const wordDurationMs = Math.round(
-            item.duration * 1000,
+          // A gap between words is rendered as an invisible \k hold
+          // (no text) so the next word's highlight still lands on
+          // the moment it's actually spoken, instead of firing early.
+          let gapTag = "";
+
+          if (gapMs > 0) {
+            const gapCentiseconds = Math.max(
+              1,
+              Math.round(gapMs / 10),
+            );
+
+            gapTag = `{\\k${gapCentiseconds}}`;
+            cursorMs += gapMs;
+          }
+
+          const wordDurationMs = Math.max(
+            10,
+            Math.round((item.end - item.start) * 1000),
+          );
+
+          const centiseconds = Math.max(
+            1,
+            Math.round(wordDurationMs / 10),
           );
 
           const word = style.uppercase
@@ -1298,8 +1410,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             : item.word;
 
           if (!useAnimation) {
-            offsetMs += wordDurationMs;
-            return `{\\k${centiseconds}}${escapeAssText(word)}`;
+            cursorMs += wordDurationMs;
+            return `${gapTag}{\\k${centiseconds}}${escapeAssText(word)}`;
           }
 
           const popDuration = Math.min(
@@ -1307,15 +1419,16 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             Math.max(60, Math.round(wordDurationMs * 0.5)),
           );
 
-          const popStart = offsetMs;
+          const popStart = cursorMs;
           const popEnd = popStart + popDuration;
 
-          offsetMs += wordDurationMs;
+          cursorMs += wordDurationMs;
 
           // Reset scale, then bounce up and settle back down right as
           // the word's karaoke highlight begins — a quick, punchy pop
           // rather than a static color swap.
           return (
+            `${gapTag}` +
             `{\\fscx100\\fscy100` +
             `\\t(${popStart},${popEnd},\\fscx112\\fscy112)` +
             `\\t(${popEnd},${popEnd + popDuration},\\fscx100\\fscy100)` +
@@ -1324,20 +1437,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         })
         .join(" ");
 
-      const lineDuration = line.reduce(
-        (sum, item) => sum + item.duration,
-        0,
-      );
-
-      const lineEnd = lineStart + lineDuration;
-
       events.push(
         `Dialogue: 0,${formatAssTime(lineStart)},${formatAssTime(
           lineEnd,
         )},Default,,0,0,0,,${lineText}`,
       );
-
-      cursor = lineEnd;
     }
   }
 
@@ -1971,10 +2075,17 @@ function createVideoThumbnail(
    TYPES
 ========================================================= */
 
+interface TranscriptWord {
+  word: string;
+  start: number;
+  end: number;
+}
+
 interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
+  words?: TranscriptWord[];
 }
 
 interface ViralClip {
@@ -2048,6 +2159,32 @@ function cleanJson(text: string): string {
 VALIDATE GEMINI RESULT
 ========================================================= */
 
+// Gemini is asked to always return a per-clip social caption, but it
+// isn't guaranteed to comply — this makes sure ClipCard / the YouTube
+// publish modal always has something usable instead of silently
+// rendering no caption at all.
+function buildFallbackCaption(
+  caption: string,
+  title: string,
+  reason: string,
+): string {
+  if (caption) {
+    return caption;
+  }
+
+  const base = title || "Check this out";
+  const extra = reason
+    ? ` — ${reason}`
+    : "";
+
+  const combined = `${base}${extra}`.trim();
+
+  // Keep it social-media sized even when "reason" is long.
+  return combined.length > 220
+    ? `${combined.slice(0, 217).trim()}...`
+    : combined;
+}
+
 function validateAnalysis(
   raw: any,
   duration: number,
@@ -2073,6 +2210,54 @@ function validateAnalysis(
       ? raw.transcript
       : [];
 
+  const normalizeWords = (
+    rawWords: any,
+    segStart: number,
+    segEnd: number,
+  ): TranscriptWord[] | undefined => {
+    if (!Array.isArray(rawWords) || !rawWords.length) {
+      return undefined;
+    }
+
+    const words = rawWords
+      .map((w: any) => {
+        const start = Number(w?.start);
+        const end = Number(w?.end);
+
+        return {
+          word: String(w?.word ?? "").trim(),
+          start,
+          end,
+        };
+      })
+      .filter(
+        (w: TranscriptWord) =>
+          w.word.length > 0 &&
+          Number.isFinite(w.start) &&
+          Number.isFinite(w.end) &&
+          w.end > w.start &&
+          w.start >= 0 &&
+          w.start < safeDuration,
+      )
+      .map((w: TranscriptWord) => ({
+        word: w.word,
+        start: Math.max(segStart, Math.min(safeDuration, w.start)),
+        end: Math.max(segStart, Math.min(safeDuration, w.end)),
+      }))
+      .filter((w: TranscriptWord) => w.end > w.start)
+      // keep words sorted and inside the parent segment so a bad
+      // per-word timestamp can't push the karaoke highlight outside
+      // of its own chunk
+      .sort((a: TranscriptWord, b: TranscriptWord) => a.start - b.start)
+      .map((w: TranscriptWord) => ({
+        word: w.word,
+        start: Math.max(segStart, w.start),
+        end: Math.min(segEnd, Math.max(w.end, w.start + 0.01)),
+      }));
+
+    return words.length ? words : undefined;
+  };
+
   const transcript: TranscriptSegment[] =
     rawTranscript
       .map((s: any) => {
@@ -2085,6 +2270,7 @@ function validateAnalysis(
           text: String(
             s?.text ?? "",
           ).trim(),
+          words: s?.words,
         };
       })
       .filter(
@@ -2100,25 +2286,30 @@ function validateAnalysis(
       .map(
         (
           s: TranscriptSegment,
-        ) => ({
-          start: Math.max(
+        ) => {
+          const start = Math.max(
             0,
             Math.min(
               safeDuration,
               s.start,
             ),
-          ),
+          );
 
-          end: Math.max(
+          const end = Math.max(
             0,
             Math.min(
               safeDuration,
               s.end,
             ),
-          ),
+          );
 
-          text: s.text,
-        }),
+          return {
+            start,
+            end,
+            text: s.text,
+            words: normalizeWords(s.words, start, end),
+          };
+        },
       );
 
   /* -------------------------------------------------------
@@ -2164,9 +2355,11 @@ function validateAnalysis(
               )
             : 0,
 
-          caption: String(
-            c?.caption || "",
-          ).trim(),
+          caption: buildFallbackCaption(
+            String(c?.caption || "").trim(),
+            String(c?.title || "").trim(),
+            String(c?.reason || "").trim(),
+          ),
         };
       })
       .filter(
@@ -2310,16 +2503,33 @@ Analyze the entire video and return:
 
 TRANSCRIPT GRANULARITY (critical — used to sync on-screen captions):
 - Each transcript entry must cover ONLY 2 to 4 spoken words, never a full sentence.
-- Split a sentence into multiple consecutive entries, e.g.
-  "Hello everyone welcome back to my channel" becomes:
-  {"start":0.00,"end":0.55,"text":"Hello everyone"}
-  {"start":0.55,"end":1.10,"text":"welcome back"}
-  {"start":1.10,"end":1.85,"text":"to my channel"}
-- start/end for each chunk MUST match the moment those exact words are
-  actually spoken in the audio — not evenly guessed durations.
+- Split a sentence into multiple consecutive entries.
+- Every transcript entry MUST also include a "words" array with ONE
+  object per spoken word, each with its OWN start/end time — this is
+  what drives the karaoke word-by-word highlight, so per-word timing
+  matters more than chunk timing. Example for the sentence
+  "Hello everyone welcome back to my channel":
+  {"start":0.00,"end":0.55,"text":"Hello everyone","words":[
+    {"word":"Hello","start":0.00,"end":0.28},
+    {"word":"everyone","start":0.28,"end":0.55}
+  ]}
+  {"start":0.55,"end":1.10,"text":"welcome back","words":[
+    {"word":"welcome","start":0.55,"end":0.85},
+    {"word":"back","start":0.85,"end":1.10}
+  ]}
+  {"start":1.10,"end":1.85,"text":"to my channel","words":[
+    {"word":"to","start":1.10,"end":1.25},
+    {"word":"my","start":1.25,"end":1.45},
+    {"word":"channel","start":1.45,"end":1.85}
+  ]}
+- Both the chunk start/end AND every word's start/end MUST match the
+  moment those exact words are actually spoken in the audio — never
+  evenly guessed or split by word length.
 - Do not merge separate breaths/pauses into one chunk.
-- These chunks are burned onto the video as karaoke-style captions, so
-  timing accuracy per chunk matters more than transcript readability.
+- Do not skip any spoken portion of the video — the transcript must
+  cover the audio continuously from 0 to the end, with no gaps,
+  otherwise clips in the untranscribed portion will show no captions
+  at all.
 
 PROCESSING MODE:
 ${processingMode === "full_video_caption"
@@ -2365,12 +2575,21 @@ EXACT JSON SHAPE:
     {
       "start": 0.0,
       "end": 0.6,
-      "text": "spoken words"
+      "text": "spoken words",
+      "words": [
+        {"word": "spoken", "start": 0.0, "end": 0.3},
+        {"word": "words", "start": 0.3, "end": 0.6}
+      ]
     },
     {
       "start": 0.6,
       "end": 1.3,
-      "text": "next few words"
+      "text": "next few words",
+      "words": [
+        {"word": "next", "start": 0.6, "end": 0.85},
+        {"word": "few", "start": 0.85, "end": 1.05},
+        {"word": "words", "start": 1.05, "end": 1.3}
+      ]
     }
   ],
   "clips": [
@@ -2380,10 +2599,14 @@ EXACT JSON SHAPE:
       "title": "Short viral title",
       "reason": "Why this moment is strong",
       "score": 94,
-      "caption": "Short social caption"
+      "caption": "Short social caption — REQUIRED, never leave this empty, always write a real caption for the clip"
     }
   ]
 }
+
+IMPORTANT: every object in "clips" MUST include a non-empty "caption"
+string written specifically for that clip's content. Never omit it
+and never return an empty string for it.
 `;
 
   const response =
