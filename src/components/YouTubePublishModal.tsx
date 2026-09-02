@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AlertCircle,
   CheckCircle2,
@@ -318,9 +319,9 @@ export const YouTubePublishModal: React.FC<
 
   const isFullVideo = target.kind === "full_video";
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
       onMouseDown={(event) => {
         if (
           event.target === event.currentTarget &&
@@ -646,7 +647,8 @@ export const YouTubePublishModal: React.FC<
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 };
 
