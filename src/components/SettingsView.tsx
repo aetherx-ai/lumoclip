@@ -7,14 +7,14 @@ import {
   connectYouTubeApi,
   fetchYouTubeStatusApi,
   disconnectYouTubeApi,
-  fetchPreferencesApi,
-  updatePreferencesApi,
   checkoutStripeApi,
   exportAccountDataApi,
   generateApiKeyApi,
   deleteAccountApi,
   UserPreferences,
 } from '../services/api.js';
+
+import { useAppPreferences } from '../context/AppPreferencesContext.js';
 
 import {
   User as UserIcon,
@@ -66,13 +66,6 @@ type SectionId =
   | 'preferences'
   | 'billing'
   | 'usage';
-
-const DEFAULT_PREFERENCES: UserPreferences = {
-  email_notifications: true,
-  marketing_emails: false,
-  language: 'English',
-  appearance: 'dark',
-};
 
 /* =========================================================
    AVATAR FALLBACK
@@ -251,14 +244,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   } | null>(null);
 
   /* =======================================================
-     PREFERENCES STATE
+     GLOBAL PREFERENCES
   ======================================================= */
 
-  const [preferences, setPreferences] =
-    useState<UserPreferences>(DEFAULT_PREFERENCES);
-  const [prefsLoading, setPrefsLoading] = useState(true);
+  const {
+    preferences,
+    language,
+    appearance,
+    loading: prefsLoading,
+    updatePreference,
+    t,
+  } = useAppPreferences();
+
   const [prefsSavingKey, setPrefsSavingKey] =
     useState<keyof UserPreferences | null>(null);
+
   const [prefsMessage, setPrefsMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -334,31 +334,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     };
 
-    const loadPreferences = async () => {
-      try {
-        setPrefsLoading(true);
-        const res = await fetchPreferencesApi();
-
-        if (!mounted) return;
-
-        setPreferences({
-          ...DEFAULT_PREFERENCES,
-          ...res.preferences,
-        });
-      } catch (err) {
-        if (!mounted) return;
-        console.error('Failed to load preferences:', err);
-      } finally {
-        if (mounted) setPrefsLoading(false);
-      }
-    };
 
     if (user) {
       void loadYouTubeStatus();
-      void loadPreferences();
     } else {
       setYouTubeLoading(false);
-      setPrefsLoading(false);
     }
 
     return () => {
@@ -441,33 +421,40 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   };
 
   /* =======================================================
-     PREFERENCES: SAVE (optimistic, with rollback)
+     PREFERENCES: SAVE
   ======================================================= */
 
-  const savePreference = async <K extends keyof UserPreferences>(
+  const savePreference = async <
+    K extends keyof UserPreferences
+  >(
     key: K,
     value: UserPreferences[K]
   ) => {
-    const previous = preferences;
-
-    setPreferences((prev) => ({ ...prev, [key]: value }));
     setPrefsSavingKey(key);
     setPrefsMessage(null);
 
     try {
-      const res = await updatePreferencesApi({ [key]: value } as Partial<UserPreferences>);
+      await updatePreference(key, value);
 
-      setPreferences((prev) => ({
-        ...prev,
-        ...res.preferences,
-      }));
+      setPrefsMessage({
+        type: 'success',
+        text: 'Preference updated successfully.',
+      });
+
+      window.setTimeout(() => {
+        setPrefsMessage(null);
+      }, 2200);
     } catch (err: any) {
-      console.error('Failed to save preference:', err);
+      console.error(
+        'Failed to save preference:',
+        err
+      );
 
-      setPreferences(previous);
       setPrefsMessage({
         type: 'error',
-        text: err?.message || 'Failed to save preference.',
+        text:
+          err?.message ||
+          'Failed to save preference.',
       });
     } finally {
       setPrefsSavingKey(null);
@@ -614,32 +601,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const sections = [
     {
       id: 'profile' as SectionId,
-      label: 'Profile',
-      description: 'Personal information',
+      label: t('Profile'),
+      description: t('Personal information'),
       icon: UserIcon,
     },
     {
       id: 'social' as SectionId,
-      label: 'Social Accounts',
-      description: 'Connected platforms',
+      label: t('Social Accounts'),
+      description: t('Connected platforms'),
       icon: Link2,
     },
     {
       id: 'preferences' as SectionId,
-      label: 'Preferences',
-      description: 'Customize LumoClip',
+      label: t('Preferences'),
+      description: t('Customize LumoClip'),
       icon: Settings,
     },
     {
       id: 'billing' as SectionId,
-      label: 'Billing',
-      description: 'Plan & credits',
+      label: t('Billing'),
+      description: t('Plan & credits'),
       icon: CreditCard,
     },
     {
       id: 'usage' as SectionId,
-      label: 'Usage History',
-      description: 'Credit activity',
+      label: t('Usage History'),
+      description: t('Credit activity'),
       icon: History,
     },
   ];
@@ -800,15 +787,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
           <div>
             <div className="mb-3 flex items-center gap-2 text-xs font-medium text-zinc-500">
-              <span>Workspace</span>
+              <span>{t('Workspace')}</span>
               <ChevronRight className="h-3 w-3" />
               <span className="text-zinc-300">
-                Settings
+                {t('Settings')}
               </span>
             </div>
 
             <h1 className="text-3xl font-bold tracking-[-0.03em] text-white sm:text-4xl">
-              Settings
+              {t('Settings')}
             </h1>
 
             <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-500">
@@ -825,7 +812,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
 
             <span className="text-xs font-medium text-emerald-400">
-              All systems operational
+              {t('All systems operational')}
             </span>
           </div>
 
@@ -1366,8 +1353,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <SectionHeader
                 icon={<Settings className="h-5 w-5" />}
                 eyebrow="Customization"
-                title="Preferences"
-                description="Control how LumoClip communicates with you and how your workspace behaves."
+                title={t('Preferences')}
+                description={t('Customize LumoClip')}
               />
 
               {prefsMessage && (
@@ -1464,16 +1451,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <select
-                      value={preferences.language}
+                      value={language}
                       disabled={prefsLoading || prefsSavingKey === 'language'}
                       onChange={(e) =>
-                        savePreference('language', e.target.value)
+                        void savePreference(
+                          'language',
+                          e.target.value as UserPreferences['language']
+                        )
                       }
                       className="w-full rounded-xl border border-white/[0.06] bg-zinc-900 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-violet-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       <option value="English">English</option>
                       <option value="বাংলা">বাংলা</option>
-                      <option value="Spanish">Spanish</option>
+                      <option value="Spanish">Español</option>
                     </select>
 
                   </div>
@@ -1489,19 +1479,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <select
-                      value={preferences.appearance}
+                      value={appearance}
                       disabled={prefsLoading || prefsSavingKey === 'appearance'}
                       onChange={(e) =>
-                        savePreference(
+                        void savePreference(
                           'appearance',
                           e.target.value as UserPreferences['appearance']
                         )
                       }
                       className="w-full rounded-xl border border-white/[0.06] bg-zinc-900 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-violet-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                      <option value="system">System</option>
+                      <option value="dark">{t('Dark')}</option>
+                      <option value="light">{t('Light')}</option>
+                      <option value="system">{t('System')}</option>
                     </select>
 
                   </div>
