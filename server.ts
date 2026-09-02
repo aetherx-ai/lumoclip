@@ -1519,11 +1519,16 @@ const WHISPER_CAPTIONS_ENABLED =
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-base";
 
+// Start Whisper loading in the background when the server starts.
+// This does not block Express startup, and processing requests share
+// the same promise while the model is downloading/loading.
+const WHISPER_PRELOAD =
+  process.env.WHISPER_PRELOAD !== "false";
+
 let whisperTranscriberPromise: Promise<any> | null = null;
 
-// Lazily loads (and caches) the local Whisper pipeline. The first
-// call downloads + caches the ONNX model weights, which can take a
-// while — subsequent calls reuse the same in-memory pipeline.
+// Loads and caches the local Whisper pipeline. Every concurrent request
+// shares one promise, so the model is loaded only once per process.
 async function getWhisperTranscriber(): Promise<any> {
   if (!whisperTranscriberPromise) {
     whisperTranscriberPromise = (async () => {
@@ -1554,6 +1559,32 @@ async function getWhisperTranscriber(): Promise<any> {
   }
 
   return whisperTranscriberPromise;
+}
+
+function warmupWhisper(): void {
+  if (!WHISPER_CAPTIONS_ENABLED || !WHISPER_PRELOAD) {
+    return;
+  }
+
+  console.log(
+    `Whisper: background warm-up starting (${WHISPER_MODEL})...`,
+  );
+
+  void getWhisperTranscriber()
+    .then(() => {
+      console.log(
+        "Whisper: background warm-up complete — model is ready for jobs.",
+      );
+    })
+    .catch((error) => {
+      // Never crash the server because Whisper failed to warm up.
+      // transcribeWithWhisper() will retry on demand and can fall back
+      // to Gemini timing if Whisper remains unavailable.
+      console.warn(
+        "Whisper: background warm-up failed; will retry on demand:",
+        error instanceof Error ? error.message : error,
+      );
+    });
 }
 
 // Extracts a 16kHz mono WAV from the source video — the format
@@ -1665,6 +1696,11 @@ async function transcribeWithWhisper(
   let audioPath = "";
 
   try {
+    // Start model loading immediately. If the server warm-up is already
+    // running, this reuses the same promise. Audio extraction happens in
+    // parallel with model loading, reducing first-job waiting time.
+    const transcriberPromise = getWhisperTranscriber();
+
     console.log(
       "Whisper: extracting audio for local transcription...",
     );
@@ -1672,7 +1708,7 @@ async function transcribeWithWhisper(
     audioPath = await extractAudioForWhisper(videoPath);
 
     const audioData = await loadWavAsFloat32(audioPath);
-    const transcriber = await getWhisperTranscriber();
+    const transcriber = await transcriberPromise;
 
     console.log(
       "Whisper: transcribing audio locally (no API cost)...",
@@ -6907,6 +6943,9 @@ app.listen(
   PORT,
   "0.0.0.0",
   () => {
+    // Warm Whisper in the background. Server startup remains immediate.
+    warmupWhisper();
+
     console.log(
       "======================================",
     );
