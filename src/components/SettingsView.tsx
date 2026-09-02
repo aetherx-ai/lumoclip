@@ -30,7 +30,6 @@ import {
   Shield,
   Check,
   ChevronRight,
-  Bell,
   Globe,
   Palette,
   Lock,
@@ -1400,68 +1399,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               )}
 
               <div className={`space-y-4 ${prefsLoading ? 'opacity-60' : ''}`}>
-
-                <div className="flex items-center justify-between gap-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-
-                  <div className="flex items-start gap-4">
-
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/10 text-violet-400">
-                      <Bell className="h-4 w-4" />
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        Email notifications
-                      </p>
-
-                      <p className="mt-1 text-xs leading-5 text-zinc-600">
-                        Get notified when your clips
-                        finish processing or exporting.
-                      </p>
-                    </div>
-
-                  </div>
-
-                  <Toggle
-                    checked={preferences.email_notifications}
-                    disabled={prefsLoading || prefsSavingKey === 'email_notifications'}
-                    onChange={(value) =>
-                      savePreference('email_notifications', value)
-                    }
-                  />
-
-                </div>
-
-                <div className="flex items-center justify-between gap-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
-
-                  <div className="flex items-start gap-4">
-
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10 text-blue-400">
-                      <Sparkles className="h-4 w-4" />
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-semibold text-white">
-                        Product updates
-                      </p>
-
-                      <p className="mt-1 text-xs leading-5 text-zinc-600">
-                        Receive new feature announcements,
-                        tips and product updates.
-                      </p>
-                    </div>
-
-                  </div>
-
-                  <Toggle
-                    checked={preferences.marketing_emails}
-                    disabled={prefsLoading || prefsSavingKey === 'marketing_emails'}
-                    onChange={(value) =>
-                      savePreference('marketing_emails', value)
-                    }
-                  />
-
-                </div>
 
                 <div className="grid gap-4 pt-2 sm:grid-cols-2">
 
