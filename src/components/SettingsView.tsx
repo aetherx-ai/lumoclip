@@ -1,11 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User, UsageLog } from '../types.js';
+import { supabase } from '../lib/supabase';
 import {
   fetchUsageLogs,
   updateProfileApi,
   connectYouTubeApi,
   fetchYouTubeStatusApi,
   disconnectYouTubeApi,
+  fetchPreferencesApi,
+  updatePreferencesApi,
+  checkoutStripeApi,
+  exportAccountDataApi,
+  generateApiKeyApi,
+  deleteAccountApi,
+  UserPreferences,
 } from '../services/api.js';
 
 import {
@@ -40,6 +48,7 @@ import {
   Youtube,
   Music2,
   Instagram,
+  Copy,
 } from 'lucide-react';
 
 interface SettingsViewProps {
@@ -57,6 +66,13 @@ type SectionId =
   | 'preferences'
   | 'billing'
   | 'usage';
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+  email_notifications: true,
+  marketing_emails: false,
+  language: 'English',
+  appearance: 'dark',
+};
 
 /* =========================================================
    AVATAR FALLBACK
@@ -95,13 +111,15 @@ const AvatarFallback: React.FC<{
 
 const Toggle: React.FC<{
   checked: boolean;
+  disabled?: boolean;
   onChange?: (value: boolean) => void;
-}> = ({ checked, onChange }) => {
+}> = ({ checked, disabled, onChange }) => {
   return (
     <button
       type="button"
       onClick={() => onChange?.(!checked)}
-      className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition-all duration-300 ${
+      disabled={disabled}
+      className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50 ${
         checked
           ? 'bg-violet-600 shadow-lg shadow-violet-600/30'
           : 'bg-zinc-700'
@@ -210,12 +228,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [activeSection, setActiveSection] =
     useState<SectionId>('profile');
 
-  const [emailNotifications, setEmailNotifications] =
-    useState(true);
-
-  const [marketingEmails, setMarketingEmails] =
-    useState(false);
-
   const [deleteModal, setDeleteModal] =
     useState(false);
 
@@ -237,6 +249,38 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+
+  /* =======================================================
+     PREFERENCES STATE
+  ======================================================= */
+
+  const [preferences, setPreferences] =
+    useState<UserPreferences>(DEFAULT_PREFERENCES);
+  const [prefsLoading, setPrefsLoading] = useState(true);
+  const [prefsSavingKey, setPrefsSavingKey] =
+    useState<keyof UserPreferences | null>(null);
+  const [prefsMessage, setPrefsMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  /* =======================================================
+     BILLING / ACCOUNT TOOLS STATE
+  ======================================================= */
+
+  const [upgrading, setUpgrading] = useState(false);
+  const [billingMessage, setBillingMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
+
+  const [exportingData, setExportingData] = useState(false);
+  const [generatingKey, setGeneratingKey] = useState(false);
+  const [apiKeyModal, setApiKeyModal] = useState<string | null>(null);
+  const [apiKeyCopied, setApiKeyCopied] = useState(false);
+
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
 
   /* =======================================================
      LOAD USER / USAGE
@@ -290,10 +334,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       }
     };
 
+    const loadPreferences = async () => {
+      try {
+        setPrefsLoading(true);
+        const res = await fetchPreferencesApi();
+
+        if (!mounted) return;
+
+        setPreferences({
+          ...DEFAULT_PREFERENCES,
+          ...res.preferences,
+        });
+      } catch (err) {
+        if (!mounted) return;
+        console.error('Failed to load preferences:', err);
+      } finally {
+        if (mounted) setPrefsLoading(false);
+      }
+    };
+
     if (user) {
       void loadYouTubeStatus();
+      void loadPreferences();
     } else {
       setYouTubeLoading(false);
+      setPrefsLoading(false);
     }
 
     return () => {
@@ -372,6 +437,173 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       );
     } finally {
       setSaving(false);
+    }
+  };
+
+  /* =======================================================
+     PREFERENCES: SAVE (optimistic, with rollback)
+  ======================================================= */
+
+  const savePreference = async <K extends keyof UserPreferences>(
+    key: K,
+    value: UserPreferences[K]
+  ) => {
+    const previous = preferences;
+
+    setPreferences((prev) => ({ ...prev, [key]: value }));
+    setPrefsSavingKey(key);
+    setPrefsMessage(null);
+
+    try {
+      const res = await updatePreferencesApi({ [key]: value } as Partial<UserPreferences>);
+
+      setPreferences((prev) => ({
+        ...prev,
+        ...res.preferences,
+      }));
+    } catch (err: any) {
+      console.error('Failed to save preference:', err);
+
+      setPreferences(previous);
+      setPrefsMessage({
+        type: 'error',
+        text: err?.message || 'Failed to save preference.',
+      });
+    } finally {
+      setPrefsSavingKey(null);
+    }
+  };
+
+  /* =======================================================
+     BILLING: UPGRADE PLAN
+  ======================================================= */
+
+  const handleUpgrade = async () => {
+    if (upgrading) return;
+
+    setUpgrading(true);
+    setBillingMessage(null);
+
+    try {
+      const res = await checkoutStripeApi('pro');
+
+      if (!res?.url) {
+        throw new Error('Checkout URL was not returned.');
+      }
+
+      window.location.href = res.url;
+    } catch (err: any) {
+      console.error('Failed to start checkout:', err);
+
+      setBillingMessage({
+        type: 'error',
+        text: err?.message || 'Failed to start checkout.',
+      });
+
+      setUpgrading(false);
+    }
+  };
+
+  /* =======================================================
+     ACCOUNT TOOLS: DOWNLOAD DATA
+  ======================================================= */
+
+  const handleExportData = async () => {
+    if (exportingData) return;
+
+    setExportingData(true);
+    setBillingMessage(null);
+
+    try {
+      const data = await exportAccountDataApi();
+
+      const blob = new Blob(
+        [JSON.stringify(data, null, 2)],
+        { type: 'application/json' }
+      );
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      link.href = url;
+      link.download = `lumoclip-account-data-${Date.now()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error('Failed to export data:', err);
+
+      setBillingMessage({
+        type: 'error',
+        text: err?.message || 'Failed to export account data.',
+      });
+    } finally {
+      setExportingData(false);
+    }
+  };
+
+  /* =======================================================
+     ACCOUNT TOOLS: GENERATE API KEY
+  ======================================================= */
+
+  const handleGenerateApiKey = async () => {
+    if (generatingKey) return;
+
+    setGeneratingKey(true);
+    setBillingMessage(null);
+    setApiKeyCopied(false);
+
+    try {
+      const res = await generateApiKeyApi();
+      setApiKeyModal(res.apiKey);
+    } catch (err: any) {
+      console.error('Failed to generate API key:', err);
+
+      setBillingMessage({
+        type: 'error',
+        text: err?.message || 'Failed to generate API key.',
+      });
+    } finally {
+      setGeneratingKey(false);
+    }
+  };
+
+  const handleCopyApiKey = async () => {
+    if (!apiKeyModal) return;
+
+    try {
+      await navigator.clipboard.writeText(apiKeyModal);
+      setApiKeyCopied(true);
+      window.setTimeout(() => setApiKeyCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy API key:', err);
+    }
+  };
+
+  /* =======================================================
+     DANGER ZONE: DELETE ACCOUNT
+  ======================================================= */
+
+  const handleDeleteAccount = async () => {
+    if (deleting) return;
+
+    setDeleting(true);
+    setDeleteError('');
+
+    try {
+      await deleteAccountApi();
+      await supabase.auth.signOut();
+
+      window.location.href = '/';
+    } catch (err: any) {
+      console.error('Failed to delete account:', err);
+
+      setDeleteError(
+        err?.message || 'Failed to delete account. Please try again.'
+      );
+      setDeleting(false);
     }
   };
 
@@ -480,7 +712,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ];
 
   /* =======================================================
-     CONNECT
+     CONNECT (unchanged — TikTok / Instagram / Google
+     remain "coming soon" as requested)
   ======================================================= */
 
   const handleConnect = (platform: string) => {
@@ -1137,7 +1370,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 description="Control how LumoClip communicates with you and how your workspace behaves."
               />
 
-              <div className="space-y-4">
+              {prefsMessage && (
+                <div
+                  className={`mb-5 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
+                    prefsMessage.type === 'success'
+                      ? 'border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-400'
+                      : 'border-red-500/20 bg-red-500/[0.06] text-red-400'
+                  }`}
+                >
+                  {prefsMessage.type === 'success' ? (
+                    <CheckCircle2 className="h-4 w-4" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4" />
+                  )}
+                  {prefsMessage.text}
+                </div>
+              )}
+
+              <div className={`space-y-4 ${prefsLoading ? 'opacity-60' : ''}`}>
 
                 <div className="flex items-center justify-between gap-5 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-5">
 
@@ -1161,8 +1411,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
 
                   <Toggle
-                    checked={emailNotifications}
-                    onChange={setEmailNotifications}
+                    checked={preferences.email_notifications}
+                    disabled={prefsLoading || prefsSavingKey === 'email_notifications'}
+                    onChange={(value) =>
+                      savePreference('email_notifications', value)
+                    }
                   />
 
                 </div>
@@ -1189,8 +1442,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
 
                   <Toggle
-                    checked={marketingEmails}
-                    onChange={setMarketingEmails}
+                    checked={preferences.marketing_emails}
+                    disabled={prefsLoading || prefsSavingKey === 'marketing_emails'}
+                    onChange={(value) =>
+                      savePreference('marketing_emails', value)
+                    }
                   />
 
                 </div>
@@ -1208,12 +1464,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <select
-                      defaultValue="English"
-                      className="w-full rounded-xl border border-white/[0.06] bg-zinc-900 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-violet-500/30"
+                      value={preferences.language}
+                      disabled={prefsLoading || prefsSavingKey === 'language'}
+                      onChange={(e) =>
+                        savePreference('language', e.target.value)
+                      }
+                      className="w-full rounded-xl border border-white/[0.06] bg-zinc-900 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-violet-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <option>English</option>
-                      <option>বাংলা</option>
-                      <option>Spanish</option>
+                      <option value="English">English</option>
+                      <option value="বাংলা">বাংলা</option>
+                      <option value="Spanish">Spanish</option>
                     </select>
 
                   </div>
@@ -1229,29 +1489,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     </div>
 
                     <select
-                      defaultValue="Dark"
-                      className="w-full rounded-xl border border-white/[0.06] bg-zinc-900 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-violet-500/30"
+                      value={preferences.appearance}
+                      disabled={prefsLoading || prefsSavingKey === 'appearance'}
+                      onChange={(e) =>
+                        savePreference(
+                          'appearance',
+                          e.target.value as UserPreferences['appearance']
+                        )
+                      }
+                      className="w-full rounded-xl border border-white/[0.06] bg-zinc-900 px-3 py-2.5 text-xs text-zinc-300 outline-none focus:border-violet-500/30 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      <option>Dark</option>
-                      <option>Light</option>
-                      <option>System</option>
+                      <option value="dark">Dark</option>
+                      <option value="light">Light</option>
+                      <option value="system">System</option>
                     </select>
 
                   </div>
 
                 </div>
-              </div>
-
-              <div className="mt-6 flex items-center gap-2 rounded-2xl border border-amber-500/10 bg-amber-500/[0.035] p-4">
-
-                <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
-
-                <p className="text-xs text-zinc-600">
-                  Preference persistence can be connected
-                  to your user profile API when you are
-                  ready.
-                </p>
-
               </div>
 
             </section>
@@ -1335,13 +1590,41 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   </div>
 
+                  {billingMessage && (
+                    <div
+                      className={`mt-5 flex items-center gap-3 rounded-2xl border px-4 py-3 text-sm ${
+                        billingMessage.type === 'success'
+                          ? 'border-emerald-500/20 bg-emerald-500/[0.06] text-emerald-400'
+                          : 'border-red-500/20 bg-red-500/[0.06] text-red-400'
+                      }`}
+                    >
+                      {billingMessage.type === 'success' ? (
+                        <CheckCircle2 className="h-4 w-4" />
+                      ) : (
+                        <AlertCircle className="h-4 w-4" />
+                      )}
+                      {billingMessage.text}
+                    </div>
+                  )}
+
                   <button
                     type="button"
-                    className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-violet-600/20 transition hover:from-violet-500 hover:to-indigo-500"
+                    onClick={handleUpgrade}
+                    disabled={upgrading}
+                    className="mt-6 inline-flex items-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-xl shadow-violet-600/20 transition hover:from-violet-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Sparkles className="h-4 w-4" />
-                    Upgrade plan
-                    <ArrowUpRight className="h-4 w-4" />
+                    {upgrading ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        Redirecting to checkout…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        Upgrade plan
+                        <ArrowUpRight className="h-4 w-4" />
+                      </>
+                    )}
                   </button>
 
                 </div>
@@ -1402,18 +1685,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-2.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05] hover:text-white"
+                    onClick={handleExportData}
+                    disabled={exportingData}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-2.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <Download className="h-3.5 w-3.5" />
-                    Download data
+                    {exportingData ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    {exportingData ? 'Preparing export…' : 'Download data'}
                   </button>
 
                   <button
                     type="button"
-                    className="inline-flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-2.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05] hover:text-white"
+                    onClick={handleGenerateApiKey}
+                    disabled={generatingKey}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-2.5 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <KeyRound className="h-3.5 w-3.5" />
-                    Generate API key
+                    {generatingKey ? (
+                      <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <KeyRound className="h-3.5 w-3.5" />
+                    )}
+                    {generatingKey ? 'Generating…' : 'Generate API key'}
                   </button>
 
                 </div>
@@ -1647,9 +1942,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
               <button
                 type="button"
-                onClick={() =>
-                  setDeleteModal(true)
-                }
+                onClick={() => {
+                  setDeleteError('');
+                  setDeleteModal(true);
+                }}
                 className="shrink-0 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-2.5 text-xs font-semibold text-red-400 transition hover:bg-red-500/10"
               >
                 Delete account
@@ -1782,6 +2078,80 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       )}
 
       {/* =================================================
+          API KEY MODAL
+      ================================================= */}
+
+      {apiKeyModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md">
+
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/[0.08] bg-zinc-950 shadow-2xl shadow-black/50">
+
+            <div className="flex items-center justify-between border-b border-white/[0.05] p-5">
+
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-violet-400">
+                  Developer access
+                </p>
+
+                <h3 className="mt-1 text-lg font-bold text-white">
+                  Your new API key
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setApiKeyModal(null)}
+                className="rounded-xl p-2 text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+            </div>
+
+            <div className="p-6">
+
+              <div className="flex items-start gap-3 rounded-2xl border border-amber-500/10 bg-amber-500/[0.04] p-4">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                <p className="text-xs leading-5 text-zinc-500">
+                  Copy this key now — for security reasons
+                  it won't be shown again.
+                </p>
+              </div>
+
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-white/[0.07] bg-black/30 p-3">
+                <code className="flex-1 overflow-x-auto whitespace-nowrap text-xs text-zinc-300">
+                  {apiKeyModal}
+                </code>
+
+                <button
+                  type="button"
+                  onClick={handleCopyApiKey}
+                  className="shrink-0 rounded-lg border border-white/[0.07] bg-white/[0.03] p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
+                  aria-label="Copy API key"
+                >
+                  {apiKeyCopied ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setApiKeyModal(null)}
+                className="mt-6 w-full rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 px-4 py-3 text-xs font-semibold text-white shadow-lg shadow-violet-600/20 transition hover:from-violet-500 hover:to-indigo-500"
+              >
+                Done
+              </button>
+
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================
           DELETE MODAL
       ================================================= */}
 
@@ -1806,30 +2176,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 This action cannot be reversed.
               </p>
 
+              {deleteError && (
+                <div className="mt-4 flex items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-xs text-red-400">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  {deleteError}
+                </div>
+              )}
+
               <div className="mt-6 flex gap-3">
 
                 <button
                   type="button"
-                  onClick={() =>
-                    setDeleteModal(false)
-                  }
-                  className="flex-1 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05]"
+                  onClick={() => setDeleteModal(false)}
+                  disabled={deleting}
+                  className="flex-1 rounded-xl border border-white/[0.07] bg-white/[0.025] px-4 py-3 text-xs font-semibold text-zinc-400 transition hover:bg-white/[0.05] disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   Cancel
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => {
-                    setDeleteModal(false);
-
-                    console.warn(
-                      'Delete account API not implemented yet.'
-                    );
-                  }}
-                  className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-xs font-semibold text-white transition hover:bg-red-500"
+                  onClick={handleDeleteAccount}
+                  disabled={deleting}
+                  className="flex-1 rounded-xl bg-red-600 px-4 py-3 text-xs font-semibold text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  Delete permanently
+                  {deleting ? 'Deleting…' : 'Delete permanently'}
                 </button>
 
               </div>

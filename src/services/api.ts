@@ -1268,7 +1268,122 @@ export async function disconnectYouTubeApi(): Promise<void> {
     );
   }
 }
+// ============================================================
+// ADD THESE TO src/services/api.js (or api.ts)
+// Uses the existing authFetch/parseJsonResponse pattern already
+// in the file. Paste near the other "AUTH / PROFILE" functions.
+// ============================================================
 
+// ======================================================
+// PREFERENCES
+// ======================================================
+
+export interface UserPreferences {
+  email_notifications: boolean;
+  marketing_emails: boolean;
+  language: string;
+  appearance: "dark" | "light" | "system";
+}
+
+export async function fetchPreferencesApi(): Promise<{
+  preferences: UserPreferences;
+}> {
+  const res = await authFetch("/api/auth/preferences", {
+    method: "GET",
+  });
+
+  const data = await parseJsonResponse(res);
+
+  if (!res.ok) {
+    throw new Error(
+      data?.error || "Failed to fetch preferences"
+    );
+  }
+
+  return data as { preferences: UserPreferences };
+}
+
+export async function updatePreferencesApi(
+  updates: Partial<UserPreferences>
+): Promise<{ preferences: UserPreferences }> {
+  const res = await authFetch("/api/auth/preferences", {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(updates),
+  });
+
+  const data = await parseJsonResponse(res);
+
+  if (!res.ok) {
+    throw new Error(
+      data?.error || "Failed to update preferences"
+    );
+  }
+
+  return data as { preferences: UserPreferences };
+}
+
+// ======================================================
+// ACCOUNT DATA EXPORT
+// ======================================================
+
+export async function exportAccountDataApi(): Promise<Record<string, any>> {
+  const res = await authFetch("/api/auth/export", {
+    method: "GET",
+  });
+
+  const data = await parseJsonResponse(res);
+
+  if (!res.ok) {
+    throw new Error(
+      data?.error || "Failed to export account data"
+    );
+  }
+
+  return data as Record<string, any>;
+}
+
+// ======================================================
+// API KEY
+// ======================================================
+
+export async function generateApiKeyApi(): Promise<{
+  apiKey: string;
+}> {
+  const res = await authFetch("/api/auth/api-key", {
+    method: "POST",
+  });
+
+  const data = await parseJsonResponse(res);
+
+  if (!res.ok) {
+    throw new Error(
+      data?.error || "Failed to generate API key"
+    );
+  }
+
+  return data as { apiKey: string };
+}
+
+// ======================================================
+// DELETE ACCOUNT
+// ======================================================
+
+export async function deleteAccountApi(): Promise<void> {
+  const res = await authFetch("/api/auth/account", {
+    method: "DELETE",
+  });
+
+  const data = await parseJsonResponse(res);
+
+  if (!res.ok) {
+    throw new Error(
+      data?.error || "Failed to delete account"
+    );
+  }
+}
 // ======================================================
 // STRIPE CHECKOUT
 // ======================================================
