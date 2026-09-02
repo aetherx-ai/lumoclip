@@ -1,26 +1,16 @@
 /*
-  ============================================================
   LumoClip PC Worker
-  Windows PC Worker
-  ============================================================
+
+  Run on your Windows PC.
 
   Requirements:
-    npm install youtube-dl-exec ffmpeg-static ffprobe-static
+    npm install youtube-dl-exec
 
   Environment:
-
     LUMOCLIP_API_URL=https://lumo-clip.com
     LUMO_WORKER_TOKEN=YOUR_SECRET
-
     WORKER_POLL_MS=5000
     WORKER_MAX_HEIGHT=480
-
-  Optional:
-
-    FFMPEG_PATH=C:\path\to\ffmpeg.exe
-    WORKER_DOWNLOAD_DIR=C:\path\to\downloads
-
-  ============================================================
 */
 
 const fs = require("node:fs");
@@ -28,10 +18,7 @@ const path = require("node:path");
 const http = require("node:http");
 const https = require("node:https");
 const { URL } = require("node:url");
-
 const youtubedl = require("youtube-dl-exec");
-const ffmpegStatic = require("ffmpeg-static");
-const ffprobeStatic = require("ffprobe-static");
 
 // ============================================================
 // CONFIG
@@ -39,7 +26,7 @@ const ffprobeStatic = require("ffprobe-static");
 
 const API_URL = (
   process.env.LUMOCLIP_API_URL || "https://lumo-clip.com"
-).trim().replace(/\/+$/, "");
+).replace(/\/+$/, "");
 
 const WORKER_TOKEN = (
   process.env.LUMO_WORKER_TOKEN || ""
@@ -63,10 +50,7 @@ const DOWNLOAD_DIR = path.resolve(
     "./lumoclip-worker-downloads"
 );
 
-// ============================================================
-// NETWORK CONFIG
-// ============================================================
-
+// Network configuration
 const API_TIMEOUT_MS = 30000;
 const UPLOAD_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -77,109 +61,29 @@ const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 15000;
 
 // ============================================================
-// FFMPEG PATH
-// ============================================================
-
-const FFMPEG_PATH =
-  process.env.FFMPEG_PATH ||
-  ffmpegStatic ||
-  null;
-
-const FFPROBE_PATH =
-  ffprobeStatic?.path ||
-  null;
-
-// ============================================================
 // VALIDATION
 // ============================================================
 
-function validateConfig() {
-  console.log("");
-  console.log("========================================");
-  console.log("        LumoClip Worker Config");
-  console.log("========================================");
-
-  console.log(`API URL: ${API_URL}`);
-  console.log(
-    `Worker token: ${WORKER_TOKEN ? "configured" : "MISSING"}`
+if (!WORKER_TOKEN) {
+  console.error(
+    "ERROR: LUMO_WORKER_TOKEN is missing."
   );
-  console.log(`Poll interval: ${POLL_MS}ms`);
-  console.log(`Max height: ${MAX_HEIGHT}p`);
-  console.log(`Download directory: ${DOWNLOAD_DIR}`);
-  console.log(`FFmpeg: ${FFMPEG_PATH || "MISSING"}`);
-  console.log(`FFprobe: ${FFPROBE_PATH || "not available"}`);
 
-  console.log("========================================");
-  console.log("");
-
-  if (!WORKER_TOKEN) {
-    console.error(
-      "[worker] ERROR: LUMO_WORKER_TOKEN is missing."
-    );
-
-    process.exit(1);
-  }
-
-  if (!FFMPEG_PATH) {
-    console.error(
-      "[worker] ERROR: FFmpeg executable was not found."
-    );
-
-    console.error(
-      "[worker] Install ffmpeg-static or set FFMPEG_PATH."
-    );
-
-    process.exit(1);
-  }
-
-  if (!fs.existsSync(FFMPEG_PATH)) {
-    console.error(
-      `[worker] ERROR: FFmpeg does not exist: ${FFMPEG_PATH}`
-    );
-
-    process.exit(1);
-  }
-
-  if (FFPROBE_PATH && !fs.existsSync(FFPROBE_PATH)) {
-    console.warn(
-      `[worker] WARNING: FFprobe path does not exist: ${FFPROBE_PATH}`
-    );
-  }
-
-  try {
-    const parsed = new URL(API_URL);
-
-    if (
-      parsed.protocol !== "http:" &&
-      parsed.protocol !== "https:"
-    ) {
-      throw new Error(
-        "LUMOCLIP_API_URL must use http:// or https://"
-      );
-    }
-  } catch (error) {
-    console.error(
-      `[worker] ERROR: Invalid API URL: ${API_URL}`
-    );
-
-    console.error(
-      `[worker] ${getErrorMessage(error)}`
-    );
-
-    process.exit(1);
-  }
-
-  fs.mkdirSync(DOWNLOAD_DIR, {
-    recursive: true,
-  });
+  process.exit(1);
 }
+
+fs.mkdirSync(DOWNLOAD_DIR, {
+  recursive: true,
+});
 
 // ============================================================
 // HELPERS
 // ============================================================
 
 function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise((resolve) =>
+    setTimeout(resolve, ms)
+  );
 }
 
 function retryDelay(attempt) {
@@ -197,45 +101,10 @@ function getErrorMessage(error) {
   return String(error);
 }
 
-function getDetailedNetworkError(error) {
-  const message = getErrorMessage(error);
-
-  const code =
-    error?.code ||
-    error?.cause?.code ||
-    "";
-
-  const causeMessage =
-    error?.cause?.message ||
-    "";
-
-  const details = [];
-
-  if (code) {
-    details.push(`code=${code}`);
-  }
-
-  if (causeMessage && causeMessage !== message) {
-    details.push(`cause=${causeMessage}`);
-  }
-
-  if (details.length > 0) {
-    return `${message} (${details.join(", ")})`;
-  }
-
-  return message;
-}
-
 function isRetryableError(error) {
-  const message = (
-    getErrorMessage(error) +
-    " " +
-    (error?.code || "") +
-    " " +
-    (error?.cause?.code || "")
-  ).toLowerCase();
+  const message = getErrorMessage(error).toLowerCase();
 
-  const patterns = [
+  const retryablePatterns = [
     "fetch failed",
     "network",
     "socket",
@@ -246,38 +115,19 @@ function isRetryableError(error) {
     "aborted",
     "enotfound",
     "eai_again",
-    "ehostunreach",
-    "enetunreach",
-    "epipe",
     "502",
     "503",
     "504",
     "429",
   ];
 
-  return patterns.some((pattern) =>
+  return retryablePatterns.some((pattern) =>
     message.includes(pattern)
   );
 }
 
 // ============================================================
-// API URL HELPERS
-// ============================================================
-
-function makeApiUrl(route) {
-  try {
-    return new URL(route, API_URL);
-  } catch (error) {
-    throw new Error(
-      `Invalid API route "${route}" against "${API_URL}": ${getErrorMessage(
-        error
-      )}`
-    );
-  }
-}
-
-// ============================================================
-// API JSON REQUEST
+// API JSON
 // ============================================================
 
 async function apiJson(
@@ -291,7 +141,7 @@ async function apiJson(
     timeoutMs = API_TIMEOUT_MS,
   } = options;
 
-  const url = makeApiUrl(route);
+  const url = new URL(route, API_URL);
 
   let lastError;
 
@@ -308,7 +158,7 @@ async function apiJson(
 
     try {
       console.log(
-        `[worker] API ${method} ${url.href} (attempt ${attempt}/${retries})`
+        `[worker] API ${method} ${url.pathname} (attempt ${attempt}/${retries})`
       );
 
       const response = await fetch(url, {
@@ -317,8 +167,8 @@ async function apiJson(
         headers: {
           Accept: "application/json",
           "Content-Type": "application/json",
-          "User-Agent": "LumoClip-PC-Worker/1.0",
-          "x-lumo-worker-token": WORKER_TOKEN,
+          "x-lumo-worker-token":
+            WORKER_TOKEN,
         },
 
         body:
@@ -354,11 +204,6 @@ async function apiJson(
 
         error.status = response.status;
 
-        /*
-          HTTP errors such as 401/403 should not be
-          reported as "fetch failed".
-        */
-
         throw error;
       }
 
@@ -366,68 +211,11 @@ async function apiJson(
     } catch (error) {
       lastError = error;
 
-      const message =
-        getDetailedNetworkError(error);
+      const message = getErrorMessage(error);
 
       console.error(
         `[worker] API request failed: ${message}`
       );
-
-      /*
-        Helpful diagnostics for network errors.
-      */
-
-      if (
-        error?.name === "AbortError"
-      ) {
-        console.error(
-          `[worker] API request timed out after ${timeoutMs}ms.`
-        );
-      }
-
-      if (
-        error?.cause?.code === "ENOTFOUND"
-      ) {
-        console.error(
-          `[worker] DNS lookup failed for ${url.hostname}.`
-        );
-
-        console.error(
-          `[worker] Check your internet connection and API domain.`
-        );
-      }
-
-      if (
-        error?.cause?.code === "ECONNREFUSED"
-      ) {
-        console.error(
-          `[worker] Connection refused by ${url.hostname}.`
-        );
-
-        console.error(
-          `[worker] Check whether the Render service is running.`
-        );
-      }
-
-      if (
-        error?.cause?.code === "ETIMEDOUT"
-      ) {
-        console.error(
-          `[worker] Connection timed out while reaching ${url.hostname}.`
-        );
-      }
-
-      /*
-        Don't retry authentication/configuration errors.
-      */
-
-      if (
-        error?.status === 401 ||
-        error?.status === 403 ||
-        error?.status === 400
-      ) {
-        throw error;
-      }
 
       if (
         attempt >= retries ||
@@ -452,276 +240,188 @@ async function apiJson(
 }
 
 // ============================================================
-// API CONNECTION TEST
-// ============================================================
-
-async function testApiConnection() {
-  console.log("");
-  console.log("========================================");
-  console.log("        Testing LumoClip API");
-  console.log("========================================");
-
-  console.log(
-    `[worker] API endpoint: ${API_URL}`
-  );
-
-  try {
-    const result = await apiJson(
-      "POST",
-      "/api/worker/claim",
-      undefined,
-      {
-        retries: 1,
-        timeoutMs: 15000,
-      }
-    );
-
-    console.log("");
-    console.log(
-      "[worker] API CONNECTION: OK"
-    );
-
-    if (result?.job) {
-      console.log(
-        `[worker] Existing job detected: ${result.job.id}`
-      );
-    } else {
-      console.log(
-        "[worker] No queued job currently."
-      );
-    }
-
-    console.log(
-      "========================================"
-    );
-    console.log("");
-
-    return true;
-  } catch (error) {
-    console.error("");
-    console.error(
-      "========================================"
-    );
-    console.error(
-      "[worker] API CONNECTION: FAILED"
-    );
-    console.error(
-      "========================================"
-    );
-
-    console.error(
-      `[worker] URL: ${API_URL}`
-    );
-
-    console.error(
-      `[worker] Error: ${getDetailedNetworkError(error)}`
-    );
-
-    if (error?.status === 401) {
-      console.error(
-        "[worker] Server is reachable, but WORKER TOKEN is invalid."
-      );
-    } else if (error?.status === 503) {
-      console.error(
-        "[worker] Server is reachable, but LUMO_WORKER_TOKEN is not configured on Render."
-      );
-    } else if (error?.status) {
-      console.error(
-        `[worker] Server returned HTTP ${error.status}.`
-      );
-    } else {
-      console.error(
-        "[worker] The PC could not receive an HTTP response."
-      );
-
-      console.error(
-        "[worker] Check DNS, internet, domain, Render service and firewall."
-      );
-    }
-
-    console.error(
-      "========================================"
-    );
-    console.error("");
-
-    return false;
-  }
-}
-
-// ============================================================
-// UPLOAD
+// UPLOAD FILE
 // ============================================================
 
 function uploadFileOnce(
   route,
   filePath
 ) {
-  return new Promise((resolve, reject) => {
-    let url;
-
-    try {
-      url = makeApiUrl(route);
-    } catch (error) {
-      reject(error);
-      return;
-    }
-
-    if (!fs.existsSync(filePath)) {
-      reject(
-        new Error(
-          `Upload file does not exist: ${filePath}`
-        )
+  return new Promise(
+    (resolve, reject) => {
+      const url = new URL(
+        route,
+        API_URL
       );
 
-      return;
-    }
+      const stat =
+        fs.statSync(filePath);
 
-    const stat = fs.statSync(filePath);
+      const boundary =
+        "LUMOCLIP_BOUNDARY";
 
-    const boundary =
-      "----LumoClipWorkerBoundary" +
-      Date.now().toString(16);
+      const fileName =
+        path
+          .basename(filePath)
+          .replace(/"/g, "");
 
-    const fileName = path
-      .basename(filePath)
-      .replace(/"/g, "");
+      const preamble =
+        Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="video"; filename="${fileName}"\r\n` +
+          `Content-Type: video/mp4\r\n\r\n`,
+          "utf8"
+        );
 
-    const preamble = Buffer.from(
-      `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="video"; filename="${fileName}"\r\n` +
-        `Content-Type: video/mp4\r\n\r\n`,
-      "utf8"
-    );
+      const ending =
+        Buffer.from(
+          `\r\n--${boundary}--\r\n`,
+          "utf8"
+        );
 
-    const ending = Buffer.from(
-      `\r\n--${boundary}--\r\n`,
-      "utf8"
-    );
+      const headers = {
+        "Content-Type":
+          `multipart/form-data; boundary=${boundary}`,
 
-    const headers = {
-      "Content-Type":
-        `multipart/form-data; boundary=${boundary}`,
+        "Content-Length":
+          preamble.length +
+          stat.size +
+          ending.length,
 
-      "Content-Length":
-        preamble.length +
-        stat.size +
-        ending.length,
+        "x-lumo-worker-token":
+          WORKER_TOKEN,
 
-      "x-lumo-worker-token":
-        WORKER_TOKEN,
+        Accept:
+          "application/json",
+      };
 
-      Accept: "application/json",
+      const client =
+        url.protocol === "https:"
+          ? https
+          : http;
 
-      "User-Agent":
-        "LumoClip-PC-Worker/1.0",
-    };
+      let finished = false;
 
-    const client =
-      url.protocol === "https:"
-        ? https
-        : http;
+      const fail = (error) => {
+        if (finished) return;
 
-    let finished = false;
+        finished = true;
 
-    const fail = (error) => {
-      if (finished) return;
+        reject(error);
+      };
 
-      finished = true;
+      const succeed = (data) => {
+        if (finished) return;
 
-      reject(error);
-    };
+        finished = true;
 
-    const succeed = (data) => {
-      if (finished) return;
+        resolve(data);
+      };
 
-      finished = true;
+      const req =
+        client.request(
+          url,
+          {
+            method: "POST",
+            headers,
 
-      resolve(data);
-    };
+            timeout:
+              UPLOAD_TIMEOUT_MS,
+          },
 
-    const req = client.request(
-      url,
-      {
-        method: "POST",
-        headers,
-        timeout: UPLOAD_TIMEOUT_MS,
-      },
+          (res) => {
+            let text = "";
 
-      (res) => {
-        let text = "";
+            res.setEncoding("utf8");
 
-        res.setEncoding("utf8");
-
-        res.on("data", (chunk) => {
-          text += chunk;
-        });
-
-        res.on("end", () => {
-          let data;
-
-          try {
-            data = text
-              ? JSON.parse(text)
-              : null;
-          } catch {
-            data = {
-              error:
-                text ||
-                `HTTP ${res.statusCode}`,
-            };
-          }
-
-          if (
-            res.statusCode >= 200 &&
-            res.statusCode < 300
-          ) {
-            succeed(data);
-          } else {
-            const error = new Error(
-              data?.error ||
-                `Upload failed: HTTP ${res.statusCode}`
+            res.on(
+              "data",
+              (chunk) => {
+                text += chunk;
+              }
             );
 
-            error.status =
-              res.statusCode;
+            res.on(
+              "end",
+              () => {
+                let data;
 
-            fail(error);
+                try {
+                  data = text
+                    ? JSON.parse(text)
+                    : null;
+                } catch {
+                  data = {
+                    error:
+                      text ||
+                      `HTTP ${res.statusCode}`,
+                  };
+                }
+
+                if (
+                  res.statusCode >= 200 &&
+                  res.statusCode < 300
+                ) {
+                  succeed(data);
+                } else {
+                  const error =
+                    new Error(
+                      data?.error ||
+                        `Upload failed: HTTP ${res.statusCode}`
+                    );
+
+                  error.status =
+                    res.statusCode;
+
+                  fail(error);
+                }
+              }
+            );
           }
-        });
-      }
-    );
+        );
 
-    req.on("timeout", () => {
-      req.destroy(
-        new Error(
-          "Upload request timed out."
-        )
+      req.on(
+        "timeout",
+        () => {
+          req.destroy(
+            new Error(
+              "Upload request timed out."
+            )
+          );
+        }
       );
-    });
 
-    req.on("error", (error) => {
-      fail(error);
-    });
+      req.on(
+        "error",
+        fail
+      );
 
-    req.write(preamble);
+      req.write(preamble);
 
-    const stream =
-      fs.createReadStream(filePath);
+      const stream =
+        fs.createReadStream(
+          filePath
+        );
 
-    stream.on("error", (error) => {
-      fail(error);
-    });
+      stream.on(
+        "error",
+        fail
+      );
 
-    stream.on("end", () => {
-      if (!finished) {
-        req.end(ending);
-      }
-    });
+      stream.on(
+        "end",
+        () => {
+          if (!finished) {
+            req.end(ending);
+          }
+        }
+      );
 
-    stream.pipe(req, {
-      end: false,
-    });
-  });
+      stream.pipe(req, {
+        end: false,
+      });
+    }
+  );
 }
 
 async function uploadFile(
@@ -748,19 +448,11 @@ async function uploadFile(
       lastError = error;
 
       const message =
-        getDetailedNetworkError(error);
+        getErrorMessage(error);
 
       console.error(
         `[worker] Upload failed: ${message}`
       );
-
-      if (
-        error?.status === 401 ||
-        error?.status === 403 ||
-        error?.status === 400
-      ) {
-        throw error;
-      }
 
       if (
         attempt >= UPLOAD_RETRIES ||
@@ -781,41 +473,6 @@ async function uploadFile(
   }
 
   throw lastError;
-}
-
-// ============================================================
-// DOWNLOAD PROGRESS
-// ============================================================
-
-function showDownloadProgress(line) {
-  const text = String(line);
-
-  const match = text.match(
-    /\[download\]\s+(\d+(?:\.\d+)?)%.*?at\s+([^\s]+).*?ETA\s+([^\s]+)/i
-  );
-
-  if (match) {
-    const percent = match[1];
-    const speed = match[2];
-    const eta = match[3];
-
-    process.stdout.write(
-      `\r[worker] Download ${percent}% | ${speed} | ETA ${eta}       `
-    );
-
-    return;
-  }
-
-  if (
-    text.includes("[Merger]") ||
-    text.includes("has already been downloaded") ||
-    text.includes("[ExtractAudio]") ||
-    text.includes("[ffmpeg]")
-  ) {
-    console.log(
-      `\n[worker] ${text.trim()}`
-    );
-  }
 }
 
 // ============================================================
@@ -850,13 +507,14 @@ async function downloadVideo(
   }
 
   const yt =
-    youtubedl.create(bundled);
+    youtubedl.create(
+      bundled
+    );
 
   const format =
-    `best[height<=${MAX_HEIGHT}][ext=mp4]` +
-    `/bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
-    `/best[height<=${MAX_HEIGHT}]` +
+    `bv*[height<=${MAX_HEIGHT}][ext=mp4]+ba[ext=m4a]` +
     `/b[height<=${MAX_HEIGHT}][ext=mp4]` +
+    `/b[height<=${MAX_HEIGHT}]` +
     `/b`;
 
   const options = {
@@ -868,131 +526,46 @@ async function downloadVideo(
 
     forceOverwrites: true,
 
+    noPart: true,
+
+    noContinue: true,
+
     mergeOutputFormat: "mp4",
 
-    retries: 5,
+    ...(process.env.FFMPEG_PATH
+      ? {
+          ffmpegLocation:
+            process.env.FFMPEG_PATH,
+        }
+      : {}),
 
-    fragmentRetries: 10,
+    retries: 3,
 
-    extractorRetries: 5,
+    fragmentRetries: 5,
 
-    socketTimeout: 60,
+    extractorRetries: 3,
+
+    socketTimeout: 45,
 
     forceIpv4: true,
 
     concurrentFragments: 2,
 
     restrictFilenames: true,
-
-    newline: true,
-
-    progress: true,
-
-    downloaderArgs: {
-      http: [
-        "timeout=60",
-      ],
-    },
-
-    ffmpegLocation:
-      FFMPEG_PATH,
   };
 
-  console.log("");
   console.log(
     `[worker] Downloading: ${sourceUrl}`
   );
 
-  console.log(
-    `[worker] Target quality: <= ${MAX_HEIGHT}p`
+  await yt(
+    sourceUrl,
+    options
   );
-
-  console.log(
-    `[worker] yt-dlp: ${bundled}`
-  );
-
-  console.log(
-    `[worker] FFmpeg: ${FFMPEG_PATH}`
-  );
-
-  if (FFPROBE_PATH) {
-    console.log(
-      `[worker] FFprobe: ${FFPROBE_PATH}`
-    );
-  }
-
-  console.log(
-    `[worker] Download directory: ${DOWNLOAD_DIR}`
-  );
-
-  try {
-    const subprocess = yt(
-      sourceUrl,
-      options
-    );
-
-    if (subprocess.stdout) {
-      let buffer = "";
-
-      subprocess.stdout.on(
-        "data",
-        (chunk) => {
-          buffer += chunk.toString();
-
-          const lines =
-            buffer.split(/\r?\n/);
-
-          buffer =
-            lines.pop() || "";
-
-          for (const line of lines) {
-            if (line.trim()) {
-              showDownloadProgress(line);
-            }
-          }
-        }
-      );
-    }
-
-    if (subprocess.stderr) {
-      subprocess.stderr.on(
-        "data",
-        (chunk) => {
-          const text =
-            chunk.toString();
-
-          const lines =
-            text.split(/\r?\n/);
-
-          for (const line of lines) {
-            if (line.trim()) {
-              showDownloadProgress(line);
-            }
-          }
-        }
-      );
-    }
-
-    await subprocess;
-
-    console.log(
-      "\n[worker] yt-dlp process completed."
-    );
-  } catch (error) {
-    console.error(
-      "\n[worker] yt-dlp download error:"
-    );
-
-    console.error(
-      getErrorMessage(error)
-    );
-
-    throw error;
-  }
 
   if (!fs.existsSync(outputPath)) {
     throw new Error(
-      "yt-dlp finished but no final output file was created."
+      "yt-dlp finished but no output file was created."
     );
   }
 
@@ -1009,9 +582,7 @@ async function downloadVideo(
   }
 
   console.log(
-    `[worker] Download complete: ${(stat.size / 1024 / 1024).toFixed(
-      2
-    )} MB`
+    `[worker] Download complete: ${(stat.size / 1024 / 1024).toFixed(2)} MB`
   );
 }
 
@@ -1020,11 +591,13 @@ async function downloadVideo(
 // ============================================================
 
 async function handleJob(job) {
-  const projectId = job.id;
+  const projectId =
+    job.id;
 
-  const sourceUrl = String(
-    job.source_url || ""
-  ).trim();
+  const sourceUrl =
+    String(
+      job.source_url || ""
+    ).trim();
 
   if (!sourceUrl) {
     throw new Error(
@@ -1039,12 +612,12 @@ async function handleJob(job) {
     );
 
   try {
-    // --------------------------------------------------------
-    // REMOVE PREVIOUS FINAL FILE
-    // --------------------------------------------------------
-
-    if (fs.existsSync(outputPath)) {
-      fs.unlinkSync(outputPath);
+    if (
+      fs.existsSync(outputPath)
+    ) {
+      fs.unlinkSync(
+        outputPath
+      );
     }
 
     // --------------------------------------------------------
@@ -1074,9 +647,10 @@ async function handleJob(job) {
     console.log(
       `[worker] Project ${projectId} sent to Render successfully.`
     );
+
   } catch (error) {
     const message =
-      getDetailedNetworkError(error);
+      getErrorMessage(error);
 
     console.error(
       `[worker] Job ${projectId} failed: ${message}`
@@ -1096,7 +670,10 @@ async function handleJob(job) {
 
         {
           error:
-            message.slice(0, 1000),
+            message.slice(
+              0,
+              1000
+            ),
         },
 
         {
@@ -1108,57 +685,34 @@ async function handleJob(job) {
       console.log(
         `[worker] Failure reported for ${projectId}.`
       );
+
     } catch (failError) {
       console.error(
         "[worker] Failed to report failure:",
-        getDetailedNetworkError(
+        getErrorMessage(
           failError
         )
       );
     }
+
   } finally {
     // --------------------------------------------------------
     // CLEANUP
     // --------------------------------------------------------
 
     try {
-      if (fs.existsSync(outputPath)) {
-        fs.unlinkSync(outputPath);
+      if (
+        fs.existsSync(
+          outputPath
+        )
+      ) {
+        fs.unlinkSync(
+          outputPath
+        );
 
         console.log(
           `[worker] Cleaned up ${outputPath}`
         );
-      }
-
-      const files =
-        fs.readdirSync(
-          DOWNLOAD_DIR
-        );
-
-      for (const file of files) {
-        if (
-          file.startsWith(
-            `${projectId}.`
-          )
-        ) {
-          const tempPath =
-            path.join(
-              DOWNLOAD_DIR,
-              file
-            );
-
-          try {
-            fs.unlinkSync(
-              tempPath
-            );
-
-            console.log(
-              `[worker] Cleaned temp file: ${file}`
-            );
-          } catch {
-            // Ignore individual cleanup errors.
-          }
-        }
       }
     } catch (cleanupError) {
       console.error(
@@ -1172,13 +726,10 @@ async function handleJob(job) {
 }
 
 // ============================================================
-// MAIN LOOP
+// MAIN WORKER LOOP
 // ============================================================
 
 async function main() {
-  validateConfig();
-
-  console.log("");
   console.log(
     "========================================"
   );
@@ -1212,43 +763,8 @@ async function main() {
   );
 
   console.log(
-    `Download directory: ${DOWNLOAD_DIR}`
-  );
-
-  console.log(
-    `FFmpeg: ${FFMPEG_PATH}`
-  );
-
-  if (FFPROBE_PATH) {
-    console.log(
-      `FFprobe: ${FFPROBE_PATH}`
-    );
-  }
-
-  console.log(
     "========================================"
   );
-
-  // ==========================================================
-  // STARTUP API TEST
-  // ==========================================================
-
-  const connected =
-    await testApiConnection();
-
-  if (!connected) {
-    console.error(
-      "[worker] Startup API test failed."
-    );
-
-    console.error(
-      "[worker] Worker will continue retrying instead of exiting."
-    );
-  }
-
-  // ==========================================================
-  // POLLING LOOP
-  // ==========================================================
 
   while (true) {
     try {
@@ -1260,41 +776,28 @@ async function main() {
 
       if (result?.job) {
         console.log(
-          `\n[worker] Job claimed: ${result.job.id}`
+          `[worker] Job claimed: ${result.job.id}`
         );
 
         await handleJob(
           result.job
         );
-      } else {
-        console.log(
-          `[worker] No job. Next poll in ${POLL_MS}ms...`
-        );
       }
+
     } catch (error) {
       console.error(
         "[worker] Poll error:",
-        getDetailedNetworkError(error)
+        getErrorMessage(error)
       );
-
-      if (error?.status === 401) {
-        console.error(
-          "[worker] ERROR: Worker token is invalid."
-        );
-      }
-
-      if (error?.status === 503) {
-        console.error(
-          "[worker] ERROR: Worker token is not configured on the server."
-        );
-      }
 
       console.log(
         `[worker] Continuing. Next poll in ${POLL_MS}ms...`
       );
     }
 
-    await sleep(POLL_MS);
+    await sleep(
+      POLL_MS
+    );
   }
 }
 
@@ -1302,11 +805,13 @@ async function main() {
 // START
 // ============================================================
 
-main().catch((error) => {
-  console.error(
-    "[worker] Fatal error:",
-    getDetailedNetworkError(error)
-  );
+main().catch(
+  (error) => {
+    console.error(
+      "[worker] Fatal error:",
+      error
+    );
 
-  process.exit(1);
-});
+    process.exit(1);
+  }
+);
