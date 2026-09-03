@@ -129,6 +129,12 @@ const GEMINI_RETRY_MAX_MS = Number(
   process.env.GEMINI_RETRY_MAX_MS || 60000,
 );
 
+// Hard limit for one Gemini generateContent request. This prevents a stuck
+// provider request from hanging a Render worker indefinitely.
+const GEMINI_REQUEST_TIMEOUT_MS = Number(
+  process.env.GEMINI_REQUEST_TIMEOUT_MS || 120000,
+);
+
 // If the primary model exhausts its retries on a transient error
 // (429/5xx/"high demand"), fall back to these models in order before
 // giving up entirely. Comma-separated, e.g. "gemini-2.5-flash,gemini-2.0-flash".
@@ -1955,11 +1961,34 @@ function getGeminiErrorStatus(error: any): number | undefined {
   return undefined;
 }
 
+function getGeminiErrorMessage(error: any): string {
+  return String(
+    error?.message ||
+      error?.error?.message ||
+      error?.error?.details?.[0]?.message ||
+      error ||
+      "",
+  );
+}
+
+function isGeminiQuotaExceeded(error: any): boolean {
+  const status = getGeminiErrorStatus(error);
+  const message = getGeminiErrorMessage(error).toLowerCase();
+
+  return (
+    status === 429 &&
+    (message.includes("quota") ||
+      message.includes("free tier") ||
+      message.includes("rate limit") ||
+      message.includes("limit: 0") ||
+      message.includes("generate_content_free_tier_requests") ||
+      message.includes("resource exhausted"))
+  );
+}
+
 function isRetryableGeminiError(error: any): boolean {
   const status = getGeminiErrorStatus(error);
-  const message = String(
-    error?.message || error?.error?.message || error || "",
-  ).toLowerCase();
+  const message = getGeminiErrorMessage(error).toLowerCase();
 
   return (
     status === 429 ||
@@ -1974,66 +2003,93 @@ function isRetryableGeminiError(error: any): boolean {
   );
 }
 
+async function withGeminiTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  label: string,
+): Promise<T> {
+  const safeTimeout = Math.max(1000, timeoutMs);
+
+  return await Promise.race([
+    operation,
+    new Promise<T>((_, reject) => {
+      const timer = setTimeout(() => {
+        const error: any = new Error(
+          `${label} timed out after ${safeTimeout}ms.`,
+        );
+        error.code = "GEMINI_REQUEST_TIMEOUT";
+        error.status = 504;
+        reject(error);
+      }, safeTimeout);
+
+      // Do not keep Node alive just because the timeout is pending.
+      timer.unref?.();
+    }),
+  ]);
+}
+
 async function generateGeminiWithRetry(
   params: Parameters<typeof ai.models.generateContent>[0],
 ) {
   const primaryModel = (params as any).model;
 
-  // Try the requested model first, then any configured fallback models
-  // (skipping duplicates) if the primary model exhausts its retries on
-  // a transient (retryable) error.
   const modelsToTry = [
     primaryModel,
     ...GEMINI_FALLBACK_MODELS.filter(
       (m) => m !== primaryModel,
     ),
-  ];
+  ].filter(Boolean);
 
   let lastError: unknown;
-
   const attempts = Math.max(1, GEMINI_GENERATE_RETRIES);
 
-  for (
-    let modelIndex = 0;
-    modelIndex < modelsToTry.length;
-    modelIndex++
-  ) {
+  for (let modelIndex = 0; modelIndex < modelsToTry.length; modelIndex++) {
     const model = modelsToTry[modelIndex];
     const isFallback = modelIndex > 0;
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
         console.log(
-          `Gemini generateContent${
-            isFallback ? " [fallback]" : ""
-          } model=${model} attempt ${attempt}/${attempts}`,
+          `Gemini generateContent${isFallback ? " [fallback]" : ""} model=${model} attempt ${attempt}/${attempts}`,
         );
 
-        return await ai.models.generateContent({
-          ...params,
-          model,
-        } as any);
+        const response = await withGeminiTimeout(
+          ai.models.generateContent({
+            ...params,
+            model,
+          } as any),
+          GEMINI_REQUEST_TIMEOUT_MS,
+          `Gemini ${model}`,
+        );
+
+        return response;
       } catch (error: any) {
         lastError = error;
 
         const status = getGeminiErrorStatus(error);
-
-        console.error(
-          `Gemini generateContent model=${model} attempt ${attempt} failed (status ${status ?? "unknown"}):`,
-          error?.message || error,
-        );
-
+        const message = getGeminiErrorMessage(error);
+        const quotaExceeded = isGeminiQuotaExceeded(error);
         const retryable = isRetryableGeminiError(error);
 
+        console.error(
+          `Gemini generateContent model=${model} attempt ${attempt} failed (status ${status ?? "unknown"})${quotaExceeded ? " [QUOTA EXCEEDED]" : ""}:`,
+          message,
+        );
+
+        // A daily/free-tier quota exhaustion will not recover by retrying the
+        // same model. Switch to the fallback immediately instead.
+        if (quotaExceeded) {
+          console.warn(
+            `Gemini model=${model} quota exhausted. Skipping remaining retries and switching to fallback.`,
+          );
+          break;
+        }
+
         if (!retryable) {
-          // Non-transient error (bad request, invalid content, etc.)
-          // Retrying or switching models won't help.
           throw error;
         }
 
         if (attempt >= attempts) {
-          // Exhausted retries on this model. Move on to the next
-          // fallback model, if any, instead of failing immediately.
           console.warn(
             `Model ${model} exhausted after ${attempts} attempts.${
               modelIndex < modelsToTry.length - 1
@@ -2045,16 +2101,10 @@ async function generateGeminiWithRetry(
         }
 
         const exponentialDelay = Math.min(
-          GEMINI_RETRY_BASE_MS *
-            Math.pow(2, attempt - 1),
+          GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1),
           GEMINI_RETRY_MAX_MS,
         );
-
-        // Small jitter avoids repeatedly hitting the service at the same instant.
-        const jitter = Math.floor(
-          Math.random() * 1000,
-        );
-
+        const jitter = Math.floor(Math.random() * 1000);
         const delay = Math.min(
           exponentialDelay + jitter,
           GEMINI_RETRY_MAX_MS,
@@ -2071,7 +2121,7 @@ async function generateGeminiWithRetry(
     }
   }
 
-  throw lastError;
+  throw lastError || new Error("Gemini analysis failed.");
 }
 
 function generateId() {
@@ -2667,6 +2717,101 @@ function buildFallbackCaption(
     : combined;
 }
 
+function buildFallbackClipsFromTranscript(
+  transcript: TranscriptSegment[],
+  duration: number,
+  maxClips: number,
+): ViralClip[] {
+  if (!transcript.length || maxClips <= 0) return [];
+
+  const safeDuration = Math.max(1, Number(duration) || 1);
+  const targetMin = 12;
+  const targetMax = 45;
+  const candidates: ViralClip[] = [];
+
+  // Prefer transcript windows with enough speech to make a useful short.
+  // This is a deterministic recovery path only; Gemini remains the primary
+  // source of viral ranking/title/reason when it returns valid clips.
+  for (let i = 0; i < transcript.length; i++) {
+    const first = transcript[i];
+    let start = Math.max(0, first.start - 1.5);
+    let end = first.end;
+    let text = first.text;
+
+    for (let j = i + 1; j < transcript.length && end - start < targetMin; j++) {
+      const next = transcript[j];
+      if (next.start - end > 2.5) break;
+      end = next.end;
+      text += ` ${next.text}`;
+    }
+
+    if (end - start < targetMin) continue;
+
+    end = Math.min(safeDuration, Math.max(end, start + targetMin));
+    if (end - start > targetMax) end = start + targetMax;
+    if (end > safeDuration) {
+      end = safeDuration;
+      start = Math.max(0, end - targetMax);
+    }
+
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const speechScore = Math.min(100, 45 + wordCount * 2);
+
+    candidates.push({
+      start,
+      end,
+      title: "AI Selected Highlight",
+      reason: "Automatic recovery clip created from the transcript after AI clip selection returned no valid timestamps.",
+      score: speechScore,
+      caption: buildFallbackCaption(
+        text.trim(),
+        "AI Selected Highlight",
+        "",
+      ),
+    });
+  }
+
+  // If the transcript is sparse, create a few safe windows from the video
+  // rather than failing the whole project with zero clips.
+  if (!candidates.length && safeDuration >= 3) {
+    const window = Math.min(30, Math.max(3, safeDuration));
+    const count = Math.min(maxClips, Math.max(1, Math.floor(safeDuration / window) || 1));
+
+    for (let i = 0; i < count; i++) {
+      const start = Math.min(
+        Math.max(0, safeDuration - window),
+        i * Math.max(1, (safeDuration - window) / Math.max(1, count - 1)),
+      );
+      const end = Math.min(safeDuration, start + window);
+      if (end - start >= 3) {
+        candidates.push({
+          start,
+          end,
+          title: "AI Highlight",
+          reason: "Automatic recovery clip created because AI returned no usable clip timestamps.",
+          score: Math.max(35, 70 - i * 5),
+          caption: "AI Highlight",
+        });
+      }
+    }
+  }
+
+  const selected: ViralClip[] = [];
+  for (const clip of candidates) {
+    const overlaps = selected.some(
+      (existing) =>
+        Math.min(existing.end, clip.end) -
+          Math.max(existing.start, clip.start) >
+        Math.min(existing.end - existing.start, clip.end - clip.start) * 0.65,
+    );
+
+    if (!overlaps) selected.push(clip);
+    if (selected.length >= maxClips) break;
+  }
+
+  return selected;
+}
+
 function validateAnalysis(
   raw: any,
   duration: number,
@@ -2897,8 +3042,24 @@ function validateAnalysis(
   );
 
   if (!clips.length && options.requireClips !== false) {
+    const recoveredClips = buildFallbackClipsFromTranscript(
+      transcript,
+      safeDuration,
+      MAX_CLIPS,
+    );
+
+    if (recoveredClips.length) {
+      console.warn(
+        `Gemini returned 0 valid clips. Recovered ${recoveredClips.length} safe transcript-based clip(s).`,
+      );
+      return {
+        transcript,
+        clips: recoveredClips,
+      };
+    }
+
     throw new Error(
-      "AI could not find any valid viral moments within the video duration.",
+      "AI could not find any valid viral moments and automatic clip recovery also failed.",
     );
   }
 
