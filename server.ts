@@ -2583,102 +2583,291 @@ function chunkWhisperWordsIntoSegments(
   return segments;
 }
 
+async function extractAudioForWhisperRanges(
+  videoPath: string,
+  ranges: Array<{ start: number; end: number }>,
+): Promise<{
+  audioPath: string;
+  offsets: Array<{
+    sourceStart: number;
+    sourceEnd: number;
+    combinedStart: number;
+    combinedEnd: number;
+  }>;
+}> {
+  const cleanedRanges = ranges
+    .map((range) => ({
+      start: Math.max(0, Number(range.start) || 0),
+      end: Math.max(0, Number(range.end) || 0),
+    }))
+    .filter((range) => range.end > range.start + 0.25)
+    .sort((a, b) => a.start - b.start);
+
+  if (!cleanedRanges.length) {
+    throw new Error("No valid Whisper target ranges were provided.");
+  }
+
+  // Merge overlapping/adjacent ranges so the same speech is not transcribed
+  // repeatedly when Gemini returns overlapping clips.
+  const merged: Array<{ start: number; end: number }> = [];
+  for (const range of cleanedRanges) {
+    const previous = merged[merged.length - 1];
+    if (previous && range.start <= previous.end + 0.15) {
+      previous.end = Math.max(previous.end, range.end);
+    } else {
+      merged.push({ ...range });
+    }
+  }
+
+  const audioPath = path.join(
+    tempDir,
+    `${generateId()}-whisper-selected.wav`,
+  );
+
+  const filterParts: string[] = [];
+  const concatInputs: string[] = [];
+  const offsets: Array<{
+    sourceStart: number;
+    sourceEnd: number;
+    combinedStart: number;
+    combinedEnd: number;
+  }> = [];
+
+  let combinedCursor = 0;
+
+  for (let i = 0; i < merged.length; i++) {
+    const range = merged[i];
+    const label = `a${i}`;
+
+    filterParts.push(
+      `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},asetpts=PTS-STARTPTS[${label}]`,
+    );
+    concatInputs.push(`[${label}]`);
+
+    const rangeDuration = Math.max(0, range.end - range.start);
+    offsets.push({
+      sourceStart: range.start,
+      sourceEnd: range.end,
+      combinedStart: combinedCursor,
+      combinedEnd: combinedCursor + rangeDuration,
+    });
+    combinedCursor += rangeDuration;
+  }
+
+  if (!Number.isFinite(combinedCursor) || combinedCursor <= 0) {
+    throw new Error("Selected Whisper audio duration is invalid.");
+  }
+
+  filterParts.push(
+    `${concatInputs.join("")}concat=n=${concatInputs.length}:v=0:a=1[outa]`,
+  );
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const cleanupOutput = () => {
+      try {
+        fs.unlinkSync(audioPath);
+      } catch {}
+    };
+
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      cleanupOutput();
+      reject(error);
+    };
+
+    const command = ffmpeg(videoPath)
+      .complexFilter(filterParts, "outa")
+      .outputOptions([
+        "-map [outa]",
+        "-ac 1",
+        "-ar 16000",
+        "-c:a pcm_s16le",
+        "-y",
+      ])
+      .format("wav")
+      .on("error", (error) => fail(error))
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve();
+      })
+      .save(audioPath);
+
+    timer = setTimeout(() => {
+      try {
+        command.kill("SIGKILL");
+      } catch {}
+      fail(
+        new Error(
+          `Whisper selected-audio extraction timed out after ${FFMPEG_TIMEOUT_MS}ms.`,
+        ),
+      );
+    }, Math.max(1000, FFMPEG_TIMEOUT_MS));
+
+    timer.unref?.();
+  });
+
+  return { audioPath, offsets };
+}
+
 async function transcribeWithWhisper(
   videoPath: string,
   duration: number,
-): Promise<
-  TranscriptSegment[] | null
-> {
-  if (
-    !WHISPER_CAPTIONS_ENABLED
-  ) {
+  targetRanges?: Array<{ start: number; end: number }>,
+): Promise<TranscriptSegment[] | null> {
+  if (!WHISPER_CAPTIONS_ENABLED) {
     return null;
   }
 
-  let audioPath =
-    "";
+  let audioPath = "";
+  let selectedOffsets: Array<{
+    sourceStart: number;
+    sourceEnd: number;
+    combinedStart: number;
+    combinedEnd: number;
+  }> = [];
+  let combinedDuration = duration;
+  const selectedMode = Array.isArray(targetRanges) && targetRanges.length > 0;
 
   try {
-    console.log(
-      "Whisper: extracting audio for local transcription...",
-    );
-
-    audioPath =
-      await extractAudioForWhisper(
-        videoPath,
+    if (selectedMode) {
+      console.log(
+        `Whisper: transcribing only ${targetRanges!.length} AI-selected clip range(s) instead of the full video...`,
       );
+
+      const extracted = await extractAudioForWhisperRanges(
+        videoPath,
+        targetRanges!,
+      );
+      audioPath = extracted.audioPath;
+      selectedOffsets = extracted.offsets;
+      combinedDuration = selectedOffsets.length
+        ? selectedOffsets[selectedOffsets.length - 1].combinedEnd
+        : 0;
+
+      console.log(
+        `Whisper: selected audio duration ${combinedDuration.toFixed(2)}s from ${duration.toFixed(2)}s source.`,
+      );
+    } else {
+      console.log(
+        "Whisper: extracting audio for local transcription...",
+      );
+
+      audioPath = await extractAudioForWhisper(videoPath);
+    }
+
+    if (!Number.isFinite(combinedDuration) || combinedDuration <= 0) {
+      throw new Error("Whisper audio duration is invalid.");
+    }
 
     const whisperStrideS = Math.max(
       1,
-      WHISPER_WINDOW_STEP_S -
-        WHISPER_WINDOW_OVERLAP_S,
+      WHISPER_WINDOW_STEP_S - WHISPER_WINDOW_OVERLAP_S,
     );
 
-    const windowCount =
-      Math.max(
-        1,
-        Math.ceil(
-          Math.max(
-            0,
-            duration -
-              WHISPER_WINDOW_STEP_S,
-          ) / whisperStrideS,
-        ) + 1,
-      );
+    const windowCount = Math.max(
+      1,
+      Math.ceil(
+        Math.max(0, combinedDuration - WHISPER_WINDOW_STEP_S) /
+          whisperStrideS,
+      ) + 1,
+    );
 
-    const allWords =
-      await runPersistentWhisperWorker(
-        audioPath,
-        duration,
-        windowCount,
-      );
+    const rawWords = await runPersistentWhisperWorker(
+      audioPath,
+      combinedDuration,
+      windowCount,
+    );
 
-    if (
-      !allWords ||
-      !allWords.length
-    ) {
+    if (!rawWords || !rawWords.length) {
       console.warn(
         "Whisper: no usable words came back — falling back to Gemini's own transcript timing.",
       );
-
       return null;
     }
 
-    const orderedWords =
-      enforceMonotonicWordTimings(
-        allWords,
-      );
+    let allWords: TranscriptWord[];
 
-    const segments =
-      chunkWhisperWordsIntoSegments(
-        orderedWords,
+    if (selectedMode && selectedOffsets.length) {
+      // Convert timestamps from the compact concatenated audio back to the
+      // original video's global timeline.
+      allWords = [];
+
+      for (const word of rawWords) {
+        const midpoint = (word.start + word.end) / 2;
+        const offset = selectedOffsets.find(
+          (item) =>
+            midpoint >= item.combinedStart &&
+            midpoint <= item.combinedEnd,
+        );
+
+        if (!offset) continue;
+
+        const localStart = Math.max(
+          0,
+          word.start - offset.combinedStart,
+        );
+        const localEnd = Math.max(
+          localStart,
+          word.end - offset.combinedStart,
+        );
+
+        const globalStart = Math.max(
+          offset.sourceStart,
+          Math.min(offset.sourceEnd, offset.sourceStart + localStart),
+        );
+        const globalEnd = Math.max(
+          globalStart,
+          Math.min(offset.sourceEnd, offset.sourceStart + localEnd),
+        );
+
+        if (globalEnd > globalStart && globalStart < duration) {
+          allWords.push({
+            word: word.word,
+            start: globalStart,
+            end: globalEnd,
+          });
+        }
+      }
+    } else {
+      allWords = rawWords;
+    }
+
+    if (!allWords.length) {
+      console.warn(
+        "Whisper: selected ranges produced no usable mapped words — using Gemini timing.",
       );
+      return null;
+    }
+
+    const orderedWords = enforceMonotonicWordTimings(allWords);
+    const segments = chunkWhisperWordsIntoSegments(orderedWords);
 
     console.log(
       `Whisper: produced ${orderedWords.length} word-level timestamp(s) ` +
-        `across ${segments.length} caption segment(s).`,
+        `across ${segments.length} caption segment(s)${
+          selectedMode ? " from AI-selected ranges" : ""
+        }.`,
     );
 
     return segments;
   } catch (error) {
     console.error(
-      "Whisper: local transcription failed — falling back to " +
-        "Gemini's own transcript timing:",
-      error instanceof Error
-        ? error.message
-        : error,
+      "Whisper: local transcription failed — falling back to Gemini's own transcript timing:",
+      error instanceof Error ? error.message : error,
     );
-
     return null;
   } finally {
     if (audioPath) {
       try {
-        fs.unlinkSync(
-          audioPath,
-        );
-      } catch {
-        // best effort
-      }
+        fs.unlinkSync(audioPath);
+      } catch {}
     }
   }
 }
@@ -4978,11 +5167,10 @@ async function processVideo(
     }
 
     // ---------------------------------------------------------
-    // Caption timing: prefer real per-word timestamps from a local
-    // Whisper pass over Gemini's own (approximate, video-based)
-    // transcript timing. Gemini's clips/captions text are untouched
-    // either way — only the timing used for burned-in captions
-    // changes here.
+    // Caption timing: in clip mode, Whisper runs ONLY on the AI-selected
+    // clip ranges. This avoids the expensive full-video Whisper pass while
+    // still giving the generated clips real per-word timestamps. Gemini's
+    // transcript remains the fallback when Whisper is unavailable.
     // ---------------------------------------------------------
 
     await updateProject(
@@ -4996,10 +5184,20 @@ async function processVideo(
         "Local Whisper fallback already supplied caption timing — skipping duplicate Whisper pass.",
       );
     } else {
-      const whisperTranscript = await transcribeWithWhisper(
-        sourcePath,
-        duration,
-      );
+      const whisperTranscript =
+        mode === "clips" && analysis.clips.length
+          ? await transcribeWithWhisper(
+              sourcePath,
+              duration,
+              analysis.clips.map((clip) => ({
+                start: clip.start,
+                end: clip.end,
+              })),
+            )
+          : await transcribeWithWhisper(
+              sourcePath,
+              duration,
+            );
 
       if (whisperTranscript && whisperTranscript.length) {
         console.log(
@@ -8082,6 +8280,20 @@ app.use(
 /* =========================================================
    PROCESS ERROR HANDLERS
 ========================================================= */
+
+process.on(
+  "SIGTERM",
+  () => {
+    console.warn("⚠️ LumoClip received SIGTERM from the host/platform.");
+  },
+);
+
+process.on(
+  "SIGINT",
+  () => {
+    console.warn("⚠️ LumoClip received SIGINT.");
+  },
+);
 
 process.on(
   "uncaughtException",
