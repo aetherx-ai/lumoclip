@@ -1547,6 +1547,28 @@ const WHISPER_MODEL =
 const WHISPER_DTYPE =
   process.env.WHISPER_DTYPE?.trim() || "q8";
 
+// We chunk long audio ourselves (rather than relying on the
+// library's automatic chunk_length_s/stride_length_s stitching,
+// which infers each chunk's timeline offset by textually matching
+// overlapping speech). During instrumental/silent stretches — e.g.
+// the music-only part of a song — there's no speech to match, so
+// that automatic stitching can pick a wrong offset and desync every
+// word after it for the rest of the track. Manual windows with a
+// known, fixed sample offset can't suffer that failure mode: no
+// speech in a window just means no words come back for it.
+const WHISPER_WINDOW_STEP_S = Number(
+  process.env.WHISPER_WINDOW_STEP_S || 20,
+);
+
+// Extra trailing context appended to each window (not counted
+// toward its "core" region) purely to help the model transcribe
+// words that fall right at the window boundary — those words are
+// re-transcribed with full context by the next window instead of
+// being kept from this one.
+const WHISPER_WINDOW_OVERLAP_S = Number(
+  process.env.WHISPER_WINDOW_OVERLAP_S || 2,
+);
+
 // Cache the downloaded model under the project directory (survives
 // process restarts within the same deploy) instead of transformers.js'
 // default of ./node_modules/@huggingface/transformers/.cache, which
@@ -1587,8 +1609,10 @@ const WHISPER_WORKER_SCRIPT = `
 const fs = require("fs");
 
 async function main() {
-  const [, audioPath, durationStr, modelName, dtype, cacheDir, outPath] = process.argv;
+  const [, audioPath, durationStr, modelName, dtype, cacheDir, outPath, stepStr, overlapStr] = process.argv;
   const duration = Number(durationStr);
+  const stepSeconds = Number(stepStr) || 20;
+  const overlapSeconds = Number(overlapStr) || 2;
 
   const { pipeline, env } = await import("@huggingface/transformers");
   env.cacheDir = cacheDir;
@@ -1629,24 +1653,89 @@ async function main() {
 
   console.error("Whisper worker: model \\"" + modelName + "\\" (dtype " + dtype + ") loading...");
   const transcriber = await pipeline("automatic-speech-recognition", modelName, { dtype });
-  console.error("Whisper worker: model ready, transcribing...");
+  console.error("Whisper worker: model ready, transcribing in " + stepSeconds + "s windows (+" + overlapSeconds + "s context)...");
 
-  const output = await transcriber(audioData, {
-    return_timestamps: "word",
-    chunk_length_s: 20,
-    stride_length_s: 3,
-  });
+  // Walk the audio ourselves in fixed windows, each one transcribed
+  // as its own single (un-chunked, <30s) pass. Every window's time
+  // offset comes directly from its known sample position — never
+  // from matching speech against the previous window — so silent or
+  // instrumental stretches simply produce no words instead of being
+  // able to corrupt the offset for everything that follows.
+  const SAMPLE_RATE = 16000;
+  const stepSamples = Math.round(stepSeconds * SAMPLE_RATE);
+  const windowSamples = Math.round((stepSeconds + overlapSeconds) * SAMPLE_RATE);
+  const totalSamples = audioData.length;
 
-  const chunks = Array.isArray(output && output.chunks) ? output.chunks : [];
+  const words = [];
 
-  const words = chunks
-    .map((c) => {
+  for (
+    let windowStartSample = 0;
+    windowStartSample < totalSamples;
+    windowStartSample += stepSamples
+  ) {
+    const windowStartS = windowStartSample / SAMPLE_RATE;
+    const windowEndSample = Math.min(totalSamples, windowStartSample + windowSamples);
+    const isLastWindow = windowEndSample >= totalSamples;
+
+    const slice = audioData.subarray
+      ? audioData.subarray(windowStartSample, windowEndSample)
+      : audioData.slice(windowStartSample, windowEndSample);
+
+    if (!slice.length) break;
+
+    let output;
+    try {
+      output = await transcriber(slice, { return_timestamps: "word" });
+    } catch (windowError) {
+      console.error(
+        "Whisper worker: window at " + windowStartS.toFixed(1) + "s failed, skipping —",
+        windowError && windowError.message ? windowError.message : windowError,
+      );
+      continue;
+    }
+
+    const chunks = Array.isArray(output && output.chunks) ? output.chunks : [];
+
+    // Only keep words from this window's "core" step region. Words
+    // past that were only transcribed for trailing context and get
+    // re-transcribed (with fuller context) by the next window.
+    const keepBeforeS = isLastWindow ? Infinity : stepSeconds;
+
+    for (const c of chunks) {
       const word = String((c && c.text) || "").trim();
       const ts = Array.isArray(c && c.timestamp) ? c.timestamp : [null, null];
-      const start = Number(ts[0]);
-      const end = Number.isFinite(Number(ts[1])) ? Number(ts[1]) : start + 0.3;
-      return { word, start, end };
-    })
+      const relStart = Number(ts[0]);
+      const relEnd = Number.isFinite(Number(ts[1])) ? Number(ts[1]) : relStart + 0.3;
+
+      if (
+        !word.length ||
+        !Number.isFinite(relStart) ||
+        !Number.isFinite(relEnd) ||
+        relEnd <= relStart ||
+        relStart >= keepBeforeS
+      ) {
+        continue;
+      }
+
+      words.push({
+        word,
+        start: windowStartS + relStart,
+        end: windowStartS + relEnd,
+      });
+    }
+
+    console.error(
+      "Whisper worker: window " +
+        windowStartS.toFixed(1) +
+        "s-" +
+        (windowEndSample / SAMPLE_RATE).toFixed(1) +
+        "s done (" +
+        chunks.length +
+        " token(s)).",
+    );
+  }
+
+  const cleanedWords = words
     .filter(
       (w) =>
         w.word.length > 0 &&
@@ -1662,8 +1751,8 @@ async function main() {
       end: Math.max(0, Math.min(duration, w.end)),
     }));
 
-  fs.writeFileSync(outPath, JSON.stringify({ words }));
-  console.error("Whisper worker: wrote " + words.length + " word(s) to output.");
+  fs.writeFileSync(outPath, JSON.stringify({ words: cleanedWords }));
+  console.error("Whisper worker: wrote " + cleanedWords.length + " word(s) to output.");
 }
 
 main()
@@ -1725,6 +1814,8 @@ function runWhisperInChildProcess(
         WHISPER_DTYPE,
         WHISPER_CACHE_DIR,
         outPath,
+        String(WHISPER_WINDOW_STEP_S),
+        String(WHISPER_WINDOW_OVERLAP_S),
       ],
       {
         timeout: WHISPER_TIMEOUT_MS,
