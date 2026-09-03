@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { createClient } from "@supabase/supabase-js";
 import {
   GoogleGenAI,
@@ -1512,115 +1512,122 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 /* =========================================================
    WORD-LEVEL CAPTION TIMING (self-hosted Whisper, no API cost)
 
-   Gemini estimates transcript timing by "watching" the video, which
-   gets noticeably less accurate the faster someone talks and can
-   occasionally skip chunks of speech entirely — that's the root
-   cause of captions drifting out of sync or sometimes not showing
-   up at all.
+   PERSISTENT PER-VIDEO WORKER
 
-   To fix this without paying for a hosted STT API, we extract the
-   audio and run it through a Whisper model locally via
-   @huggingface/transformers (ONNX runtime, CPU-only, no external
-   API calls, no per-request cost — only your own compute). This
-   gives real per-word timestamps derived from the actual audio
-   waveform, independent of talking speed.
+   The Whisper model is loaded ONCE per transcription job, not once
+   per 30-second window. The worker also loads the extracted WAV once
+   and then processes all windows sequentially.
 
-   IMPORTANT — process isolation: loading/running the model happens
-   in a SEPARATE child Node process, never inside this main server
-   process. If the model download is slow, or inference runs out of
-   memory, only that short-lived child process is affected — it
-   times out or gets killed and we fall back to Gemini's own
-   transcript timing. The main server (handling every other request/
-   user) is never at risk of being taken down by this.
+   Architecture:
+     Express process
+       -> extract one 16kHz mono WAV
+       -> spawn ONE isolated Whisper worker
+       -> worker loads model ONCE
+       -> worker loads WAV ONCE
+       -> worker transcribes all windows
+       -> worker writes one JSON result
+       -> worker exits and releases memory
 
-   Gemini is still used for everything else (clip selection, the
-   social caption text) — only the caption TIMING is replaced when
-   Whisper succeeds.
+   This keeps the safety benefit of process isolation while removing
+   the very expensive model-load/process-start cycle that previously
+   happened for every window.
+
+   Gemini remains the fallback for timing if the isolated Whisper
+   worker fails or hits its hard timeout.
 ========================================================= */
 
 const WHISPER_CAPTIONS_ENABLED =
   process.env.WHISPER_CAPTIONS_ENABLED !== "false";
 
-// "Xenova/whisper-tiny" (multilingual, ~39M params) is the default —
-// small enough to load safely on constrained instances (e.g. Render
-// starter plans). Bump to "Xenova/whisper-base" or "-small" via env
-// only once you've confirmed your instance has the RAM to spare.
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny";
 
-// int8 quantized weights — much smaller download and lower memory
-// than the default fp32 weights, with a small accuracy tradeoff.
 const WHISPER_DTYPE =
   process.env.WHISPER_DTYPE?.trim() || "q8";
 
-// We chunk long audio ourselves (rather than relying on the
-// library's automatic chunk_length_s/stride_length_s stitching,
-// which infers each chunk's timeline offset by textually matching
-// overlapping speech). During instrumental/silent stretches — e.g.
-// the music-only part of a song — there's no speech to match, so
-// that automatic stitching can pick a wrong offset and desync every
-// word after it for the rest of the track. Manual windows with a
-// known, fixed sample offset can't suffer that failure mode: no
-// speech in a window just means no words come back for it.
 const WHISPER_WINDOW_STEP_S = Number(
   process.env.WHISPER_WINDOW_STEP_S || 30,
 );
 
-// Extra trailing context appended to each window (not counted
-// toward its "core" region) purely to help the model transcribe
-// words that fall right at the window boundary — those words are
-// re-transcribed with full context by the next window instead of
-// being kept from this one.
 const WHISPER_WINDOW_OVERLAP_S = Number(
   process.env.WHISPER_WINDOW_OVERLAP_S || 2,
 );
 
-// Cache the downloaded model under the project directory (survives
-// process restarts within the same deploy) instead of transformers.js'
-// default of ./node_modules/@huggingface/transformers/.cache, which
-// some deploy pipelines wipe/reinstall on every restart.
 const WHISPER_CACHE_DIR =
   process.env.WHISPER_CACHE_DIR?.trim() ||
   path.join(process.cwd(), ".whisper-cache");
 
-// Hard ceiling on how long we let a SINGLE WINDOW's child process
-// run (covers a cold model load + transcribing ~20s of audio). Each
-// window gets its own fresh child and its own timeout — a slow or
-// hung window no longer risks starving/timing-out the whole video,
-// it just fails that one window and moves on to the next.
+/*
+ * Hard ceiling for actual inference of ONE window.
+ *
+ * Model loading happens only once now, so this timeout is no longer
+ * repeatedly consumed by model initialization.
+ */
 const WHISPER_TIMEOUT_MS = Number(
   process.env.WHISPER_TIMEOUT_MS || 75 * 1000,
 );
 
-// Cap the child's own V8 heap so a runaway allocation there fails
-// fast inside the child instead of pressuring the host. This does
-// NOT fully bound native/ONNX memory, so it's a safety net, not a
-// guarantee — the real protection is that this all runs in a
-// disposable child process, never in the main server process.
+/*
+ * Hard ceiling for the complete persistent worker job.
+ *
+ * A 168s video has 6 windows by default. Eight minutes gives enough
+ * room for CPU inference while still preventing a stuck worker from
+ * hanging a Render request forever.
+ */
+const WHISPER_TOTAL_TIMEOUT_MS = Number(
+  process.env.WHISPER_TOTAL_TIMEOUT_MS || 8 * 60 * 1000,
+);
+
+/*
+ * Backward-compatible environment variable name. This is now the
+ * heap cap for the single persistent per-video worker.
+ */
 const WHISPER_CHILD_MAX_OLD_SPACE_MB = Number(
-  process.env.WHISPER_CHILD_MAX_OLD_SPACE_MB || 220,
+  process.env.WHISPER_CHILD_MAX_OLD_SPACE_MB || 320,
 );
 
 try {
-  fs.mkdirSync(WHISPER_CACHE_DIR, { recursive: true });
+  fs.mkdirSync(WHISPER_CACHE_DIR, {
+    recursive: true,
+  });
 } catch {
-  // best-effort — if this fails, the child falls back to the
-  // library's own default cache location instead.
+  // best effort
 }
 
-// This runs in a standalone child `node -e` process, once per audio
-// window (see runWhisperWindowInChildProcess below) — it has no
-// access to anything else in this file and communicates back only
-// via a JSON file on disk. Transcribing only ONE window per process,
-// rather than looping over all windows inside one long-lived
-// process, matters for memory: the WASM linear memory used by
-// onnxruntime-web only ever grows within a process, it's never
-// shrunk back. Looping many transcriber() calls in one process let
-// that memory climb window after window until it could exceed the
-// container's RAM and get the whole server OOM-killed — a fresh
-// process per window fully reclaims that memory on exit instead.
+/*
+ * Standalone worker code.
+
+ * stdout is reserved for the completion marker.
+ * stderr carries progress/error logs.
+ * The final transcript is written to outPath so the parent never
+ * needs to buffer a potentially large word array.
+ */
 const WHISPER_WORKER_SCRIPT = `
 const fs = require("fs");
+
+function withTimeout(promise, timeoutMs, label) {
+  let timer;
+
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new Error(
+            label +
+              " timed out after " +
+              timeoutMs +
+              "ms.",
+          ),
+        );
+      }, timeoutMs);
+
+      if (timer.unref) timer.unref();
+    }),
+  ]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+}
 
 async function main() {
   const [
@@ -1631,329 +1638,869 @@ async function main() {
     dtype,
     cacheDir,
     outPath,
-    windowStartStr,
-    windowEndStr,
-    keepBeforeStr,
+    windowStepStr,
+    overlapStr,
+    windowTimeoutStr,
   ] = process.argv;
-  const duration = Number(durationStr);
-  const windowStartS = Number(windowStartStr);
-  const windowEndS = Number(windowEndStr);
-  const keepBeforeS = keepBeforeStr === "Infinity" ? Infinity : Number(keepBeforeStr);
 
-  const { pipeline, env } = await import("@huggingface/transformers");
+  const duration = Number(durationStr);
+  const windowStepS = Number(windowStepStr);
+  const overlapS = Number(overlapStr);
+  const windowTimeoutMs = Number(windowTimeoutStr);
+
+  if (
+    !audioPath ||
+    !outPath ||
+    !Number.isFinite(duration) ||
+    duration <= 0 ||
+    !Number.isFinite(windowStepS) ||
+    windowStepS <= 0 ||
+    !Number.isFinite(overlapS) ||
+    overlapS < 0 ||
+    !Number.isFinite(windowTimeoutMs) ||
+    windowTimeoutMs <= 0
+  ) {
+    throw new Error(
+      "Invalid Whisper worker arguments.",
+    );
+  }
+
+  const { pipeline, env } =
+    await import("@huggingface/transformers");
+
   env.cacheDir = cacheDir;
 
-  // On constrained instances (e.g. Render's 512MB plans), letting
-  // ONNX Runtime auto-detect CPU count and spin up one WASM thread
-  // per core multiplies memory use several times over — each thread
-  // gets its own arena. Pinning to a single thread trades some
-  // speed for a much smaller, more predictable memory footprint,
-  // which matters far more than speed when the alternative is an
-  // OOM kill mid-transcription.
+  /*
+   * Keep ONNX memory predictable on constrained Render instances.
+   * One WASM thread is intentionally used even on hosts reporting
+   * many CPUs; multiple WASM arenas can multiply memory pressure.
+   */
   try {
     env.backends.onnx.wasm.numThreads = 1;
     env.backends.onnx.wasm.proxy = false;
   } catch {
-    // best-effort — if the backend shape changes, fall back to
-    // library defaults rather than crash the worker over this.
+    // best effort
   }
 
-  const wavefileModule = await import("wavefile");
-  const WaveFile = wavefileModule.WaveFile || (wavefileModule.default && wavefileModule.default.WaveFile);
+  console.error(
+    "Whisper worker: loading audio once..."
+  );
 
-  const buffer = fs.readFileSync(audioPath);
-  const wav = new WaveFile(buffer);
+  const wavefileModule =
+    await import("wavefile");
+
+  const WaveFile =
+    wavefileModule.WaveFile ||
+    (
+      wavefileModule.default &&
+      wavefileModule.default.WaveFile
+    );
+
+  if (!WaveFile) {
+    throw new Error(
+      "WaveFile constructor is unavailable.",
+    );
+  }
+
+  const buffer =
+    fs.readFileSync(audioPath);
+
+  const wav =
+    new WaveFile(buffer);
+
   wav.toBitDepth("32f");
   wav.toSampleRate(16000);
 
-  let audioData = wav.getSamples();
+  let audioData =
+    wav.getSamples();
+
   if (Array.isArray(audioData)) {
     if (audioData.length > 1) {
-      const SCALING_FACTOR = Math.sqrt(2);
-      for (let i = 0; i < audioData[0].length; i++) {
-        audioData[0][i] = (SCALING_FACTOR * (audioData[0][i] + audioData[1][i])) / 2;
+      const SCALING_FACTOR =
+        Math.sqrt(2);
+
+      const sampleCount =
+        Math.min(
+          audioData[0].length,
+          audioData[1].length,
+        );
+
+      for (
+        let i = 0;
+        i < sampleCount;
+        i++
+      ) {
+        audioData[0][i] =
+          (
+            SCALING_FACTOR *
+            (
+              audioData[0][i] +
+              audioData[1][i]
+            )
+          ) / 2;
       }
     }
-    audioData = audioData[0];
+
+    audioData =
+      audioData[0];
   }
 
-  const SAMPLE_RATE = 16000;
-  const windowStartSample = Math.max(0, Math.round(windowStartS * SAMPLE_RATE));
-  const windowEndSample = Math.min(audioData.length, Math.round(windowEndS * SAMPLE_RATE));
+  if (
+    !audioData ||
+    !audioData.length
+  ) {
+    throw new Error(
+      "Whisper audio contains no samples.",
+    );
+  }
 
-  const slice = audioData.subarray
-    ? audioData.subarray(windowStartSample, windowEndSample)
-    : audioData.slice(windowStartSample, windowEndSample);
+  console.error(
+    "Whisper worker: loading model ONCE " +
+      "(model=" +
+      modelName +
+      ", dtype=" +
+      dtype +
+      ")..."
+  );
 
-  let words = [];
+  const transcriber =
+    await pipeline(
+      "automatic-speech-recognition",
+      modelName,
+      { dtype },
+    );
 
-  if (slice.length) {
-    console.error("Whisper worker: model \\"" + modelName + "\\" (dtype " + dtype + ") loading...");
-    const transcriber = await pipeline("automatic-speech-recognition", modelName, { dtype });
-    console.error("Whisper worker: transcribing window " + windowStartS.toFixed(1) + "s-" + windowEndS.toFixed(1) + "s...");
+  console.error(
+    "Whisper worker: model ready. " +
+      "Starting sequential window transcription."
+  );
 
-    const output = await transcriber(slice, { return_timestamps: "word" });
-    const chunks = Array.isArray(output && output.chunks) ? output.chunks : [];
+  const SAMPLE_RATE =
+    16000;
+
+  const windowCount =
+    Math.max(
+      1,
+      Math.ceil(
+        duration /
+          windowStepS,
+      ),
+    );
+
+  const allWords = [];
+
+  for (
+    let i = 0;
+    i < windowCount;
+    i++
+  ) {
+    const windowStartS =
+      i * windowStepS;
+
+    const isLastWindow =
+      i === windowCount - 1;
+
+    const windowEndS =
+      isLastWindow
+        ? duration
+        : Math.min(
+            duration,
+            windowStartS +
+              windowStepS +
+              overlapS,
+          );
+
+    const keepBeforeS =
+      isLastWindow
+        ? Infinity
+        : windowStepS;
+
+    const startSample =
+      Math.max(
+        0,
+        Math.round(
+          windowStartS *
+            SAMPLE_RATE,
+        ),
+      );
+
+    const endSample =
+      Math.min(
+        audioData.length,
+        Math.round(
+          windowEndS *
+            SAMPLE_RATE,
+        ),
+      );
+
+    const slice =
+      audioData.subarray
+        ? audioData.subarray(
+            startSample,
+            endSample,
+          )
+        : audioData.slice(
+            startSample,
+            endSample,
+          );
+
+    if (!slice.length) {
+      continue;
+    }
+
+    console.error(
+      "Whisper worker: window " +
+        (i + 1) +
+        "/" +
+        windowCount +
+        " " +
+        windowStartS.toFixed(1) +
+        "s-" +
+        windowEndS.toFixed(1) +
+        "s..."
+    );
+
+    const startedAt =
+      Date.now();
+
+    const output =
+      await withTimeout(
+        transcriber(
+          slice,
+          {
+            return_timestamps:
+              "word",
+          },
+        ),
+        windowTimeoutMs,
+        "Whisper window " +
+          (i + 1) +
+          "/" +
+          windowCount,
+      );
+
+    const chunks =
+      Array.isArray(
+        output &&
+          output.chunks,
+      )
+        ? output.chunks
+        : [];
+
+    let kept =
+      0;
 
     for (const c of chunks) {
-      const word = String((c && c.text) || "").trim();
-      const ts = Array.isArray(c && c.timestamp) ? c.timestamp : [null, null];
-      const relStart = Number(ts[0]);
-      const relEnd = Number.isFinite(Number(ts[1])) ? Number(ts[1]) : relStart + 0.3;
+      const word =
+        String(
+          (c && c.text) ||
+            "",
+        ).trim();
 
-      // Only keep words in this window's "core" step region. Words
-      // past that were only transcribed for trailing context and
-      // get re-transcribed (with fuller context) by the next window.
+      const ts =
+        Array.isArray(
+          c &&
+            c.timestamp,
+        )
+          ? c.timestamp
+          : [null, null];
+
+      const relStart =
+        Number(ts[0]);
+
+      const relEnd =
+        Number.isFinite(
+          Number(ts[1]),
+        )
+          ? Number(ts[1])
+          : relStart + 0.3;
+
       if (
         !word.length ||
-        !Number.isFinite(relStart) ||
-        !Number.isFinite(relEnd) ||
+        !Number.isFinite(
+          relStart,
+        ) ||
+        !Number.isFinite(
+          relEnd,
+        ) ||
         relEnd <= relStart ||
-        relStart >= keepBeforeS
+        relStart >=
+          keepBeforeS
       ) {
         continue;
       }
 
-      words.push({
+      const start =
+        windowStartS +
+        relStart;
+
+      const end =
+        windowStartS +
+        relEnd;
+
+      if (
+        !Number.isFinite(start) ||
+        !Number.isFinite(end) ||
+        end <= start ||
+        start < 0 ||
+        start >= duration
+      ) {
+        continue;
+      }
+
+      allWords.push({
         word,
-        start: windowStartS + relStart,
-        end: windowStartS + relEnd,
+        start: Math.max(
+          0,
+          Math.min(
+            duration,
+            start,
+          ),
+        ),
+        end: Math.max(
+          0,
+          Math.min(
+            duration,
+            end,
+          ),
+        ),
       });
+
+      kept++;
     }
 
-    console.error("Whisper worker: window done (" + chunks.length + " token(s), " + words.length + " kept).");
+    console.error(
+      "Whisper worker: window " +
+        (i + 1) +
+        "/" +
+        windowCount +
+        " done (" +
+        chunks.length +
+        " token(s), " +
+        kept +
+        " kept, " +
+        (Date.now() -
+          startedAt) +
+        "ms)."
+    );
   }
 
-  const cleanedWords = words
-    .filter(
-      (w) =>
-        w.word.length > 0 &&
-        Number.isFinite(w.start) &&
-        Number.isFinite(w.end) &&
-        w.end > w.start &&
-        w.start >= 0 &&
-        w.start < duration,
-    )
-    .map((w) => ({
-      word: w.word,
-      start: Math.max(0, Math.min(duration, w.start)),
-      end: Math.max(0, Math.min(duration, w.end)),
-    }));
+  const cleanedWords =
+    allWords
+      .filter(
+        (w) =>
+          w.word.length > 0 &&
+          Number.isFinite(
+            w.start,
+          ) &&
+          Number.isFinite(
+            w.end,
+          ) &&
+          w.end > w.start &&
+          w.start >= 0 &&
+          w.start < duration,
+      )
+      .map((w) => ({
+        word: w.word,
+        start: Math.max(
+          0,
+          Math.min(
+            duration,
+            w.start,
+          ),
+        ),
+        end: Math.max(
+          0,
+          Math.min(
+            duration,
+            w.end,
+          ),
+        ),
+      }));
 
-  fs.writeFileSync(outPath, JSON.stringify({ words: cleanedWords }));
-  console.error("Whisper worker: wrote " + cleanedWords.length + " word(s) to output.");
+  fs.writeFileSync(
+    outPath,
+    JSON.stringify({
+      words: cleanedWords,
+    }),
+  );
+
+  console.error(
+    "Whisper worker: completed " +
+      windowCount +
+      " window(s), wrote " +
+      cleanedWords.length +
+      " word(s)."
+  );
+
+  process.stdout.write(
+    "WHISPER_WORKER_DONE\\\\n",
+  );
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error("Whisper worker: FAILED —", error && error.message ? error.message : error);
-    process.exit(1);
-  });
+main().catch((error) => {
+  console.error(
+    "Whisper worker: FAILED —",
+    error &&
+      error.message
+      ? error.message
+      : error,
+  );
+
+  process.exit(1);
+});
 `;
 
-// Extracts a 16kHz mono WAV from the source video — the format
-// Whisper expects — using the same ffmpeg binary already used
-// elsewhere in this file.
+// Extract one reusable 16kHz mono WAV for the complete worker job.
 async function extractAudioForWhisper(
   videoPath: string,
 ): Promise<string> {
-  const outPath = path.join(
-    tempDir,
-    `${generateId()}-whisper.wav`,
+  const outPath =
+    path.join(
+      tempDir,
+      `${generateId()}-whisper.wav`,
+    );
+
+  await new Promise<void>(
+    (resolve, reject) => {
+      let settled =
+        false;
+
+      let timer:
+        | NodeJS.Timeout
+        | undefined;
+
+      const cleanupOutput =
+        () => {
+          try {
+            fs.unlinkSync(
+              outPath,
+            );
+          } catch {}
+        };
+
+      const fail =
+        (error: Error) => {
+          if (settled) return;
+
+          settled = true;
+
+          if (timer) {
+            clearTimeout(
+              timer,
+            );
+          }
+
+          cleanupOutput();
+          reject(error);
+        };
+
+      const command =
+        ffmpeg(videoPath)
+          .noVideo()
+          .audioChannels(1)
+          .audioFrequency(
+            16000,
+          )
+          .format("wav")
+          .on(
+            "error",
+            (error) => {
+              fail(error);
+            },
+          )
+          .on(
+            "end",
+            () => {
+              if (settled) return;
+
+              settled = true;
+
+              if (timer) {
+                clearTimeout(
+                  timer,
+                );
+              }
+
+              resolve();
+            },
+          )
+          .save(outPath);
+
+      timer =
+        setTimeout(
+          () => {
+            try {
+              command.kill(
+                "SIGKILL",
+              );
+            } catch {}
+
+            fail(
+              new Error(
+                `Whisper audio extraction timed out after ${FFMPEG_TIMEOUT_MS}ms.`,
+              ),
+            );
+          },
+          Math.max(
+            1000,
+            FFMPEG_TIMEOUT_MS,
+          ),
+        );
+
+      timer.unref?.();
+    },
   );
-
-  await new Promise<void>((resolve, reject) => {
-    let settled = false;
-    const command = ffmpeg(videoPath)
-      .noVideo()
-      .audioChannels(1)
-      .audioFrequency(16000)
-      .format("wav")
-      .on("error", (error) => {
-        if (settled) return;
-        settled = true;
-        reject(error);
-      })
-      .on("end", () => {
-        if (settled) return;
-        settled = true;
-        resolve();
-      })
-      .save(outPath);
-
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      try { command.kill("SIGKILL"); } catch {}
-      reject(new Error(`Whisper audio extraction timed out after ${FFMPEG_TIMEOUT_MS}ms.`));
-    }, Math.max(1000, FFMPEG_TIMEOUT_MS));
-    timer.unref?.();
-  });
 
   return outPath;
 }
 
-// Runs the worker script above in a disposable child `node` process
-// for exactly ONE audio window, so its memory (including the WASM
-// heap, which never shrinks within a process) is fully released the
-// moment that window is done — see the comment on WHISPER_WORKER_SCRIPT.
-function runWhisperWindowInChildProcess(
+/*
+ * ONE isolated worker for the whole video.
+ *
+ * This is the key optimization: the function is called exactly once
+ * per video, regardless of how many Whisper windows are required.
+ */
+function runPersistentWhisperWorker(
   audioPath: string,
   duration: number,
-  windowStartS: number,
-  windowEndS: number,
-  keepBeforeS: number,
-): Promise<TranscriptWord[] | null> {
-  const outPath = path.join(
-    tempDir,
-    `${generateId()}-whisper-out.json`,
-  );
-
-  return new Promise((resolve) => {
-    const child = execFile(
-      process.execPath,
-      [
-        `--max-old-space-size=${WHISPER_CHILD_MAX_OLD_SPACE_MB}`,
-        "-e",
-        WHISPER_WORKER_SCRIPT,
-        "--",
-        audioPath,
-        String(duration),
-        WHISPER_MODEL,
-        WHISPER_DTYPE,
-        WHISPER_CACHE_DIR,
-        outPath,
-        String(windowStartS),
-        String(windowEndS),
-        Number.isFinite(keepBeforeS) ? String(keepBeforeS) : "Infinity",
-      ],
-      {
-        timeout: WHISPER_TIMEOUT_MS,
-        maxBuffer: 20 * 1024 * 1024,
-        cwd: process.cwd(),
-      },
-      (error, _stdout, stderr) => {
-        if (stderr && stderr.trim()) {
-          // Surface the child's own progress/error logs, but this can
-          // never throw or otherwise affect the parent process.
-          console.log(
-            "Whisper (child):",
-            stderr.trim().split("\n").slice(-15).join("\n"),
-          );
-        }
-
-        const cleanup = () => {
-          try {
-            fs.unlinkSync(outPath);
-          } catch {
-            // best-effort cleanup only
-          }
-        };
-
-        if (error) {
-          const timedOut =
-            (error as any)?.killed &&
-            (error as any)?.signal === "SIGTERM";
-
-          console.error(
-            timedOut
-              ? `Whisper: child process timed out after ${WHISPER_TIMEOUT_MS}ms — falling back to Gemini timing.`
-              : "Whisper: child process failed — falling back to Gemini timing.",
-            error.message,
-          );
-
-          cleanup();
-          resolve(null);
-          return;
-        }
-
-        try {
-          const raw = fs.readFileSync(outPath, "utf8");
-          const parsed = JSON.parse(raw);
-          const words = Array.isArray(parsed?.words)
-            ? parsed.words
-            : null;
-
-          cleanup();
-          resolve(words);
-        } catch (readError) {
-          console.error(
-            "Whisper: could not read child output — falling back.",
-            readError,
-          );
-
-          cleanup();
-          resolve(null);
-        }
-      },
+  windowCount: number,
+): Promise<
+  TranscriptWord[] | null
+> {
+  const outPath =
+    path.join(
+      tempDir,
+      `${generateId()}-whisper-out.json`,
     );
 
-    // Belt-and-suspenders: execFile's own `timeout` option already
-    // sends SIGTERM, this just guarantees we don't leak the handle.
-    child.on("error", (spawnError) => {
-      console.error(
-        "Whisper: failed to spawn child process — falling back to Gemini timing.",
-        spawnError,
+  return new Promise(
+    (resolve) => {
+      let settled =
+        false;
+
+      let timer:
+        | NodeJS.Timeout
+        | undefined;
+
+      let stderrBuffer =
+        "";
+
+      const cleanup =
+        () => {
+          if (timer) {
+            clearTimeout(
+              timer,
+            );
+          }
+
+          try {
+            fs.unlinkSync(
+              outPath,
+            );
+          } catch {}
+        };
+
+      const finish =
+        (
+          words:
+            | TranscriptWord[]
+            | null,
+        ) => {
+          if (settled) return;
+
+          settled = true;
+          cleanup();
+          resolve(words);
+        };
+
+      console.log(
+        `Whisper: starting ONE persistent worker for ${windowCount} window(s) ` +
+          `(model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, ` +
+          `window=${WHISPER_WINDOW_STEP_S}s, overlap=${WHISPER_WINDOW_OVERLAP_S}s, ` +
+          `per-window timeout=${WHISPER_TIMEOUT_MS}ms, ` +
+          `total timeout=${WHISPER_TOTAL_TIMEOUT_MS}ms)...`,
       );
-    });
-  });
+
+      const child =
+        spawn(
+          process.execPath,
+          [
+            `--max-old-space-size=${WHISPER_CHILD_MAX_OLD_SPACE_MB}`,
+            "-e",
+            WHISPER_WORKER_SCRIPT,
+            "--",
+            audioPath,
+            String(duration),
+            WHISPER_MODEL,
+            WHISPER_DTYPE,
+            WHISPER_CACHE_DIR,
+            outPath,
+            String(
+              WHISPER_WINDOW_STEP_S,
+            ),
+            String(
+              WHISPER_WINDOW_OVERLAP_S,
+            ),
+            String(
+              WHISPER_TIMEOUT_MS,
+            ),
+          ],
+          {
+            cwd:
+              process.cwd(),
+            stdio: [
+              "ignore",
+              "pipe",
+              "pipe",
+            ],
+          },
+        );
+
+      child.stdout.on(
+        "data",
+        (chunk) => {
+          const text =
+            String(chunk);
+
+          if (
+            text.includes(
+              "WHISPER_WORKER_DONE",
+            )
+          ) {
+            console.log(
+              "Whisper: persistent worker reported completion.",
+            );
+          }
+        },
+      );
+
+      child.stderr.on(
+        "data",
+        (chunk) => {
+          const text =
+            String(chunk);
+
+          stderrBuffer =
+            (
+              stderrBuffer +
+              text
+            ).slice(-30000);
+
+          const lines =
+            text
+              .trim()
+              .split("\\n")
+              .filter(Boolean);
+
+          for (
+            const line of
+              lines.slice(-8)
+          ) {
+            console.log(
+              "Whisper (worker):",
+              line,
+            );
+          }
+        },
+      );
+
+      child.once(
+        "error",
+        (error) => {
+          console.error(
+            "Whisper: failed to spawn persistent worker — falling back.",
+            error instanceof Error
+              ? error.message
+              : error,
+          );
+
+          finish(null);
+        },
+      );
+
+      child.once(
+        "close",
+        (code, signal) => {
+          if (settled) return;
+
+          if (code !== 0) {
+            console.error(
+              "Whisper: persistent worker exited unsuccessfully " +
+                `(code=${code ?? "null"}, signal=${signal ?? "none"}) — falling back.`,
+            );
+
+            if (
+              stderrBuffer.trim()
+            ) {
+              console.error(
+                "Whisper worker tail:",
+                stderrBuffer
+                  .trim()
+                  .split("\\n")
+                  .slice(-12)
+                  .join("\\n"),
+              );
+            }
+
+            finish(null);
+            return;
+          }
+
+          try {
+            const raw =
+              fs.readFileSync(
+                outPath,
+                "utf8",
+              );
+
+            const parsed =
+              JSON.parse(raw);
+
+            const words =
+              Array.isArray(
+                parsed?.words,
+              )
+                ? parsed.words
+                : null;
+
+            if (
+              !words ||
+              !words.length
+            ) {
+              console.warn(
+                "Whisper: persistent worker returned no usable words — falling back.",
+              );
+
+              finish(null);
+              return;
+            }
+
+            console.log(
+              `Whisper: persistent worker completed successfully with ${words.length} word(s).`,
+            );
+
+            finish(words);
+          } catch (error) {
+            console.error(
+              "Whisper: could not read persistent worker output — falling back.",
+              error,
+            );
+
+            finish(null);
+          }
+        },
+      );
+
+      timer =
+        setTimeout(
+          () => {
+            if (settled) return;
+
+            console.error(
+              `Whisper: persistent worker exceeded hard total timeout of ${WHISPER_TOTAL_TIMEOUT_MS}ms — killing worker and falling back to Gemini timing.`,
+            );
+
+            try {
+              child.kill(
+                "SIGKILL",
+              );
+            } catch {}
+
+            finish(null);
+          },
+          Math.max(
+            1000,
+            WHISPER_TOTAL_TIMEOUT_MS,
+          ),
+        );
+
+      timer.unref?.();
+    },
+  );
 }
 
-// The whisper worker transcribes long audio in overlapping windows
-// (chunk_length_s: 20, stride_length_s: 3) and stitches the word
-// timestamps back together. At those chunk-boundary seams the
-// stitched timestamps are not always strictly increasing — a word
-// from the next window can come back with a start time slightly
-// *before* the previous word's end. Left uncorrected, that produces
-// a caption line whose cue starts before the previous one finished,
-// which looks like sync jumping backward every ~17-20s through the
-// video. Sorting + clamping every word to start no earlier than the
-// previous word ended removes that class of glitch entirely.
 function enforceMonotonicWordTimings(
   words: TranscriptWord[],
 ): TranscriptWord[] {
-  const sorted = [...words].sort((a, b) => a.start - b.start);
+  const sorted =
+    [...words].sort(
+      (a, b) =>
+        a.start - b.start,
+    );
 
-  const MIN_WORD_DURATION = 0.05;
-  const result: TranscriptWord[] = [];
+  const MIN_WORD_DURATION =
+    0.05;
+
+  const result:
+    TranscriptWord[] = [];
+
   let cursor = 0;
 
-  for (const w of sorted) {
-    const start = Math.max(w.start, cursor);
-    const end = Math.max(w.end, start + MIN_WORD_DURATION);
+  for (
+    const w of sorted
+  ) {
+    const start =
+      Math.max(
+        w.start,
+        cursor,
+      );
 
-    result.push({ word: w.word, start, end });
+    const end =
+      Math.max(
+        w.end,
+        start +
+          MIN_WORD_DURATION,
+      );
+
+    result.push({
+      word: w.word,
+      start,
+      end,
+    });
+
     cursor = end;
   }
 
   return result;
 }
 
-// Groups Whisper's flat per-word output back into the existing
-// 2-4-word TranscriptSegment shape used everywhere else (ClipCard
-// UI, saveTranscript, clip-relative slicing) so nothing downstream
-// needs to change.
 function chunkWhisperWordsIntoSegments(
   words: TranscriptWord[],
 ): TranscriptSegment[] {
-  const WORDS_PER_CHUNK = 3;
-  const segments: TranscriptSegment[] = [];
+  const WORDS_PER_CHUNK =
+    3;
+
+  const segments:
+    TranscriptSegment[] = [];
 
   for (
     let i = 0;
     i < words.length;
     i += WORDS_PER_CHUNK
   ) {
-    const chunk = words.slice(i, i + WORDS_PER_CHUNK);
+    const chunk =
+      words.slice(
+        i,
+        i +
+          WORDS_PER_CHUNK,
+      );
 
-    if (!chunk.length) continue;
+    if (!chunk.length) {
+      continue;
+    }
 
     segments.push({
-      start: chunk[0].start,
-      end: chunk[chunk.length - 1].end,
+      start:
+        chunk[0].start,
+      end:
+        chunk[
+          chunk.length - 1
+        ].end,
       text: chunk
-        .map((w) => w.word)
+        .map(
+          (w) => w.word,
+        )
         .join(" ")
         .trim(),
       words: chunk,
@@ -1963,78 +2510,70 @@ function chunkWhisperWordsIntoSegments(
   return segments;
 }
 
-// Runs the full local pipeline: extract audio -> transcribe (in an
-// isolated child process) -> reshape into our transcript format.
-// Returns null (never throws) if anything goes wrong, so the caller
-// can safely fall back to Gemini's own transcript.
 async function transcribeWithWhisper(
   videoPath: string,
   duration: number,
-): Promise<TranscriptSegment[] | null> {
-  if (!WHISPER_CAPTIONS_ENABLED) {
+): Promise<
+  TranscriptSegment[] | null
+> {
+  if (
+    !WHISPER_CAPTIONS_ENABLED
+  ) {
     return null;
   }
 
-  let audioPath = "";
+  let audioPath =
+    "";
 
   try {
     console.log(
       "Whisper: extracting audio for local transcription...",
     );
 
-    audioPath = await extractAudioForWhisper(videoPath);
-
-    const windowCount = Math.max(
-      1,
-      Math.ceil(duration / WHISPER_WINDOW_STEP_S),
-    );
-
-    console.log(
-      `Whisper: transcribing ${windowCount} window(s) ` +
-        `(${WHISPER_WINDOW_STEP_S}s each), one disposable child ` +
-        `process per window ` +
-        `(model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, ` +
-        `per-window timeout=${WHISPER_TIMEOUT_MS}ms)...`,
-    );
-
-    const allWords: TranscriptWord[] = [];
-
-    for (let i = 0; i < windowCount; i++) {
-      const windowStartS = i * WHISPER_WINDOW_STEP_S;
-      const isLastWindow = i === windowCount - 1;
-      const windowEndS = isLastWindow
-        ? duration
-        : windowStartS + WHISPER_WINDOW_STEP_S + WHISPER_WINDOW_OVERLAP_S;
-      const keepBeforeS = isLastWindow
-        ? Infinity
-        : WHISPER_WINDOW_STEP_S;
-
-      const windowWords = await runWhisperWindowInChildProcess(
-        audioPath,
-        duration,
-        windowStartS,
-        windowEndS,
-        keepBeforeS,
+    audioPath =
+      await extractAudioForWhisper(
+        videoPath,
       );
 
-      if (windowWords && windowWords.length) {
-        allWords.push(...windowWords);
-      }
-    }
+    const windowCount =
+      Math.max(
+        1,
+        Math.ceil(
+          duration /
+            WHISPER_WINDOW_STEP_S,
+        ),
+      );
 
-    if (!allWords.length) {
+    const allWords =
+      await runPersistentWhisperWorker(
+        audioPath,
+        duration,
+        windowCount,
+      );
+
+    if (
+      !allWords ||
+      !allWords.length
+    ) {
       console.warn(
         "Whisper: no usable words came back — falling back to Gemini's own transcript timing.",
       );
+
       return null;
     }
 
-    const orderedWords = enforceMonotonicWordTimings(allWords);
+    const orderedWords =
+      enforceMonotonicWordTimings(
+        allWords,
+      );
 
-    const segments = chunkWhisperWordsIntoSegments(orderedWords);
+    const segments =
+      chunkWhisperWordsIntoSegments(
+        orderedWords,
+      );
 
     console.log(
-      `Whisper: produced ${allWords.length} word-level timestamp(s) ` +
+      `Whisper: produced ${orderedWords.length} word-level timestamp(s) ` +
         `across ${segments.length} caption segment(s).`,
     );
 
@@ -2043,16 +2582,20 @@ async function transcribeWithWhisper(
     console.error(
       "Whisper: local transcription failed — falling back to " +
         "Gemini's own transcript timing:",
-      error instanceof Error ? error.message : error,
+      error instanceof Error
+        ? error.message
+        : error,
     );
 
     return null;
   } finally {
     if (audioPath) {
       try {
-        fs.unlinkSync(audioPath);
+        fs.unlinkSync(
+          audioPath,
+        );
       } catch {
-        // best-effort cleanup only
+        // best effort
       }
     }
   }
