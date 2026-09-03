@@ -1562,7 +1562,7 @@ const WHISPER_TIMEOUT_MS = Number(
 // guarantee — the real protection is that this all runs in a
 // disposable child process, never in the main server process.
 const WHISPER_CHILD_MAX_OLD_SPACE_MB = Number(
-  process.env.WHISPER_CHILD_MAX_OLD_SPACE_MB || 768,
+  process.env.WHISPER_CHILD_MAX_OLD_SPACE_MB || 220,
 );
 
 try {
@@ -1586,6 +1586,21 @@ async function main() {
 
   const { pipeline, env } = await import("@huggingface/transformers");
   env.cacheDir = cacheDir;
+
+  // On constrained instances (e.g. Render's 512MB plans), letting
+  // ONNX Runtime auto-detect CPU count and spin up one WASM thread
+  // per core multiplies memory use several times over — each thread
+  // gets its own arena. Pinning to a single thread trades some
+  // speed for a much smaller, more predictable memory footprint,
+  // which matters far more than speed when the alternative is an
+  // OOM kill mid-transcription.
+  try {
+    env.backends.onnx.wasm.numThreads = 1;
+    env.backends.onnx.wasm.proxy = false;
+  } catch {
+    // best-effort — if the backend shape changes, fall back to
+    // library defaults rather than crash the worker over this.
+  }
 
   const wavefileModule = await import("wavefile");
   const WaveFile = wavefileModule.WaveFile || (wavefileModule.default && wavefileModule.default.WaveFile);
@@ -1612,8 +1627,8 @@ async function main() {
 
   const output = await transcriber(audioData, {
     return_timestamps: "word",
-    chunk_length_s: 30,
-    stride_length_s: 5,
+    chunk_length_s: 20,
+    stride_length_s: 3,
   });
 
   const chunks = Array.isArray(output && output.chunks) ? output.chunks : [];
