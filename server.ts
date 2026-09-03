@@ -118,11 +118,11 @@ const GEMINI_POLL_MS = Number(
 // Retry transient Gemini serving failures such as 429/5xx.
 // The uploaded Gemini file is reused; only generateContent() is retried.
 const GEMINI_GENERATE_RETRIES = Number(
-  process.env.GEMINI_GENERATE_RETRIES || 5,
+  process.env.GEMINI_GENERATE_RETRIES || 3,
 );
 
 const GEMINI_RETRY_BASE_MS = Number(
-  process.env.GEMINI_RETRY_BASE_MS || 5000,
+  process.env.GEMINI_RETRY_BASE_MS || 3000,
 );
 
 const GEMINI_RETRY_MAX_MS = Number(
@@ -139,7 +139,7 @@ const GEMINI_REQUEST_TIMEOUT_MS = Number(
 // (429/5xx/"high demand"), fall back to these models in order before
 // giving up entirely. Comma-separated, e.g. "gemini-2.5-flash,gemini-2.0-flash".
 const GEMINI_FALLBACK_MODELS = (
-  process.env.GEMINI_FALLBACK_MODELS || "gemini-2.5-flash"
+  process.env.GEMINI_FALLBACK_MODELS || "gemini-3.1-flash-lite,gemini-2.5-flash"
 )
   .split(",")
   .map((m) => m.trim())
@@ -179,6 +179,12 @@ const FFMPEG_PRESET =
 
 const FFMPEG_CRF =
   process.env.FFMPEG_CRF?.trim() || "27";
+
+// Hard timeout for FFmpeg operations so a corrupt/stalled input cannot
+// occupy a Render worker forever.
+const FFMPEG_TIMEOUT_MS = Number(
+  process.env.FFMPEG_TIMEOUT_MS || 15 * 60 * 1000,
+);
 
 /* =========================================================
    SELF-HOSTED YOUTUBE WORKER
@@ -1557,7 +1563,7 @@ const WHISPER_DTYPE =
 // known, fixed sample offset can't suffer that failure mode: no
 // speech in a window just means no words come back for it.
 const WHISPER_WINDOW_STEP_S = Number(
-  process.env.WHISPER_WINDOW_STEP_S || 20,
+  process.env.WHISPER_WINDOW_STEP_S || 30,
 );
 
 // Extra trailing context appended to each window (not counted
@@ -1583,7 +1589,7 @@ const WHISPER_CACHE_DIR =
 // hung window no longer risks starving/timing-out the whole video,
 // it just fails that one window and moves on to the next.
 const WHISPER_TIMEOUT_MS = Number(
-  process.env.WHISPER_TIMEOUT_MS || 90 * 1000,
+  process.env.WHISPER_TIMEOUT_MS || 75 * 1000,
 );
 
 // Cap the child's own V8 heap so a runaway allocation there fails
@@ -1758,14 +1764,31 @@ async function extractAudioForWhisper(
   );
 
   await new Promise<void>((resolve, reject) => {
-    ffmpeg(videoPath)
+    let settled = false;
+    const command = ffmpeg(videoPath)
       .noVideo()
       .audioChannels(1)
       .audioFrequency(16000)
       .format("wav")
-      .on("error", (error) => reject(error))
-      .on("end", () => resolve())
+      .on("error", (error) => {
+        if (settled) return;
+        settled = true;
+        reject(error);
+      })
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      })
       .save(outPath);
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      try { command.kill("SIGKILL"); } catch {}
+      reject(new Error(`Whisper audio extraction timed out after ${FFMPEG_TIMEOUT_MS}ms.`));
+    }, Math.max(1000, FFMPEG_TIMEOUT_MS));
+    timer.unref?.();
   });
 
   return outPath;
@@ -7366,6 +7389,40 @@ process.on(
 
 
 /* =========================================================
+   PERIODIC TEMP-FILE CLEANUP
+========================================================= */
+
+const TEMP_CLEANUP_INTERVAL_MS = Number(
+  process.env.TEMP_CLEANUP_INTERVAL_MS || 30 * 60 * 1000,
+);
+const TEMP_FILE_MAX_AGE_MS = Number(
+  process.env.TEMP_FILE_MAX_AGE_MS || 2 * 60 * 60 * 1000,
+);
+
+function cleanupOldFiles(dir: string, maxAgeMs: number) {
+  try {
+    if (!fs.existsSync(dir)) return;
+    const now = Date.now();
+    for (const name of fs.readdirSync(dir)) {
+      const target = path.join(dir, name);
+      try {
+        const stat = fs.statSync(target);
+        if (stat.isFile() && now - stat.mtimeMs > maxAgeMs) {
+          fs.unlinkSync(target);
+        }
+      } catch {}
+    }
+  } catch (error) {
+    console.warn("Temp cleanup failed:", error instanceof Error ? error.message : error);
+  }
+}
+
+const cleanupTimer = setInterval(() => {
+  cleanupOldFiles(tempDir, TEMP_FILE_MAX_AGE_MS);
+}, TEMP_CLEANUP_INTERVAL_MS);
+cleanupTimer.unref?.();
+
+/* =========================================================
    START SERVER
 ========================================================= */
 
@@ -7438,6 +7495,12 @@ app.listen(
     );
     console.log(
       `FFmpeg tuning: preset=${FFMPEG_PRESET}, crf=${FFMPEG_CRF}, threads/clip=${FFMPEG_THREADS_PER_CLIP}, detected CPUs=${CPU_COUNT}`,
+    );
+    console.log(
+      `Whisper tuning: model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, window=${WHISPER_WINDOW_STEP_S}s, overlap=${WHISPER_WINDOW_OVERLAP_S}s, timeout=${WHISPER_TIMEOUT_MS}ms`,
+    );
+    console.log(
+      `Hard timeouts: Gemini=${GEMINI_REQUEST_TIMEOUT_MS}ms, FFmpeg=${FFMPEG_TIMEOUT_MS}ms`,
     );
 
     console.log(
