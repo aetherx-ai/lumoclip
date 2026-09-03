@@ -1577,11 +1577,13 @@ const WHISPER_CACHE_DIR =
   process.env.WHISPER_CACHE_DIR?.trim() ||
   path.join(process.cwd(), ".whisper-cache");
 
-// Hard ceiling on how long we let the child process run (covers a
-// cold model download + transcription). If it's not done by then, we
-// kill it and fall back — callers never hang waiting on this.
+// Hard ceiling on how long we let a SINGLE WINDOW's child process
+// run (covers a cold model load + transcribing ~20s of audio). Each
+// window gets its own fresh child and its own timeout — a slow or
+// hung window no longer risks starving/timing-out the whole video,
+// it just fails that one window and moves on to the next.
 const WHISPER_TIMEOUT_MS = Number(
-  process.env.WHISPER_TIMEOUT_MS || 10 * 60 * 1000,
+  process.env.WHISPER_TIMEOUT_MS || 90 * 1000,
 );
 
 // Cap the child's own V8 heap so a runaway allocation there fails
@@ -1600,19 +1602,37 @@ try {
   // library's own default cache location instead.
 }
 
-// This runs in a standalone child `node -e` process (see
-// runWhisperInChildProcess below) — it has no access to anything
-// else in this file and communicates back only via a JSON file on
-// disk, by design, so it can be reasoned about (and killed) in
-// isolation from the rest of the server.
+// This runs in a standalone child `node -e` process, once per audio
+// window (see runWhisperWindowInChildProcess below) — it has no
+// access to anything else in this file and communicates back only
+// via a JSON file on disk. Transcribing only ONE window per process,
+// rather than looping over all windows inside one long-lived
+// process, matters for memory: the WASM linear memory used by
+// onnxruntime-web only ever grows within a process, it's never
+// shrunk back. Looping many transcriber() calls in one process let
+// that memory climb window after window until it could exceed the
+// container's RAM and get the whole server OOM-killed — a fresh
+// process per window fully reclaims that memory on exit instead.
 const WHISPER_WORKER_SCRIPT = `
 const fs = require("fs");
 
 async function main() {
-  const [, audioPath, durationStr, modelName, dtype, cacheDir, outPath, stepStr, overlapStr] = process.argv;
+  const [
+    ,
+    audioPath,
+    durationStr,
+    modelName,
+    dtype,
+    cacheDir,
+    outPath,
+    windowStartStr,
+    windowEndStr,
+    keepBeforeStr,
+  ] = process.argv;
   const duration = Number(durationStr);
-  const stepSeconds = Number(stepStr) || 20;
-  const overlapSeconds = Number(overlapStr) || 2;
+  const windowStartS = Number(windowStartStr);
+  const windowEndS = Number(windowEndStr);
+  const keepBeforeS = keepBeforeStr === "Infinity" ? Infinity : Number(keepBeforeStr);
 
   const { pipeline, env } = await import("@huggingface/transformers");
   env.cacheDir = cacheDir;
@@ -1651,55 +1671,23 @@ async function main() {
     audioData = audioData[0];
   }
 
-  console.error("Whisper worker: model \\"" + modelName + "\\" (dtype " + dtype + ") loading...");
-  const transcriber = await pipeline("automatic-speech-recognition", modelName, { dtype });
-  console.error("Whisper worker: model ready, transcribing in " + stepSeconds + "s windows (+" + overlapSeconds + "s context)...");
-
-  // Walk the audio ourselves in fixed windows, each one transcribed
-  // as its own single (un-chunked, <30s) pass. Every window's time
-  // offset comes directly from its known sample position — never
-  // from matching speech against the previous window — so silent or
-  // instrumental stretches simply produce no words instead of being
-  // able to corrupt the offset for everything that follows.
   const SAMPLE_RATE = 16000;
-  const stepSamples = Math.round(stepSeconds * SAMPLE_RATE);
-  const windowSamples = Math.round((stepSeconds + overlapSeconds) * SAMPLE_RATE);
-  const totalSamples = audioData.length;
+  const windowStartSample = Math.max(0, Math.round(windowStartS * SAMPLE_RATE));
+  const windowEndSample = Math.min(audioData.length, Math.round(windowEndS * SAMPLE_RATE));
 
-  const words = [];
+  const slice = audioData.subarray
+    ? audioData.subarray(windowStartSample, windowEndSample)
+    : audioData.slice(windowStartSample, windowEndSample);
 
-  for (
-    let windowStartSample = 0;
-    windowStartSample < totalSamples;
-    windowStartSample += stepSamples
-  ) {
-    const windowStartS = windowStartSample / SAMPLE_RATE;
-    const windowEndSample = Math.min(totalSamples, windowStartSample + windowSamples);
-    const isLastWindow = windowEndSample >= totalSamples;
+  let words = [];
 
-    const slice = audioData.subarray
-      ? audioData.subarray(windowStartSample, windowEndSample)
-      : audioData.slice(windowStartSample, windowEndSample);
+  if (slice.length) {
+    console.error("Whisper worker: model \\"" + modelName + "\\" (dtype " + dtype + ") loading...");
+    const transcriber = await pipeline("automatic-speech-recognition", modelName, { dtype });
+    console.error("Whisper worker: transcribing window " + windowStartS.toFixed(1) + "s-" + windowEndS.toFixed(1) + "s...");
 
-    if (!slice.length) break;
-
-    let output;
-    try {
-      output = await transcriber(slice, { return_timestamps: "word" });
-    } catch (windowError) {
-      console.error(
-        "Whisper worker: window at " + windowStartS.toFixed(1) + "s failed, skipping —",
-        windowError && windowError.message ? windowError.message : windowError,
-      );
-      continue;
-    }
-
+    const output = await transcriber(slice, { return_timestamps: "word" });
     const chunks = Array.isArray(output && output.chunks) ? output.chunks : [];
-
-    // Only keep words from this window's "core" step region. Words
-    // past that were only transcribed for trailing context and get
-    // re-transcribed (with fuller context) by the next window.
-    const keepBeforeS = isLastWindow ? Infinity : stepSeconds;
 
     for (const c of chunks) {
       const word = String((c && c.text) || "").trim();
@@ -1707,6 +1695,9 @@ async function main() {
       const relStart = Number(ts[0]);
       const relEnd = Number.isFinite(Number(ts[1])) ? Number(ts[1]) : relStart + 0.3;
 
+      // Only keep words in this window's "core" step region. Words
+      // past that were only transcribed for trailing context and
+      // get re-transcribed (with fuller context) by the next window.
       if (
         !word.length ||
         !Number.isFinite(relStart) ||
@@ -1724,15 +1715,7 @@ async function main() {
       });
     }
 
-    console.error(
-      "Whisper worker: window " +
-        windowStartS.toFixed(1) +
-        "s-" +
-        (windowEndSample / SAMPLE_RATE).toFixed(1) +
-        "s done (" +
-        chunks.length +
-        " token(s)).",
-    );
+    console.error("Whisper worker: window done (" + chunks.length + " token(s), " + words.length + " kept).");
   }
 
   const cleanedWords = words
@@ -1788,12 +1771,16 @@ async function extractAudioForWhisper(
   return outPath;
 }
 
-// Runs the worker script above in a disposable child `node` process.
-// Resolves to null (never rejects) on any failure/timeout so the
-// caller can always safely fall back to Gemini's own transcript.
-function runWhisperInChildProcess(
+// Runs the worker script above in a disposable child `node` process
+// for exactly ONE audio window, so its memory (including the WASM
+// heap, which never shrinks within a process) is fully released the
+// moment that window is done — see the comment on WHISPER_WORKER_SCRIPT.
+function runWhisperWindowInChildProcess(
   audioPath: string,
   duration: number,
+  windowStartS: number,
+  windowEndS: number,
+  keepBeforeS: number,
 ): Promise<TranscriptWord[] | null> {
   const outPath = path.join(
     tempDir,
@@ -1814,8 +1801,9 @@ function runWhisperInChildProcess(
         WHISPER_DTYPE,
         WHISPER_CACHE_DIR,
         outPath,
-        String(WHISPER_WINDOW_STEP_S),
-        String(WHISPER_WINDOW_OVERLAP_S),
+        String(windowStartS),
+        String(windowEndS),
+        Number.isFinite(keepBeforeS) ? String(keepBeforeS) : "Infinity",
       ],
       {
         timeout: WHISPER_TIMEOUT_MS,
@@ -1973,29 +1961,57 @@ async function transcribeWithWhisper(
 
     audioPath = await extractAudioForWhisper(videoPath);
 
+    const windowCount = Math.max(
+      1,
+      Math.ceil(duration / WHISPER_WINDOW_STEP_S),
+    );
+
     console.log(
-      `Whisper: transcribing in an isolated child process ` +
-        `(model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, timeout=${WHISPER_TIMEOUT_MS}ms)...`,
+      `Whisper: transcribing ${windowCount} window(s) ` +
+        `(${WHISPER_WINDOW_STEP_S}s each), one disposable child ` +
+        `process per window ` +
+        `(model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, ` +
+        `per-window timeout=${WHISPER_TIMEOUT_MS}ms)...`,
     );
 
-    const words = await runWhisperInChildProcess(
-      audioPath,
-      duration,
-    );
+    const allWords: TranscriptWord[] = [];
 
-    if (!words || !words.length) {
+    for (let i = 0; i < windowCount; i++) {
+      const windowStartS = i * WHISPER_WINDOW_STEP_S;
+      const isLastWindow = i === windowCount - 1;
+      const windowEndS = isLastWindow
+        ? duration
+        : windowStartS + WHISPER_WINDOW_STEP_S + WHISPER_WINDOW_OVERLAP_S;
+      const keepBeforeS = isLastWindow
+        ? Infinity
+        : WHISPER_WINDOW_STEP_S;
+
+      const windowWords = await runWhisperWindowInChildProcess(
+        audioPath,
+        duration,
+        windowStartS,
+        windowEndS,
+        keepBeforeS,
+      );
+
+      if (windowWords && windowWords.length) {
+        allWords.push(...windowWords);
+      }
+    }
+
+    if (!allWords.length) {
       console.warn(
         "Whisper: no usable words came back — falling back to Gemini's own transcript timing.",
       );
       return null;
     }
 
-    const orderedWords = enforceMonotonicWordTimings(words);
+    const orderedWords = enforceMonotonicWordTimings(allWords);
 
     const segments = chunkWhisperWordsIntoSegments(orderedWords);
 
     console.log(
-      `Whisper: produced ${words.length} word-level timestamp(s) ` +
+      `Whisper: produced ${allWords.length} word-level timestamp(s) ` +
         `across ${segments.length} caption segment(s).`,
     );
 
