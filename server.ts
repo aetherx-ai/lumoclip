@@ -139,11 +139,26 @@ const GEMINI_REQUEST_TIMEOUT_MS = Number(
 // (429/5xx/"high demand"), fall back to these models in order before
 // giving up entirely. Comma-separated, e.g. "gemini-2.5-flash,gemini-2.0-flash".
 const GEMINI_FALLBACK_MODELS = (
-  process.env.GEMINI_FALLBACK_MODELS || "gemini-3.1-flash-lite,gemini-2.5-flash"
+  process.env.GEMINI_FALLBACK_MODELS ||
+  "gemini-3.1-flash-lite,gemini-2.5-flash,gemini-2.0-flash"
 )
   .split(",")
   .map((m) => m.trim())
   .filter(Boolean);
+
+// Retry policy is deliberately different by failure class:
+// - Daily/model quota exhaustion (429 + quota) => never retry that model.
+// - Rate limiting (429 without daily quota exhaustion) => honor Retry-After when present.
+// - 503/504 => short exponential retry, then move to the next model.
+// - 4xx auth/bad-request/etc. => fail immediately; switching models will not fix it.
+const GEMINI_RATE_LIMIT_MAX_WAIT_MS = Number(
+  process.env.GEMINI_RATE_LIMIT_MAX_WAIT_MS || 30000,
+);
+
+const GEMINI_TRANSIENT_MAX_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.GEMINI_TRANSIENT_MAX_ATTEMPTS || GEMINI_GENERATE_RETRIES),
+);
 
 // =========================================================
 // FFMPEG SPEED CONFIG
@@ -2691,7 +2706,41 @@ function isGeminiQuotaExceeded(error: any): boolean {
   );
 }
 
-function isRetryableGeminiError(error: any): boolean {
+function getGeminiRetryAfterMs(error: any): number | undefined {
+  const candidates = [
+    error?.retryAfterMs,
+    error?.retryAfter,
+    error?.headers?.["retry-after"],
+    error?.response?.headers?.["retry-after"],
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate == null) continue;
+
+    const numeric = Number(candidate);
+    if (Number.isFinite(numeric)) {
+      // HTTP Retry-After may be seconds, while our internal retryAfterMs is ms.
+      return Math.max(0, Math.min(GEMINI_RATE_LIMIT_MAX_WAIT_MS,
+        numeric < 1000 ? numeric * 1000 : numeric));
+    }
+
+    const match = String(candidate).match(/(\d+(?:\.\d+)?)\s*s/i);
+    if (match) {
+      return Math.max(0, Math.min(GEMINI_RATE_LIMIT_MAX_WAIT_MS, Number(match[1]) * 1000));
+    }
+  }
+
+  // Gemini commonly includes retryDelay in the serialized error body.
+  const message = getGeminiErrorMessage(error);
+  const retryMatch = message.match(/retry(?: in|after)[^0-9]*(\d+(?:\.\d+)?)\s*s/i);
+  if (retryMatch) {
+    return Math.max(0, Math.min(GEMINI_RATE_LIMIT_MAX_WAIT_MS, Number(retryMatch[1]) * 1000));
+  }
+
+  return undefined;
+}
+
+function isGeminiRetryableForNextAttempt(error: any): boolean {
   const status = getGeminiErrorStatus(error);
   const message = getGeminiErrorMessage(error).toLowerCase();
 
@@ -2703,7 +2752,6 @@ function isRetryableGeminiError(error: any): boolean {
     status === 504 ||
     message.includes("high demand") ||
     message.includes("temporarily unavailable") ||
-    message.includes("unavailable") ||
     message.includes("resource exhausted")
   );
 }
@@ -2736,21 +2784,22 @@ async function withGeminiTimeout<T>(
 async function generateGeminiWithRetry(
   params: Parameters<typeof ai.models.generateContent>[0],
 ) {
-  const primaryModel = (params as any).model;
+  const primaryModel = String((params as any).model || "").trim();
 
   const modelsToTry = [
     primaryModel,
-    ...GEMINI_FALLBACK_MODELS.filter(
-      (m) => m !== primaryModel,
-    ),
-  ].filter(Boolean);
+    ...GEMINI_FALLBACK_MODELS,
+  ]
+    .map((m) => String(m || "").trim())
+    .filter(Boolean)
+    .filter((model, index, list) => list.indexOf(model) === index);
 
   let lastError: unknown;
-  const attempts = Math.max(1, GEMINI_GENERATE_RETRIES);
 
   for (let modelIndex = 0; modelIndex < modelsToTry.length; modelIndex++) {
     const model = modelsToTry[modelIndex];
     const isFallback = modelIndex > 0;
+    const attempts = Math.max(1, GEMINI_TRANSIENT_MAX_ATTEMPTS);
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
@@ -2767,6 +2816,7 @@ async function generateGeminiWithRetry(
           `Gemini ${model}`,
         );
 
+        console.log(`Gemini model=${model} succeeded on attempt ${attempt}.`);
         return response;
       } catch (error: any) {
         lastError = error;
@@ -2774,46 +2824,58 @@ async function generateGeminiWithRetry(
         const status = getGeminiErrorStatus(error);
         const message = getGeminiErrorMessage(error);
         const quotaExceeded = isGeminiQuotaExceeded(error);
-        const retryable = isRetryableGeminiError(error);
+        const retryable = isGeminiRetryableForNextAttempt(error);
 
         console.error(
           `Gemini generateContent model=${model} attempt ${attempt} failed (status ${status ?? "unknown"})${quotaExceeded ? " [QUOTA EXCEEDED]" : ""}:`,
           message,
         );
 
-        // A daily/free-tier quota exhaustion will not recover by retrying the
-        // same model. Switch to the fallback immediately instead.
+        // A daily/free-tier/model quota does not recover during this job.
+        // Never burn another request against the same exhausted model.
         if (quotaExceeded) {
           console.warn(
-            `Gemini model=${model} quota exhausted. Skipping remaining retries and switching to fallback.`,
+            `Gemini model=${model} quota exhausted. Switching immediately to the next fallback model.`,
           );
           break;
         }
 
+        // Auth, invalid model, malformed request, etc. should not be retried.
         if (!retryable) {
+          console.warn(
+            `Gemini model=${model} returned a non-retryable error. Stopping Gemini retries.`,
+          );
           throw error;
         }
 
         if (attempt >= attempts) {
           console.warn(
-            `Model ${model} exhausted after ${attempts} attempts.${
+            `Gemini model=${model} exhausted after ${attempts} transient attempt(s).${
               modelIndex < modelsToTry.length - 1
-                ? " Trying fallback model..."
-                : " No more fallback models."
+                ? " Moving to the next fallback model."
+                : " No Gemini models remain."
             }`,
           );
           break;
         }
 
-        const exponentialDelay = Math.min(
-          GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1),
-          GEMINI_RETRY_MAX_MS,
-        );
-        const jitter = Math.floor(Math.random() * 1000);
-        const delay = Math.min(
-          exponentialDelay + jitter,
-          GEMINI_RETRY_MAX_MS,
-        );
+        let delay = getGeminiRetryAfterMs(error);
+
+        if (delay == null) {
+          const exponentialDelay = Math.min(
+            GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1),
+            GEMINI_RETRY_MAX_MS,
+          );
+          const jitter = Math.floor(Math.random() * 1000);
+          delay = Math.min(
+            exponentialDelay + jitter,
+            GEMINI_RETRY_MAX_MS,
+          );
+        }
+
+        // Do not wait minutes on a rate-limit signal. The next model gets a
+        // chance quickly after the current model's transient failure.
+        delay = Math.max(250, Math.min(delay, GEMINI_RATE_LIMIT_MAX_WAIT_MS));
 
         console.warn(
           `Gemini model=${model} temporarily unavailable${
@@ -2826,7 +2888,7 @@ async function generateGeminiWithRetry(
     }
   }
 
-  throw lastError || new Error("Gemini analysis failed.");
+  throw lastError || new Error("All configured Gemini models failed.");
 }
 
 function generateId() {
@@ -3337,6 +3399,8 @@ interface ViralClip {
 interface GeminiAnalysis {
   transcript: TranscriptSegment[];
   clips: ViralClip[];
+  /** True when transcript timing already came from local Whisper fallback. */
+  captionTimingReady?: boolean;
 }
 
 /* =========================================================
@@ -3783,58 +3847,31 @@ async function analyzeLocalVideo(
   duration: number,
   processingMode: ProcessingMode = "clips",
 ): Promise<GeminiAnalysis> {
-  console.log(
-    "Uploading video to Gemini:",
-    videoPath,
-  );
+  let lastGeminiError: unknown;
 
-  let file =
-    await ai.files.upload({
+  try {
+    console.log("Uploading video to Gemini:", videoPath);
+
+    let file = await ai.files.upload({
       file: videoPath,
-      config: {
-        mimeType,
-      },
+      config: { mimeType },
     });
 
-  console.log(
-    "Gemini file:",
-    file.name,
-  );
+    console.log("Gemini file:", file.name);
 
-  /*
-     Faster polling:
-     The old pipeline waited 4 seconds between every ACTIVE check.
-     1.5s keeps the same API flow but removes unnecessary idle time.
-  */
-  while (
-    file.state &&
-    file.state.toString() !== "ACTIVE"
-  ) {
-    const state =
-      file.state.toString();
+    while (file.state && file.state.toString() !== "ACTIVE") {
+      const state = file.state.toString();
+      console.log("Gemini processing state:", state);
 
-    console.log(
-      "Gemini processing state:",
-      state,
-    );
+      if (state === "FAILED") {
+        throw new Error("Gemini video processing failed.");
+      }
 
-    if (state === "FAILED") {
-      throw new Error(
-        "Gemini video processing failed.",
-      );
+      await sleep(GEMINI_POLL_MS);
+      file = await ai.files.get({ name: file.name! });
     }
 
-    await sleep(GEMINI_POLL_MS);
-
-    file =
-      await ai.files.get({
-        name: file.name!,
-      });
-  }
-
-  console.log(
-    "Gemini file ACTIVE — starting analysis.",
-  );
+    console.log("Gemini file ACTIVE — starting analysis.");
 
   const prompt = `
 You are LumoClip's professional AI video editor.
@@ -3957,64 +3994,103 @@ string written specifically for that clip's content. Never omit it
 and never return an empty string for it.
 `;
 
-  const response =
-    await generateGeminiWithRetry({
+    const response = await generateGeminiWithRetry({
       model: GEMINI_MODEL,
-      contents:
-        createUserContent([
-          createPartFromUri(
-            file.uri!,
-            file.mimeType!,
-          ),
-          prompt,
-        ]),
+      contents: createUserContent([
+        createPartFromUri(file.uri!, file.mimeType!),
+        prompt,
+      ]),
       config: {
         responseMimeType: "application/json",
         temperature: 0.2,
       },
     });
 
-  const text =
-    response.text || "";
+    const text = response.text || "";
+    console.log("Gemini response length:", text.length);
 
-  console.log(
-    "Gemini response length:",
-    text.length,
-  );
+    if (!text.trim()) {
+      throw new Error("Gemini returned an empty response.");
+    }
 
-  if (!text.trim()) {
-    throw new Error(
-      "Gemini returned an empty response.",
+    const cleanedJson = cleanJson(text);
+    let parsed: any;
+
+    try {
+      parsed = JSON.parse(cleanedJson);
+    } catch (error) {
+      console.error("Gemini JSON parse error:", error);
+      console.error("Cleaned Gemini response:", cleanedJson);
+      throw new Error("Gemini returned invalid JSON.");
+    }
+
+    return validateAnalysis(
+      parsed,
+      duration,
+      { requireClips: processingMode !== "full_video_caption" },
     );
-  }
-
-  const cleanedJson =
-    cleanJson(text);
-
-  let parsed: any;
-
-  try {
-    parsed =
-      JSON.parse(cleanedJson);
   } catch (error) {
-    console.error(
-      "Gemini JSON parse error:",
-      error,
-    );
-    console.error(
-      "Cleaned Gemini response:",
-      cleanedJson,
-    );
-    throw new Error(
-      "Gemini returned invalid JSON.",
-    );
-  }
+    lastGeminiError = error;
 
-  return validateAnalysis(
-    parsed,
-    duration,
-    { requireClips: processingMode !== "full_video_caption" },
-  );
+    console.error(
+      "Gemini analysis unavailable after all configured fallbacks:",
+      getGeminiErrorMessage(error),
+    );
+
+    // Critical production fallback: Gemini failure must NOT fail the whole
+    // project when local Whisper can still produce real word timings.
+    try {
+      console.warn(
+        "Starting local Whisper fallback because Gemini analysis failed.",
+      );
+
+      const whisperTranscript = await transcribeWithWhisper(
+        videoPath,
+        duration,
+      );
+
+      if (whisperTranscript && whisperTranscript.length) {
+        const fallbackClips =
+          processingMode === "full_video_caption"
+            ? []
+            : buildFallbackClipsFromTranscript(
+                whisperTranscript,
+                duration,
+                MAX_CLIPS,
+              );
+
+        if (processingMode !== "full_video_caption" && !fallbackClips.length) {
+          throw new Error(
+            "Whisper produced a transcript, but no safe recovery clips could be created.",
+          );
+        }
+
+        console.warn(
+          `Whisper fallback succeeded: ${whisperTranscript.length} transcript segment(s), ${fallbackClips.length} recovery clip(s).`,
+        );
+
+        return {
+          transcript: whisperTranscript,
+          clips: fallbackClips,
+          captionTimingReady: true,
+        };
+      }
+
+      throw new Error("Whisper fallback returned no usable transcript.");
+    } catch (whisperError) {
+      console.error(
+        "Whisper fallback also failed:",
+        getGeminiErrorMessage(whisperError),
+      );
+
+      const geminiMessage = getGeminiErrorMessage(lastGeminiError);
+      const whisperMessage = getGeminiErrorMessage(whisperError);
+
+      throw new Error(
+        `AI analysis failed. Gemini: ${geminiMessage}. Local Whisper fallback: ${whisperMessage}`,
+      );
+    }
+  }
 }
 
 /* =========================================================
@@ -4824,22 +4900,28 @@ async function processVideo(
       "Transcribing audio for accurate caption sync",
     );
 
-    const whisperTranscript = await transcribeWithWhisper(
-      sourcePath,
-      duration,
-    );
-
-    if (whisperTranscript && whisperTranscript.length) {
+    if (analysis.captionTimingReady) {
       console.log(
-        `Using local Whisper transcript for caption timing ` +
-          `(${whisperTranscript.length} segment(s)) instead of Gemini's estimate.`,
+        "Local Whisper fallback already supplied caption timing — skipping duplicate Whisper pass.",
       );
-
-      analysis.transcript = whisperTranscript;
     } else {
-      console.log(
-        "Whisper transcript unavailable — using Gemini's own transcript timing for captions.",
+      const whisperTranscript = await transcribeWithWhisper(
+        sourcePath,
+        duration,
       );
+
+      if (whisperTranscript && whisperTranscript.length) {
+        console.log(
+          `Using local Whisper transcript for caption timing ` +
+            `(${whisperTranscript.length} segment(s)) instead of Gemini's estimate.`,
+        );
+
+        analysis.transcript = whisperTranscript;
+      } else {
+        console.log(
+          "Whisper transcript unavailable — using Gemini's own transcript timing for captions.",
+        );
+      }
     }
 
     await saveTranscript(
@@ -8000,6 +8082,7 @@ app.listen(
           ? GEMINI_FALLBACK_MODELS.join(", ")
           : "none"
       }`,
+      `Gemini smart retry: attempts=${GEMINI_TRANSIENT_MAX_ATTEMPTS}, base=${GEMINI_RETRY_BASE_MS}ms, max=${GEMINI_RETRY_MAX_MS}ms, rate-limit-max=${GEMINI_RATE_LIMIT_MAX_WAIT_MS}ms, timeout=${GEMINI_REQUEST_TIMEOUT_MS}ms`,
     );
 
     console.log(
