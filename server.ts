@@ -1581,7 +1581,7 @@ const WHISPER_WORKER_SCRIPT = `
 const fs = require("fs");
 
 async function main() {
-  const [, , audioPath, durationStr, modelName, dtype, cacheDir, outPath] = process.argv;
+  const [, audioPath, durationStr, modelName, dtype, cacheDir, outPath] = process.argv;
   const duration = Number(durationStr);
 
   const { pipeline, env } = await import("@huggingface/transformers");
