@@ -1,8 +1,8 @@
 import React, { useMemo, useState } from "react";
-import { Upload } from "lucide-react";
 import YouTubePublishModal from "./YouTubePublishModal.js";
 import {
   AlertCircle,
+  Crown,
   ArrowLeft,
   BarChart3,
   Captions,
@@ -159,7 +159,7 @@ const Surface: React.FC<{
 }> = ({ children, className = "" }) => (
   <div
     className={[
-      "rounded-2xl border border-white/[0.07] bg-[#09090d]",
+      "rounded-2xl border border-white/[0.07] bg-[#09090d] shadow-[0_14px_45px_rgba(0,0,0,0.16)]",
       className,
     ].join(" ")}
   >
@@ -374,7 +374,7 @@ const FullCaptionedVideoResult: React.FC<{
               playsInline
               preload="metadata"
               poster={thumbnail || undefined}
-              className="max-h-[680px] w-full"
+              className="max-h-[72vh] min-h-[220px] w-full object-contain sm:max-h-[680px]"
             />
           ) : (
             <div className="flex aspect-video flex-col items-center justify-center gap-3">
@@ -409,7 +409,7 @@ const FullCaptionedVideoResult: React.FC<{
                 href={fullVideoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[10px] font-bold text-black transition hover:bg-zinc-200"
+                className="inline-flex items-center justify-center gap-2 min-h-11 touch-manipulation rounded-xl bg-white px-4 py-2.5 text-[10px] font-bold text-black transition hover:bg-zinc-200"
               >
                 <Download className="h-3.5 w-3.5" />
                 Download
@@ -419,7 +419,7 @@ const FullCaptionedVideoResult: React.FC<{
                 href={fullVideoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+                className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
                 title="Open in new tab"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -475,7 +475,7 @@ const PremiumStats: React.FC<{
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-2.5 sm:gap-3 lg:grid-cols-4">
       {stats.map((stat) => {
         const Icon = stat.icon;
 
@@ -774,7 +774,7 @@ const Pipeline: React.FC<{
                 <div className="flex items-center justify-between gap-3">
                   <p
                     className={[
-                      "text-[11px] font-medium",
+                      "text-[10px] font-medium sm:text-[11px]",
                       done
                         ? "text-zinc-300"
                         : active
@@ -867,7 +867,7 @@ const ClipCard: React.FC<{
 
   return (
     <article
-      className="group overflow-hidden rounded-2xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.12]"
+      className="group overflow-hidden rounded-2xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:border-white/[0.12] sm:hover:-translate-y-0.5"
       style={{
         contentVisibility: "auto",
         containIntrinsicSize: "0 700px",
@@ -995,7 +995,7 @@ const ClipCard: React.FC<{
           onClick={() =>
             setShowReason((value) => !value)
           }
-          className="mt-4 flex w-full items-center justify-between border-t border-white/[0.05] pt-3 text-left"
+          className="mt-4 flex min-h-11 w-full touch-manipulation items-center justify-between border-t border-white/[0.05] pt-3 text-left"
         >
           <span className="text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
             Why this clip
@@ -1030,7 +1030,7 @@ const ClipCard: React.FC<{
               <button
                 type="button"
                 onClick={copyCaption}
-                className="rounded-lg p-1.5 text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
+                className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
                 title="Copy caption"
               >
                 <Copy className="h-3 w-3" />
@@ -1044,7 +1044,7 @@ const ClipCard: React.FC<{
         )}
 
         {/* actions */}
-        <div className="mt-4 flex gap-2 border-t border-white/[0.05] pt-3">
+        <div className="mt-4 grid grid-cols-[1fr_auto] gap-2 border-t border-white/[0.05] pt-3">
           {videoUrl ? (
             <>
               <a
@@ -1061,7 +1061,7 @@ const ClipCard: React.FC<{
                 href={videoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
+                className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
                 title="Open clip"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -1079,7 +1079,7 @@ const ClipCard: React.FC<{
           <button
             type="button"
             onClick={() => onPublish(clip)}
-            className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-xl border border-red-500/15 bg-red-500/[0.06] px-3 py-2.5 text-[9px] font-bold text-red-300 transition hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200"
+            className="mt-2 flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl border border-red-500/15 bg-red-500/[0.06] px-3 py-2.5 text-[9px] font-bold text-red-300 transition hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200"
           >
             <Youtube className="h-3.5 w-3.5" />
             Publish to YouTube
@@ -1195,7 +1195,7 @@ const ClipsSection: React.FC<{
       )}
 
       {sortedClips.length > 0 ? (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
           {sortedClips.map(
             (clip, index) => (
               <ClipCard
@@ -1295,7 +1295,7 @@ const CompletedOverview: React.FC<{
       {/* summary */}
       <Surface className="p-5">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-emerald-400/10 bg-emerald-500/[0.07]">
+          <div className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-emerald-400/10 bg-emerald-500/[0.07]">
             <CheckCircle2 className="h-5 w-5 text-emerald-400" />
           </div>
 
@@ -1450,7 +1450,7 @@ const SourceVideo: React.FC<{
               project.thumbnail_url ||
               undefined
             }
-            className="max-h-[650px] w-full"
+            className="max-h-[72vh] min-h-[220px] w-full object-contain sm:max-h-[650px]"
           />
         ) : project.thumbnail_url ? (
           <img
@@ -1531,18 +1531,18 @@ export const ProjectDetailView: React.FC<
       {/* very subtle background */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.055),transparent_35%)]" />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-4 py-5 sm:px-6 lg:px-8 lg:py-7">
+      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
         {/* =====================================================
             HEADER
         ====================================================== */}
 
         <header className="mb-7">
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={onBack}
-                className="group flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-[#09090d] text-zinc-500 transition hover:border-white/[0.12] hover:bg-white/[0.03] hover:text-white"
+                className="group flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-[#09090d] text-zinc-500 transition hover:border-white/[0.12] hover:bg-white/[0.03] hover:text-white"
                 aria-label="Back"
               >
                 <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-0.5" />
@@ -1550,7 +1550,7 @@ export const ProjectDetailView: React.FC<
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate text-lg font-semibold tracking-tight text-white sm:text-xl">
+                  <h1 className="truncate max-w-[62vw] text-base font-semibold tracking-tight text-white sm:max-w-none sm:text-xl">
                     {project.name ||
                       "Untitled Project"}
                   </h1>
@@ -1606,7 +1606,17 @@ export const ProjectDetailView: React.FC<
             </div>
 
             {/* project actions */}
-            <div className="relative shrink-0">
+            <div className="relative ml-auto flex shrink-0 items-center gap-2">
+              {/* Premium CTA */}
+              <a
+                href="/pricing"
+                className="group inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.16] to-fuchsia-500/[0.10] px-3.5 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-200 shadow-[0_8px_28px_rgba(139,92,246,0.12)] transition hover:-translate-y-0.5 hover:border-violet-300/35 hover:from-violet-500/[0.24] hover:to-fuchsia-500/[0.16] hover:text-white active:translate-y-0 sm:px-4"
+                aria-label="Upgrade to Premium"
+              >
+                <Crown className="h-3.5 w-3.5 text-violet-300 transition group-hover:scale-110" />
+                <span className="hidden xs:inline sm:inline">Premium</span>
+              </a>
+
               <button
                 type="button"
                 onClick={() =>
@@ -1614,14 +1624,14 @@ export const ProjectDetailView: React.FC<
                     (value) => !value,
                   )
                 }
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-[#09090d] text-zinc-600 transition hover:border-white/[0.12] hover:text-white"
+                className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-[#09090d] text-zinc-500 transition hover:border-white/[0.12] hover:bg-white/[0.03] hover:text-white active:scale-95"
                 aria-label="Project actions"
               >
                 <MoreHorizontal className="h-4 w-4" />
               </button>
 
               {showDeleteMenu && (
-                <div className="absolute right-0 top-11 z-50 w-48 overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0e] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
+                <div className="absolute right-0 top-12 z-50 w-[min(12rem,calc(100vw-1.5rem))] overflow-hidden rounded-xl border border-white/[0.08] bg-[#0a0a0e] p-1.5 shadow-[0_20px_60px_rgba(0,0,0,0.55)]">
                   <button
                     type="button"
                     onClick={() => {
@@ -1733,7 +1743,7 @@ export const ProjectDetailView: React.FC<
                   <div className="mt-8">
                     <button
                       type="button"
-                      className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-[10px] font-bold text-black transition hover:bg-zinc-200"
+                      className="flex w-full items-center justify-center gap-2 min-h-11 touch-manipulation rounded-xl bg-white px-5 py-3 text-[10px] font-bold text-black transition hover:bg-zinc-200"
                     >
                       <RefreshCw className="h-4 w-4" />
                       Try again
@@ -1770,7 +1780,7 @@ export const ProjectDetailView: React.FC<
         {isCompleted && (
           <>
             {/* success strip */}
-            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/[0.08]">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -1931,7 +1941,7 @@ export const ProjectDetailView: React.FC<
             FOOTER
         ====================================================== */}
 
-        <footer className="mt-14 flex flex-col items-center justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
+        <footer className="mt-10 flex flex-col items-center sm:mt-14 justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
           <div className="flex items-center gap-2 text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-800">
             <Sparkles className="h-3 w-3 text-violet-500/40" />
             Powered by LumoClip AI
