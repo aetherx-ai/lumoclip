@@ -159,7 +159,7 @@ const Surface: React.FC<{
 }> = ({ children, className = "" }) => (
   <div
     className={[
-      "rounded-2xl border border-white/[0.07] bg-[#09090d] shadow-[0_14px_45px_rgba(0,0,0,0.16)]",
+      "rounded-[24px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(18,18,25,0.96),rgba(7,7,11,0.98))] shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-2xl",
       className,
     ].join(" ")}
   >
@@ -226,7 +226,7 @@ const HeroVideo: React.FC<{
 
   return (
     <Surface className="overflow-hidden">
-      <div className="relative aspect-video overflow-hidden bg-black">
+      <div className="relative aspect-video overflow-hidden bg-black ring-1 ring-inset ring-white/[0.06]">
         {sourceUrl ? (
           <video
             src={sourceUrl}
@@ -265,6 +265,14 @@ const HeroVideo: React.FC<{
               Captions
             </span>
           )}
+        </div>
+
+        {/* floating AI status */}
+        <div className="absolute right-4 top-4 hidden sm:flex items-center gap-2 rounded-full border border-white/[0.10] bg-black/55 px-3 py-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-200 shadow-lg backdrop-blur-xl">
+          <span className="h-1.5 w-1.5 rounded-full bg-violet-400 lumo-pulse" />
+          AI engine
+          <span className="text-zinc-600">•</span>
+          {completed ? "Ready" : failed ? "Attention" : "Live"}
         </div>
 
         {/* bottom information */}
@@ -483,9 +491,10 @@ const PremiumStats: React.FC<{
         return (
           <div
             key={stat.label}
-            className="group rounded-2xl border border-white/[0.07] bg-[#09090d] p-4 transition hover:border-white/[0.12]"
+            className="group relative overflow-hidden rounded-[20px] border border-white/[0.08] bg-white/[0.025] p-4 shadow-[0_16px_50px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.04]"
           >
-            <div className="flex items-center justify-between">
+            <div className="pointer-events-none absolute -right-8 -top-8 h-20 w-20 rounded-full bg-violet-500/[0.08] blur-2xl transition group-hover:bg-violet-400/[0.14]" />
+            <div className="relative flex items-center justify-between">
               <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-zinc-600">
                 {stat.label}
               </span>
@@ -538,11 +547,11 @@ const AIInsightPanel: React.FC<{
   ];
 
   return (
-    <section className="rounded-2xl border border-white/[0.07] bg-[#09090d]">
+    <section className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(16,14,25,.96),rgba(8,8,12,.98))] shadow-[0_24px_70px_rgba(0,0,0,.25)]">
       <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-400/10 bg-violet-500/[0.07]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/20 bg-gradient-to-br from-violet-500/[0.16] to-fuchsia-500/[0.06] shadow-[0_8px_30px_rgba(139,92,246,.12)]">
               <Sparkles className="h-4 w-4 text-violet-400" />
             </div>
 
@@ -702,7 +711,7 @@ const Pipeline: React.FC<{
       ];
 
   return (
-    <Surface className="h-full p-5 sm:p-6">
+    <Surface className="relative h-full overflow-hidden p-5 sm:p-6">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">
@@ -720,7 +729,18 @@ const Pipeline: React.FC<{
         </span>
       </div>
 
-      <div className="mt-7 space-y-1">
+      <div className="mt-5 overflow-hidden rounded-full bg-white/[0.05]">
+        <div
+          className="h-1 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-400 to-violet-400 transition-all duration-700"
+          style={{ width: `${progress}%` }}
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between">
+        <span className="text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-700">Progress</span>
+        <span className="font-mono text-[9px] font-semibold text-violet-300">{progress}%</span>
+      </div>
+
+      <div className="mt-5 space-y-1">
         {steps.map((step, index) => {
           const done =
             progress >= step.threshold;
@@ -868,14 +888,14 @@ const ClipCard: React.FC<{
 
   return (
     <article
-      className="group overflow-hidden rounded-2xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:border-white/[0.12] sm:hover:-translate-y-0.5"
+      className="group overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(15,15,21,.98),rgba(7,7,10,.99))] shadow-[0_20px_65px_rgba(0,0,0,.28)] transition duration-300 hover:-translate-y-1 hover:border-violet-300/20 hover:shadow-[0_28px_85px_rgba(0,0,0,.38)]"
       style={{
         contentVisibility: "auto",
         containIntrinsicSize: "0 700px",
       }}
     >
       {/* preview */}
-      <div className="relative aspect-[9/14] overflow-hidden bg-[#050507]">
+      <div className="relative aspect-[9/14] overflow-hidden bg-[#050507] ring-1 ring-inset ring-white/[0.06]">
         {videoUrl ? (
           <video
             src={videoUrl}
@@ -924,9 +944,11 @@ const ClipCard: React.FC<{
         )}
 
         {/* score */}
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-lg border border-white/10 bg-black/55 px-2.5 py-1.5 text-[8px] font-bold text-white backdrop-blur-xl">
-          <Flame className="h-3 w-3 text-amber-300" />
-          {score}
+        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-black/60 px-2.5 py-1.5 text-[8px] font-extrabold text-white shadow-lg backdrop-blur-xl">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-300/25 bg-amber-400/10">
+            <Flame className="h-2.5 w-2.5 text-amber-300" />
+          </span>
+          <span>{score}</span>
         </div>
 
         {/* bottom metadata */}
@@ -942,7 +964,7 @@ const ClipCard: React.FC<{
       </div>
 
       {/* body */}
-      <div className="p-4">
+      <div className="p-4 sm:p-5">
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1">
             <p className="mb-1 text-[7px] font-bold uppercase tracking-[0.16em] text-violet-400">
@@ -1113,7 +1135,7 @@ const ClipsSection: React.FC<{
   }, [clips, sort]);
 
   return (
-    <section className="mt-9">
+    <section className="mt-10 sm:mt-12">
       {/* heading */}
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -1134,7 +1156,7 @@ const ClipsSection: React.FC<{
           </p>
         </div>
 
-        <div className="flex w-full items-center gap-1 rounded-xl border border-white/[0.06] bg-[#09090d] p-1 sm:w-auto">
+        <div className="flex w-full items-center gap-1 rounded-[14px] border border-white/[0.08] bg-white/[0.025] p-1 shadow-[0_10px_35px_rgba(0,0,0,.18)] backdrop-blur-xl sm:w-auto">
           <button
             type="button"
             onClick={() => setSort("score")}
@@ -1517,22 +1539,32 @@ export const ProjectDetailView: React.FC<
       : "processing";
 
   return (
-    <div className="min-h-full bg-[#030304] text-white">
+    <div className="min-h-full overflow-x-hidden bg-[#030304] text-white">
+      <style>{`
+        @keyframes lumoFloat { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
+        @keyframes lumoShimmer { 0% { transform: translateX(-120%) } 100% { transform: translateX(120%) } }
+        @keyframes lumoPulse { 0%,100% { opacity:.45; transform:scale(.92) } 50% { opacity:1; transform:scale(1) } }
+        .lumo-float { animation:lumoFloat 4s ease-in-out infinite; }
+        .lumo-shimmer { animation:lumoShimmer 2.4s ease-in-out infinite; }
+        .lumo-pulse { animation:lumoPulse 2s ease-in-out infinite; }
+        .lumo-scroll::-webkit-scrollbar { width:5px; height:5px; }
+        .lumo-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,.10); border-radius:999px; }
+      `}</style>
       {/* very subtle background */}
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.055),transparent_35%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(139,92,246,0.13),transparent_32%),radial-gradient(circle_at_100%_45%,rgba(59,130,246,0.045),transparent_28%)]" />
 
       <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 pb-8 pt-3 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
         {/* =====================================================
             HEADER
         ====================================================== */}
 
-        <header className="mb-7">
+        <header className="mb-6 sm:mb-8">
           <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={onBack}
-                className="group flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-[#09090d] text-zinc-500 transition hover:border-white/[0.12] hover:bg-white/[0.03] hover:text-white"
+                className="group flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-white/[0.09] bg-white/[0.035] text-zinc-500 shadow-[0_10px_30px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-200 hover:border-violet-400/25 hover:bg-violet-500/[0.06] hover:text-white active:scale-95"
                 aria-label="Back"
               >
                 <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-0.5" />
@@ -1632,7 +1664,7 @@ export const ProjectDetailView: React.FC<
               {/* Premium CTA */}
               <a
                 href="/pricing"
-                className="group inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.16] to-fuchsia-500/[0.10] px-3.5 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-200 shadow-[0_8px_28px_rgba(139,92,246,0.12)] transition hover:-translate-y-0.5 hover:border-violet-300/35 hover:from-violet-500/[0.24] hover:to-fuchsia-500/[0.16] hover:text-white active:translate-y-0 sm:px-4"
+                className="group inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-violet-300/25 bg-[linear-gradient(135deg,rgba(139,92,246,.22),rgba(217,70,239,.12))] px-3.5 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-200 shadow-[0_12px_36px_rgba(139,92,246,0.18)] transition hover:-translate-y-0.5 hover:border-violet-300/35 hover:from-violet-500/[0.24] hover:to-fuchsia-500/[0.16] hover:text-white active:translate-y-0 sm:px-4"
                 aria-label="Upgrade to Premium"
               >
                 <Crown className="h-3.5 w-3.5 text-violet-300 transition group-hover:scale-110" />
@@ -1802,7 +1834,7 @@ export const ProjectDetailView: React.FC<
         {isCompleted && (
           <>
             {/* success strip */}
-            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-4 flex flex-col gap-3 rounded-[22px] border border-emerald-300/15 bg-[linear-gradient(135deg,rgba(16,185,129,.08),rgba(6,78,59,.035))] shadow-[0_18px_55px_rgba(16,185,129,.06)] px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/[0.08]">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -1963,7 +1995,7 @@ export const ProjectDetailView: React.FC<
             FOOTER
         ====================================================== */}
 
-        <footer className="mt-10 flex flex-col items-center sm:mt-14 justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
+        <footer className="mt-12 flex flex-col items-center sm:mt-16 justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
           <div className="flex items-center gap-2 text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-800">
             <Sparkles className="h-3 w-3 text-violet-500/40" />
             Powered by LumoClip AI
