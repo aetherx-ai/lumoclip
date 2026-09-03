@@ -1798,6 +1798,36 @@ function runWhisperInChildProcess(
   });
 }
 
+// The whisper worker transcribes long audio in overlapping windows
+// (chunk_length_s: 20, stride_length_s: 3) and stitches the word
+// timestamps back together. At those chunk-boundary seams the
+// stitched timestamps are not always strictly increasing — a word
+// from the next window can come back with a start time slightly
+// *before* the previous word's end. Left uncorrected, that produces
+// a caption line whose cue starts before the previous one finished,
+// which looks like sync jumping backward every ~17-20s through the
+// video. Sorting + clamping every word to start no earlier than the
+// previous word ended removes that class of glitch entirely.
+function enforceMonotonicWordTimings(
+  words: TranscriptWord[],
+): TranscriptWord[] {
+  const sorted = [...words].sort((a, b) => a.start - b.start);
+
+  const MIN_WORD_DURATION = 0.05;
+  const result: TranscriptWord[] = [];
+  let cursor = 0;
+
+  for (const w of sorted) {
+    const start = Math.max(w.start, cursor);
+    const end = Math.max(w.end, start + MIN_WORD_DURATION);
+
+    result.push({ word: w.word, start, end });
+    cursor = end;
+  }
+
+  return result;
+}
+
 // Groups Whisper's flat per-word output back into the existing
 // 2-4-word TranscriptSegment shape used everywhere else (ClipCard
 // UI, saveTranscript, clip-relative slicing) so nothing downstream
@@ -1869,7 +1899,9 @@ async function transcribeWithWhisper(
       return null;
     }
 
-    const segments = chunkWhisperWordsIntoSegments(words);
+    const orderedWords = enforceMonotonicWordTimings(words);
+
+    const segments = chunkWhisperWordsIntoSegments(orderedWords);
 
     console.log(
       `Whisper: produced ${words.length} word-level timestamp(s) ` +
