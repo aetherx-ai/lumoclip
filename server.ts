@@ -138,9 +138,12 @@ const GEMINI_REQUEST_TIMEOUT_MS = Number(
 // If the primary model exhausts its retries on a transient error
 // (429/5xx/"high demand"), fall back to these models in order before
 // giving up entirely. Comma-separated, e.g. "gemini-2.5-flash,gemini-2.0-flash".
+// Ordered strongest-first so a quota-exhausted primary model degrades
+// as gracefully as possible. flash-lite is the weakest fallback, so it
+// goes last rather than first.
 const GEMINI_FALLBACK_MODELS = (
   process.env.GEMINI_FALLBACK_MODELS ||
-  "gemini-3.1-flash-lite,gemini-2.5-flash,gemini-2.0-flash"
+  "gemini-2.5-flash,gemini-2.0-flash,gemini-3.1-flash-lite"
 )
   .split(",")
   .map((m) => m.trim())
@@ -708,7 +711,19 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey =
   process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
+// Supports multiple free-tier Gemini API keys so per-project daily quota
+// exhaustion on one key doesn't stall the whole service. Set GEMINI_API_KEYS
+// as a comma-separated list (each key from a separate Google Cloud project
+// has its own independent free-tier quota). GEMINI_API_KEY still works for
+// a single key.
+const GEMINI_API_KEYS: string[] = (
+  process.env.GEMINI_API_KEYS ||
+  process.env.GEMINI_API_KEY ||
+  ""
+)
+  .split(",")
+  .map((k) => k.trim())
+  .filter(Boolean);
 
 if (!supabaseUrl) {
   throw new Error("Missing SUPABASE_URL");
@@ -720,8 +735,8 @@ if (!supabaseServiceRoleKey) {
   );
 }
 
-if (!geminiApiKey) {
-  throw new Error("Missing GEMINI_API_KEY");
+if (GEMINI_API_KEYS.length === 0) {
+  throw new Error("Missing GEMINI_API_KEY (or GEMINI_API_KEYS)");
 }
 
 /* =========================================================
@@ -733,8 +748,41 @@ const supabase = createClient(
   supabaseServiceRoleKey,
 );
 
-const ai = new GoogleGenAI({
-  apiKey: geminiApiKey,
+// One GoogleGenAI client per configured API key. geminiKeyIndex points at
+// the key currently in use; it only moves forward (never wraps mid-process)
+// once a key's daily quota is confirmed exhausted, so later calls in this
+// process skip straight past keys we already know are dead.
+const geminiClients = GEMINI_API_KEYS.map(
+  (apiKey) => new GoogleGenAI({ apiKey }),
+);
+
+let geminiKeyIndex = 0;
+
+function getGeminiClient() {
+  return geminiClients[geminiKeyIndex];
+}
+
+// Advances to the next configured Gemini API key. Returns false if there
+// are no more keys left to try.
+function rotateGeminiKey(): boolean {
+  if (geminiKeyIndex >= geminiClients.length - 1) {
+    return false;
+  }
+
+  geminiKeyIndex++;
+
+  console.warn(
+    `Gemini API key rotated -> now using key #${geminiKeyIndex + 1}/${geminiClients.length}`,
+  );
+
+  return true;
+}
+
+// Kept for readability at call sites that still reference `ai` directly.
+const ai = new Proxy({} as ReturnType<typeof getGeminiClient>, {
+  get(_target, prop) {
+    return (getGeminiClient() as any)[prop];
+  },
 });
 
 interface ProcessingConfig {
@@ -2820,89 +2868,113 @@ async function generateGeminiWithRetry(
     const isFallback = modelIndex > 0;
     const attempts = Math.max(1, GEMINI_TRANSIENT_MAX_ATTEMPTS);
 
-    for (let attempt = 1; attempt <= attempts; attempt++) {
-      try {
-        console.log(
-          `Gemini generateContent${isFallback ? " [fallback]" : ""} model=${model} attempt ${attempt}/${attempts}`,
-        );
+    // Try this model against every remaining configured Gemini API key
+    // before giving up on it and moving to the next fallback model.
+    // geminiKeyIndex only ever advances, so once a key is confirmed
+    // quota-exhausted this loop naturally skips it for every future model
+    // and every future job in this process.
+    keyLoop: for (
+      let keyPass = 0;
+      keyPass < geminiClients.length;
+      keyPass++
+    ) {
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          console.log(
+            `Gemini generateContent${isFallback ? " [fallback]" : ""} model=${model} key=#${geminiKeyIndex + 1}/${geminiClients.length} attempt ${attempt}/${attempts}`,
+          );
 
-        const response = await withGeminiTimeout(
-          ai.models.generateContent({
-            ...params,
-            model,
-          } as any),
-          GEMINI_REQUEST_TIMEOUT_MS,
-          `Gemini ${model}`,
-        );
+          const response = await withGeminiTimeout(
+            getGeminiClient().models.generateContent({
+              ...params,
+              model,
+            } as any),
+            GEMINI_REQUEST_TIMEOUT_MS,
+            `Gemini ${model}`,
+          );
 
-        console.log(`Gemini model=${model} succeeded on attempt ${attempt}.`);
-        return response;
-      } catch (error: any) {
-        lastError = error;
+          console.log(
+            `Gemini model=${model} succeeded on attempt ${attempt} (key #${geminiKeyIndex + 1}).`,
+          );
+          return response;
+        } catch (error: any) {
+          lastError = error;
 
-        const status = getGeminiErrorStatus(error);
-        const message = getGeminiErrorMessage(error);
-        const quotaExceeded = isGeminiQuotaExceeded(error);
-        const retryable = isGeminiRetryableForNextAttempt(error);
+          const status = getGeminiErrorStatus(error);
+          const message = getGeminiErrorMessage(error);
+          const quotaExceeded = isGeminiQuotaExceeded(error);
+          const retryable = isGeminiRetryableForNextAttempt(error);
 
-        console.error(
-          `Gemini generateContent model=${model} attempt ${attempt} failed (status ${status ?? "unknown"})${quotaExceeded ? " [QUOTA EXCEEDED]" : ""}:`,
-          message,
-        );
+          console.error(
+            `Gemini generateContent model=${model} key=#${geminiKeyIndex + 1} attempt ${attempt} failed (status ${status ?? "unknown"})${quotaExceeded ? " [QUOTA EXCEEDED]" : ""}:`,
+            message,
+          );
 
-        // A daily/free-tier/model quota does not recover during this job.
-        // Never burn another request against the same exhausted model.
-        if (quotaExceeded) {
+          // A daily/free-tier/model quota does not recover during this job.
+          // Never burn another request against the same exhausted key. Try
+          // the next configured API key on the same model before falling
+          // back to a weaker model.
+          if (quotaExceeded) {
+            const rotated = rotateGeminiKey();
+
+            if (rotated) {
+              console.warn(
+                `Gemini model=${model} quota exhausted on key #${geminiKeyIndex}. Retrying same model on key #${geminiKeyIndex + 1}.`,
+              );
+              continue keyLoop;
+            }
+
+            console.warn(
+              `Gemini model=${model} quota exhausted on all configured API keys. Switching to the next fallback model.`,
+            );
+            break keyLoop;
+          }
+
+          // Auth, invalid model, malformed request, etc. should not be retried.
+          if (!retryable) {
+            console.warn(
+              `Gemini model=${model} returned a non-retryable error. Stopping Gemini retries.`,
+            );
+            throw error;
+          }
+
+          if (attempt >= attempts) {
+            console.warn(
+              `Gemini model=${model} exhausted after ${attempts} transient attempt(s).${
+                modelIndex < modelsToTry.length - 1
+                  ? " Moving to the next fallback model."
+                  : " No Gemini models remain."
+              }`,
+            );
+            break keyLoop;
+          }
+
+          let delay = getGeminiRetryAfterMs(error);
+
+          if (delay == null) {
+            const exponentialDelay = Math.min(
+              GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1),
+              GEMINI_RETRY_MAX_MS,
+            );
+            const jitter = Math.floor(Math.random() * 1000);
+            delay = Math.min(
+              exponentialDelay + jitter,
+              GEMINI_RETRY_MAX_MS,
+            );
+          }
+
+          // Do not wait minutes on a rate-limit signal. The next model gets a
+          // chance quickly after the current model's transient failure.
+          delay = Math.max(250, Math.min(delay, GEMINI_RATE_LIMIT_MAX_WAIT_MS));
+
           console.warn(
-            `Gemini model=${model} quota exhausted. Switching immediately to the next fallback model.`,
+            `Gemini model=${model} temporarily unavailable${
+              status ? ` (HTTP ${status})` : ""
+            }. Retrying in ${delay}ms...`,
           );
-          break;
+
+          await sleep(delay);
         }
-
-        // Auth, invalid model, malformed request, etc. should not be retried.
-        if (!retryable) {
-          console.warn(
-            `Gemini model=${model} returned a non-retryable error. Stopping Gemini retries.`,
-          );
-          throw error;
-        }
-
-        if (attempt >= attempts) {
-          console.warn(
-            `Gemini model=${model} exhausted after ${attempts} transient attempt(s).${
-              modelIndex < modelsToTry.length - 1
-                ? " Moving to the next fallback model."
-                : " No Gemini models remain."
-            }`,
-          );
-          break;
-        }
-
-        let delay = getGeminiRetryAfterMs(error);
-
-        if (delay == null) {
-          const exponentialDelay = Math.min(
-            GEMINI_RETRY_BASE_MS * Math.pow(2, attempt - 1),
-            GEMINI_RETRY_MAX_MS,
-          );
-          const jitter = Math.floor(Math.random() * 1000);
-          delay = Math.min(
-            exponentialDelay + jitter,
-            GEMINI_RETRY_MAX_MS,
-          );
-        }
-
-        // Do not wait minutes on a rate-limit signal. The next model gets a
-        // chance quickly after the current model's transient failure.
-        delay = Math.max(250, Math.min(delay, GEMINI_RATE_LIMIT_MAX_WAIT_MS));
-
-        console.warn(
-          `Gemini model=${model} temporarily unavailable${
-            status ? ` (HTTP ${status})` : ""
-          }. Retrying in ${delay}ms...`,
-        );
-
-        await sleep(delay);
       }
     }
   }
@@ -8093,6 +8165,10 @@ app.listen(
     );
     console.log(
       `Gemini model: ${GEMINI_MODEL}`,
+    );
+
+    console.log(
+      `Gemini API keys configured: ${geminiClients.length}`,
     );
 
     console.log(
