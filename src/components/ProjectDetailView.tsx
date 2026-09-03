@@ -395,14 +395,15 @@ const FullCaptionedVideoResult: React.FC<{
           </div>
 
           {fullVideoUrl && (
-            <div className="flex flex-wrap gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
               <button
                 type="button"
                 onClick={onPublish}
-                className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-500 px-4 py-2.5 text-[10px] font-bold text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] transition hover:bg-red-400"
+                className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-400/20 bg-gradient-to-r from-red-500 to-rose-500 px-4 py-2.5 text-[10px] font-extrabold text-white shadow-[0_10px_30px_rgba(239,68,68,0.20)] transition duration-200 hover:-translate-y-0.5 hover:from-red-400 hover:to-rose-400 active:translate-y-0"
               >
                 <Youtube className="h-3.5 w-3.5" />
-                Publish to YouTube
+                <span>Publish</span>
+                <ExternalLink className="h-3 w-3 opacity-50 transition group-hover:translate-x-0.5" />
               </button>
 
               <a
@@ -1043,48 +1044,37 @@ const ClipCard: React.FC<{
           </div>
         )}
 
-        {/* actions */}
-        <div className="mt-4 grid grid-cols-[1fr_auto] gap-2 border-t border-white/[0.05] pt-3">
-          {videoUrl ? (
-            <>
-              <a
-                href={videoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-white px-3 py-2.5 text-[9px] font-bold text-black transition hover:bg-zinc-200"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Export
-              </a>
+        {/* premium actions */}
+        {videoUrl && onPublish ? (
+          <div className="mt-4 grid grid-cols-1 gap-2 border-t border-white/[0.05] pt-3 sm:grid-cols-[1fr_1.35fr]">
+            <a
+              href={videoUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5 text-[9px] font-bold text-zinc-300 transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white active:scale-[0.99]"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Export clip
+            </a>
 
-              <a
-                href={videoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
-                title="Open clip"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            </>
-          ) : (
-            <div className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5 text-[9px] font-medium text-zinc-700">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Processing
-            </div>
-          )}
-        </div>
-
-        {videoUrl && onPublish && (
-          <button
-            type="button"
-            onClick={() => onPublish(clip)}
-            className="mt-2 flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl border border-red-500/15 bg-red-500/[0.06] px-3 py-2.5 text-[9px] font-bold text-red-300 transition hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200"
-          >
-            <Youtube className="h-3.5 w-3.5" />
-            Publish to YouTube
-          </button>
+            <button
+              type="button"
+              onClick={() => onPublish(clip)}
+              className="group relative flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-xl border border-red-400/20 bg-gradient-to-r from-red-500 to-rose-500 px-3 py-2.5 text-[9px] font-extrabold text-white shadow-[0_10px_30px_rgba(239,68,68,0.18)] transition duration-200 hover:-translate-y-0.5 hover:from-red-400 hover:to-rose-400 active:translate-y-0"
+            >
+              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition duration-700 group-hover:translate-x-full" />
+              <Youtube className="relative h-3.5 w-3.5" />
+              <span className="relative">Publish to YouTube</span>
+              <ExternalLink className="relative h-3 w-3 opacity-50 transition group-hover:translate-x-0.5" />
+            </button>
+          </div>
+        ) : (
+          <div className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3 text-[9px] font-medium text-zinc-700">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            Processing
+          </div>
         )}
+
       </div>
     </article>
   );
@@ -1144,12 +1134,12 @@ const ClipsSection: React.FC<{
           </p>
         </div>
 
-        <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-[#09090d] p-1">
+        <div className="flex w-full items-center gap-1 rounded-xl border border-white/[0.06] bg-[#09090d] p-1 sm:w-auto">
           <button
             type="button"
             onClick={() => setSort("score")}
             className={[
-              "rounded-lg px-3 py-2 text-[8px] font-bold transition",
+              "min-h-9 flex-1 rounded-lg px-3 py-2 text-[8px] font-bold transition sm:flex-none",
               sort === "score"
                 ? "bg-white text-black"
                 : "text-zinc-600 hover:text-zinc-300",
@@ -1162,7 +1152,7 @@ const ClipsSection: React.FC<{
             type="button"
             onClick={() => setSort("newest")}
             className={[
-              "rounded-lg px-3 py-2 text-[8px] font-bold transition",
+              "min-h-9 flex-1 rounded-lg px-3 py-2 text-[8px] font-bold transition sm:flex-none",
               sort === "newest"
                 ? "bg-white text-black"
                 : "text-zinc-600 hover:text-zinc-300",
@@ -1531,7 +1521,7 @@ export const ProjectDetailView: React.FC<
       {/* very subtle background */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.055),transparent_35%)]" />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
+      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 pb-8 pt-3 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
         {/* =====================================================
             HEADER
         ====================================================== */}
@@ -1606,7 +1596,39 @@ export const ProjectDetailView: React.FC<
             </div>
 
             {/* project actions */}
-            <div className="relative ml-auto flex shrink-0 items-center gap-2">
+            <div className="relative ml-auto flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
+              {isCompleted && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPublishTarget(
+                      isFullVideoMode
+                        ? { kind: "project" }
+                        : safeClips.length > 0
+                        ? {
+                            kind: "clip",
+                            clip: [...safeClips].sort(
+                              (a, b) => getClipScore(b) - getClipScore(a),
+                            )[0],
+                          }
+                        : null,
+                    )
+                  }
+                  disabled={!isFullVideoMode && safeClips.length === 0}
+                  className="group relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-xl border border-red-400/25 bg-gradient-to-r from-red-500 via-rose-500 to-red-500 bg-[length:200%_100%] px-3.5 text-[9px] font-extrabold uppercase tracking-[0.11em] text-white shadow-[0_10px_34px_rgba(239,68,68,0.20)] transition duration-300 hover:-translate-y-0.5 hover:bg-right hover:shadow-[0_14px_38px_rgba(239,68,68,0.28)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4"
+                  aria-label={
+                    isFullVideoMode
+                      ? "Publish video to YouTube"
+                      : "Publish best clip to YouTube"
+                  }
+                >
+                  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition duration-700 group-hover:translate-x-full" />
+                  <Youtube className="relative h-3.5 w-3.5" />
+                  <span className="relative">Publish</span>
+                  <ExternalLink className="relative h-3 w-3 opacity-55" />
+                </button>
+              )}
+
               {/* Premium CTA */}
               <a
                 href="/pricing"
