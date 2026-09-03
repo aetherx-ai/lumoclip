@@ -2681,7 +2681,10 @@ async function extractAudioForWhisperRanges(
     };
 
     const command = ffmpeg(videoPath)
-      .complexFilter(filterParts, "outa")
+      // Define the filter graph first, then map its labeled output explicitly.
+      // Passing "outa" as fluent-ffmpeg's second complexFilter argument can
+      // produce an invalid/duplicated mapping on some ffmpeg-static builds.
+      .complexFilter(filterParts)
       .outputOptions([
         "-map [outa]",
         "-ac 1",
@@ -3688,78 +3691,24 @@ JSON CLEANER
 ========================================================= */
 
 function cleanJson(text: string): string {
-  let cleaned = String(text || "")
+  let cleaned = text
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
 
-  /*
-   * Gemini can occasionally return a valid JSON object followed by
-   * duplicated wrappers / stray characters even when responseMimeType
-   * is application/json.
-   *
-   * DO NOT use lastIndexOf("}") here. If Gemini returns:
-   *
-   *   { ...valid object... }
-   *   }
-   *
-   * lastIndexOf() captures the stray brace and JSON.parse() fails with
-   * "Unexpected non-whitespace character after JSON".
-   *
-   * Instead, scan from the first "{" and stop at the first balanced
-   * top-level "}". The scanner is string-aware so braces inside captions,
-   * titles, etc. do not prematurely terminate the JSON object.
-   */
+  // Extract the JSON object if Gemini added extra text.
   const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
 
-  if (firstBrace !== -1) {
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    let endIndex = -1;
-
-    for (let i = firstBrace; i < cleaned.length; i++) {
-      const char = cleaned[i];
-
-      if (inString) {
-        if (escaped) {
-          escaped = false;
-        } else if (char === "\\") {
-          escaped = true;
-        } else if (char === '"') {
-          inString = false;
-        }
-        continue;
-      }
-
-      if (char === '"') {
-        inString = true;
-        continue;
-      }
-
-      if (char === "{") {
-        depth++;
-      } else if (char === "}") {
-        depth--;
-
-        if (depth === 0) {
-          endIndex = i + 1;
-          break;
-        }
-
-        if (depth < 0) {
-          break;
-        }
-      }
-    }
-
-    if (endIndex !== -1) {
-      cleaned = cleaned.slice(firstBrace, endIndex).trim();
-    } else {
-      // Keep the original cleaned text so JSON.parse() can produce the
-      // normal invalid-JSON error below instead of silently mutating it.
-      cleaned = cleaned.slice(firstBrace).trim();
-    }
+  if (
+    firstBrace !== -1 &&
+    lastBrace !== -1 &&
+    lastBrace > firstBrace
+  ) {
+    cleaned = cleaned.slice(
+      firstBrace,
+      lastBrace + 1,
+    );
   }
 
   /*
@@ -3790,7 +3739,6 @@ function cleanJson(text: string): string {
 
   return cleaned.trim();
 }
-
 /* =========================================================
 VALIDATE GEMINI RESULT
 ========================================================= */
@@ -4355,14 +4303,7 @@ and never return an empty string for it.
       parsed = JSON.parse(cleanedJson);
     } catch (error) {
       console.error("Gemini JSON parse error:", error);
-      console.error(
-        "Gemini JSON candidate length:",
-        cleanedJson.length,
-      );
-      console.error(
-        "Gemini JSON candidate tail:",
-        cleanedJson.slice(-500),
-      );
+      console.error("Cleaned Gemini response:", cleanedJson);
       throw new Error("Gemini returned invalid JSON.");
     }
 
