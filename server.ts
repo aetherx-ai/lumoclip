@@ -1560,12 +1560,17 @@ const WHISPER_MODEL =
 const WHISPER_DTYPE =
   process.env.WHISPER_DTYPE?.trim() || "q8";
 
-const WHISPER_WINDOW_STEP_S = Number(
-  process.env.WHISPER_WINDOW_STEP_S || 30,
+const WHISPER_WINDOW_STEP_S = Math.max(
+  5,
+  Number(process.env.WHISPER_WINDOW_STEP_S || 30),
 );
 
-const WHISPER_WINDOW_OVERLAP_S = Number(
-  process.env.WHISPER_WINDOW_OVERLAP_S || 2,
+const WHISPER_WINDOW_OVERLAP_S = Math.min(
+  Math.max(
+    0,
+    Number(process.env.WHISPER_WINDOW_OVERLAP_S || 2),
+  ),
+  WHISPER_WINDOW_STEP_S - 1,
 );
 
 const WHISPER_CACHE_DIR =
@@ -1793,13 +1798,23 @@ async function main() {
   const SAMPLE_RATE =
     16000;
 
+  // IMPORTANT: overlap is created by shifting the next window start
+  // backwards. Never extend an inference slice beyond windowStepS.
+  // Example with 30s window / 2s overlap: 0-30, 28-58, 56-86...
+  const strideS = Math.max(
+    1,
+    windowStepS - overlapS,
+  );
+
   const windowCount =
     Math.max(
       1,
       Math.ceil(
-        duration /
-          windowStepS,
-      ),
+        Math.max(
+          0,
+          duration - windowStepS,
+        ) / strideS,
+      ) + 1,
     );
 
   const allWords = [];
@@ -1810,25 +1825,20 @@ async function main() {
     i++
   ) {
     const windowStartS =
-      i * windowStepS;
-
-    const isLastWindow =
-      i === windowCount - 1;
+      i * strideS;
 
     const windowEndS =
-      isLastWindow
-        ? duration
-        : Math.min(
-            duration,
-            windowStartS +
-              windowStepS +
-              overlapS,
-          );
+      Math.min(
+        duration,
+        windowStartS +
+          windowStepS,
+      );
 
+    // Drop the leading overlap on every window after the first.
     const keepBeforeS =
-      isLastWindow
-        ? Infinity
-        : windowStepS;
+      i === 0
+        ? 0
+        : overlapS;
 
     const startSample =
       Math.max(
@@ -2232,7 +2242,7 @@ function runPersistentWhisperWorker(
       console.log(
         `Whisper: starting ONE persistent worker for ${windowCount} window(s) ` +
           `(model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, ` +
-          `window=${WHISPER_WINDOW_STEP_S}s, overlap=${WHISPER_WINDOW_OVERLAP_S}s, ` +
+          `window=${WHISPER_WINDOW_STEP_S}s, overlap=${WHISPER_WINDOW_OVERLAP_S}s (shifted-start), ` +
           `per-window timeout=${WHISPER_TIMEOUT_MS}ms, ` +
           `total timeout=${WHISPER_TOTAL_TIMEOUT_MS}ms)...`,
       );
@@ -2550,13 +2560,22 @@ async function transcribeWithWhisper(
         videoPath,
       );
 
+    const whisperStrideS = Math.max(
+      1,
+      WHISPER_WINDOW_STEP_S -
+        WHISPER_WINDOW_OVERLAP_S,
+    );
+
     const windowCount =
       Math.max(
         1,
         Math.ceil(
-          duration /
-            WHISPER_WINDOW_STEP_S,
-        ),
+          Math.max(
+            0,
+            duration -
+              WHISPER_WINDOW_STEP_S,
+          ) / whisperStrideS,
+        ) + 1,
       );
 
     const allWords =
