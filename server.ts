@@ -2607,13 +2607,11 @@ async function extractAudioForWhisperRanges(
     throw new Error("No valid Whisper target ranges were provided.");
   }
 
-  // Merge overlapping/nearby ranges so the same speech is not transcribed
+  // Merge overlapping/adjacent ranges so the same speech is not transcribed
   // repeatedly when Gemini returns overlapping clips.
   const merged: Array<{ start: number; end: number }> = [];
-
   for (const range of cleanedRanges) {
     const previous = merged[merged.length - 1];
-
     if (previous && range.start <= previous.end + 0.15) {
       previous.end = Math.max(previous.end, range.end);
     } else {
@@ -2626,6 +2624,8 @@ async function extractAudioForWhisperRanges(
     `${generateId()}-whisper-selected.wav`,
   );
 
+  const filterParts: string[] = [];
+  const concatInputs: string[] = [];
   const offsets: Array<{
     sourceStart: number;
     sourceEnd: number;
@@ -2635,16 +2635,22 @@ async function extractAudioForWhisperRanges(
 
   let combinedCursor = 0;
 
-  for (const range of merged) {
-    const rangeDuration = Math.max(0, range.end - range.start);
+  for (let i = 0; i < merged.length; i++) {
+    const range = merged[i];
+    const label = `a${i}`;
 
+    filterParts.push(
+      `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},asetpts=PTS-STARTPTS[${label}]`,
+    );
+    concatInputs.push(`[${label}]`);
+
+    const rangeDuration = Math.max(0, range.end - range.start);
     offsets.push({
       sourceStart: range.start,
       sourceEnd: range.end,
       combinedStart: combinedCursor,
       combinedEnd: combinedCursor + rangeDuration,
     });
-
     combinedCursor += rangeDuration;
   }
 
@@ -2652,32 +2658,8 @@ async function extractAudioForWhisperRanges(
     throw new Error("Selected Whisper audio duration is invalid.");
   }
 
-  /*
-   * IMPORTANT:
-   * Do not use fluent-ffmpeg's complexFilter(..., "outa") here.
-   *
-   * The previous implementation generated a concat filter graph and then
-   * asked fluent-ffmpeg to map the same label. On Render this could result in:
-   *
-   *   Output with label 'outa' does not exist in any defined filter graph
-   *
-   * We use a single `aselect` filter and invoke the FFmpeg binary directly.
-   * This keeps the selected ranges compact while avoiding fluent-ffmpeg's
-   * filter-label handling entirely.
-   */
-  const selectExpression = merged
-    .map(
-      (range) =>
-        `between(t\\,${range.start.toFixed(3)}\\,${range.end.toFixed(3)})`,
-    )
-    .join("+");
-
-  const filterComplex =
-    `[0:a]aselect='${selectExpression}',asetpts=N/SR/TB[outa]`;
-
-  console.log(
-    `Whisper: extracting ${merged.length} selected audio range(s) ` +
-      `(${combinedCursor.toFixed(2)}s total) with direct FFmpeg...`,
+  filterParts.push(
+    `${concatInputs.join("")}concat=n=${concatInputs.length}:v=0:a=1[outa]`,
   );
 
   await new Promise<void>((resolve, reject) => {
@@ -2692,76 +2674,35 @@ async function extractAudioForWhisperRanges(
 
     const fail = (error: Error) => {
       if (settled) return;
-
       settled = true;
-
-      if (timer) {
-        clearTimeout(timer);
-      }
-
+      if (timer) clearTimeout(timer);
       cleanupOutput();
       reject(error);
     };
 
-    const args = [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-i",
-      videoPath,
-      "-filter_complex",
-      filterComplex,
-      "-map",
-      "[outa]",
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      "-c:a",
-      "pcm_s16le",
-      "-y",
-      audioPath,
-    ];
-
-    const child = execFile(
-      ffmpegPath,
-      args,
-      {
-        windowsHide: true,
-        timeout: FFMPEG_TIMEOUT_MS,
-        maxBuffer: 2 * 1024 * 1024,
-      },
-      (error, _stdout, stderr) => {
-        if (error) {
-          const detail = String(stderr || "").trim();
-
-          fail(
-            new Error(
-              `Whisper selected-audio FFmpeg failed: ` +
-                `${detail || error.message}`,
-            ),
-          );
-
-          return;
-        }
-
-        if (!settled) {
-          settled = true;
-
-          if (timer) {
-            clearTimeout(timer);
-          }
-
-          resolve();
-        }
-      },
-    );
+    const command = ffmpeg(videoPath)
+      .complexFilter(filterParts, "outa")
+      .outputOptions([
+        "-map [outa]",
+        "-ac 1",
+        "-ar 16000",
+        "-c:a pcm_s16le",
+        "-y",
+      ])
+      .format("wav")
+      .on("error", (error) => fail(error))
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve();
+      })
+      .save(audioPath);
 
     timer = setTimeout(() => {
       try {
-        child.kill("SIGKILL");
+        command.kill("SIGKILL");
       } catch {}
-
       fail(
         new Error(
           `Whisper selected-audio extraction timed out after ${FFMPEG_TIMEOUT_MS}ms.`,
@@ -2771,22 +2712,6 @@ async function extractAudioForWhisperRanges(
 
     timer.unref?.();
   });
-
-  if (!fs.existsSync(audioPath)) {
-    throw new Error("Whisper selected-audio FFmpeg produced no output file.");
-  }
-
-  const outputSize = fs.statSync(audioPath).size;
-
-  if (outputSize < 44) {
-    try {
-      fs.unlinkSync(audioPath);
-    } catch {}
-
-    throw new Error(
-      "Whisper selected-audio FFmpeg produced an empty/invalid WAV file.",
-    );
-  }
 
   return { audioPath, offsets };
 }
