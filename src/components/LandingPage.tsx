@@ -47,7 +47,7 @@ export type CaptionStyleSettings = {
 };
 
 type LandingPageProps = {
-  onGetStarted: () => void;
+  onGetStarted: (intent?: "enhance-speech") => void;
   onOpenPricing: () => void;
   onOpenNewProjectWithUrl: (
     url: string,
@@ -1990,7 +1990,15 @@ export function LandingPage({
               {/* TOOL GRID (Opus-style small icon buttons) */}
 
               <Reveal immediate delay={260} className="mt-12">
-                <ToolGrid onSelect={onGetStarted} />
+                <ToolGrid
+                  onSelect={(label) =>
+                    onGetStarted(
+                      label === "Enhance speech"
+                        ? "enhance-speech"
+                        : undefined
+                    )
+                  }
+                />
               </Reveal>
             </div>
 
@@ -2289,7 +2297,7 @@ export function LandingPage({
 
             <div className="mt-9">
               <PremiumButton
-                onClick={onGetStarted}
+                onClick={() => onGetStarted()}
               >
                 Build your content engine
               </PremiumButton>
@@ -2502,7 +2510,7 @@ export function LandingPage({
 
                   <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
                     <PremiumButton
-                      onClick={onGetStarted}
+                      onClick={() => onGetStarted()}
                     >
                       Start creating
                     </PremiumButton>
@@ -2664,7 +2672,7 @@ export function LandingPage({
 
             <div className="mt-8">
               <PremiumButton
-                onClick={onGetStarted}
+                onClick={() => onGetStarted()}
               >
                 Get started with LumoClip
               </PremiumButton>

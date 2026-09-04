@@ -46,6 +46,11 @@ interface NewProjectModalProps {
   credits?: number;
   initialUrl?: string;
   initialTitle?: string;
+  // Where the user came in from. "enhance-speech" shows a contextual hint
+  // explaining that a project must exist before speech can be enhanced,
+  // since /api/projects/:projectId/enhance-speech runs on an existing
+  // project's source or clip, not as a project-creation mode.
+  intent?: "default" | "enhance-speech";
 }
 
 type SourceType = "youtube" | "podcast" | "file";
@@ -1310,6 +1315,7 @@ export const NewProjectModal: React.FC<
   credits = 0,
   initialUrl = "",
   initialTitle = "",
+  intent = "default",
 }) => {
   const [sourceType, setSourceType] =
     useState<SourceType>("youtube");
@@ -2081,7 +2087,11 @@ export const NewProjectModal: React.FC<
 
                 <div className="absolute inset-[1px] rounded-[17px] border border-white/[0.05]" />
 
-                <WandSparkles className="relative h-5 w-5 text-violet-200" />
+                {intent === "enhance-speech" ? (
+                  <Mic className="relative h-5 w-5 text-violet-200" />
+                ) : (
+                  <WandSparkles className="relative h-5 w-5 text-violet-200" />
+                )}
               </div>
 
               <div className="min-w-0">
@@ -2090,7 +2100,9 @@ export const NewProjectModal: React.FC<
                     id="new-project-title"
                     className="text-[17px] font-bold tracking-[-0.02em] text-white sm:text-xl"
                   >
-                    Create a new project
+                    {intent === "enhance-speech"
+                      ? "Start a project to enhance speech"
+                      : "Create a new project"}
                   </h2>
 
                   <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 text-[7px] font-bold uppercase tracking-[0.16em] text-violet-300">
@@ -2100,9 +2112,9 @@ export const NewProjectModal: React.FC<
                 </div>
 
                 <p className="mt-1.5 max-w-[540px] text-[10px] leading-5 text-zinc-500 sm:text-[11px]">
-                  Turn long-form content into
-                  scroll-stopping short-form videos
-                  with LumoClip AI.
+                  {intent === "enhance-speech"
+                    ? "Bring in your video first — you'll be able to clean up and enhance its speech once it's ready."
+                    : "Turn long-form content into scroll-stopping short-form videos with LumoClip AI."}
                 </p>
               </div>
             </div>
@@ -2145,7 +2157,9 @@ export const NewProjectModal: React.FC<
 
             <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600">
               <Sparkles className="h-3 w-3 text-violet-400" />
-              AI-powered clipping
+              {intent === "enhance-speech"
+                ? "AI speech cleanup"
+                : "AI-powered clipping"}
             </span>
 
             <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600">

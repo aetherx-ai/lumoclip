@@ -293,6 +293,9 @@ function App() {
   const [newProjectInitialUrl, setNewProjectInitialUrl] =
     useState("");
 
+  const [newProjectIntent, setNewProjectIntent] =
+    useState<"default" | "enhance-speech">("default");
+
   const appInitialized =
     useRef(false);
 
@@ -1075,6 +1078,8 @@ function App() {
 
             setNewProjectInitialUrl("");
 
+            setNewProjectIntent("default");
+
             pendingProjectUrlRef.current =
               "";
           }
@@ -1335,7 +1340,12 @@ function App() {
   ======================================================= */
 
   const openNewProject =
-    (url = "") => {
+    (
+      url = "",
+      intent: "default" | "enhance-speech" = "default",
+    ) => {
+      setNewProjectIntent(intent);
+
       const cleanUrl =
         normalizeYouTubeUrl(url);
 
@@ -1459,8 +1469,13 @@ function App() {
 
         {activeTab === "landing" && (
           <LandingPage
-            onGetStarted={() => {
-              openNewProject();
+            onGetStarted={(
+              intent?: "enhance-speech",
+            ) => {
+              openNewProject(
+                "",
+                intent ?? "default",
+              );
             }}
             onOpenPricing={() => {
               setActiveTab("pricing");
@@ -1712,6 +1727,10 @@ function App() {
                 "",
               );
 
+              setNewProjectIntent(
+                "default",
+              );
+
               pendingProjectUrlRef.current =
                 "";
             }}
@@ -1721,6 +1740,7 @@ function App() {
             initialUrl={
               newProjectInitialUrl
             }
+            intent={newProjectIntent}
             onSuccess={(data: any) => {
               if (data?.project) {
                 const project =
@@ -1766,6 +1786,10 @@ function App() {
 
               setNewProjectInitialUrl(
                 "",
+              );
+
+              setNewProjectIntent(
+                "default",
               );
 
               pendingProjectUrlRef.current =
