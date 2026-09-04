@@ -848,8 +848,8 @@ export const Navbar: React.FC<
             relative
             mx-auto
             flex
-            h-[74px]
-            max-w-[1500px]
+            h-[70px]
+            max-w-[1440px]
             items-center
             justify-between
             px-4
@@ -1030,10 +1030,10 @@ export const Navbar: React.FC<
               hidden
               items-center
               gap-1
-              rounded-2xl
+              rounded-[18px]
               border
-              border-white/[0.045]
-              bg-white/[0.015]
+              border-white/[0.06]
+              bg-white/[0.022]
               p-1
               shadow-[inset_0_1px_0_rgba(255,255,255,.025)]
               md:flex
@@ -1166,7 +1166,7 @@ export const Navbar: React.FC<
                     items-center
                     gap-2
                     overflow-hidden
-                    rounded-xl
+                    rounded-[14px]
                     bg-gradient-to-r
                     from-cyan-400
                     via-sky-500
@@ -1230,7 +1230,7 @@ export const Navbar: React.FC<
                       w-11
                       items-center
                       justify-center
-                      rounded-xl
+                      rounded-[14px]
                       border
                       transition-all
                       ${
@@ -1271,18 +1271,19 @@ export const Navbar: React.FC<
                   {notificationsOpen && (
                     <div
                       className="
+                        ring-1 ring-black/20
                         absolute right-0 top-full z-50 mt-3
-                        w-[420px] max-w-[calc(100vw-20px)]
-                        overflow-hidden rounded-[24px]
-                        border border-white/[0.10]
-                        bg-[#080a0f]/[0.985]
-                        shadow-[0_30px_100px_rgba(0,0,0,.78),0_0_45px_rgba(34,211,238,.045)]
+                        w-[440px] max-w-[calc(100vw-24px)]
+                        overflow-hidden rounded-[26px]
+                        border border-white/[0.11]
+                        bg-[#07090d]/[0.985]
+                        shadow-[0_32px_120px_rgba(0,0,0,.82),0_0_60px_rgba(34,211,238,.055)]
                         backdrop-blur-2xl
                         animate-[dropdownIn_.2s_cubic-bezier(.16,1,.3,1)]
                       "
                     >
                       {/* HEADER */}
-                      <div className="relative overflow-hidden border-b border-white/[0.07] px-5 py-4">
+                      <div className="relative overflow-hidden border-b border-white/[0.07] px-5 py-[18px]">
                         <div className="pointer-events-none absolute -right-16 -top-24 h-48 w-48 rounded-full bg-cyan-400/[0.075] blur-3xl" />
                         <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-blue-500/[0.055] blur-3xl" />
 
@@ -1297,18 +1298,18 @@ export const Navbar: React.FC<
 
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
-                                <h3 className="text-[13px] font-extrabold tracking-[-0.02em] text-white">
+                                <h3 className="text-[14px] font-extrabold tracking-[-0.02em] text-white">
                                   Activity
                                 </h3>
 
                                 {unreadCount > 0 && (
-                                  <span className="rounded-full border border-cyan-400/15 bg-cyan-400/[0.08] px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-cyan-300">
+                                  <span className="rounded-full border border-cyan-400/15 bg-cyan-400/[0.08] px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.12em] text-cyan-300">
                                     {unreadCount} new
                                   </span>
                                 )}
                               </div>
 
-                              <p className="mt-1 text-[9px] font-medium leading-4 text-zinc-500">
+                              <p className="mt-1 text-[10px] font-medium leading-5 text-zinc-500">
                                 Stay up to date with your workspace
                               </p>
                             </div>
@@ -1319,7 +1320,7 @@ export const Navbar: React.FC<
                               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
                               <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
                             </span>
-                            <span className="text-[7px] font-black uppercase tracking-[0.12em] text-emerald-400/80">
+                            <span className="text-[8px] font-black uppercase tracking-[0.12em] text-emerald-400/80">
                               Live
                             </span>
                           </div>
@@ -1332,10 +1333,10 @@ export const Navbar: React.FC<
                                 <Sparkles className="h-3 w-3" />
                               </span>
                               <div>
-                                <p className="text-[8px] font-bold text-zinc-300">
+                                <p className="text-[9px] font-bold text-zinc-300">
                                   You have {unreadCount} unread {unreadCount === 1 ? "update" : "updates"}
                                 </p>
-                                <p className="mt-0.5 text-[7px] text-zinc-600">
+                                <p className="mt-0.5 text-[8px] text-zinc-600">
                                   Review your latest workspace activity
                                 </p>
                               </div>
@@ -1356,7 +1357,7 @@ export const Navbar: React.FC<
                       {/* NOTIFICATION LIST */}
                       <div
                         className="
-                          max-h-[470px]
+                          max-h-[500px]
                           overflow-y-auto
                           overscroll-contain
                           scrollbar-thin
@@ -1386,7 +1387,7 @@ export const Navbar: React.FC<
                             <p className="mt-5 text-[12px] font-extrabold text-zinc-300">
                               You're all caught up
                             </p>
-                            <p className="mx-auto mt-1.5 max-w-[240px] text-[9px] leading-4 text-zinc-600">
+                            <p className="mx-auto mt-1.5 max-w-[240px] text-[10px] leading-5 text-zinc-600">
                               No new activity right now. We'll notify you when something important happens.
                             </p>
                           </div>
@@ -1568,12 +1569,12 @@ export const Navbar: React.FC<
                     </div>
 
                     <div className="hidden min-w-0 text-left lg:block">
-                      <p className="max-w-[90px] truncate text-[10px] font-black text-zinc-200">
+                      <p className="max-w-[90px] truncate text-[11px] font-black text-zinc-200">
                         {user.name ||
                           "User"}
                       </p>
 
-                      <p className="mt-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-cyan-400/70">
+                      <p className="mt-0.5 text-[8px] font-black uppercase tracking-[0.12em] text-cyan-400/70">
                         {planLabel}
                       </p>
                     </div>
