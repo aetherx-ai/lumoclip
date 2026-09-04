@@ -2352,11 +2352,13 @@ export const NewProjectModal: React.FC<
                 OUTPUT MODE
             ================================================= */}
 
-            <OutputModePicker
-              mode={processingMode}
-              onChange={setProcessingMode}
-              disabled={loading}
-            />
+            {intent !== "enhance-speech" && (
+              <OutputModePicker
+                mode={processingMode}
+                onChange={setProcessingMode}
+                disabled={loading}
+              />
+            )}
 
             {/* =================================================
                 URL
@@ -2742,12 +2744,14 @@ export const NewProjectModal: React.FC<
                 AI CAPTIONS
             ================================================= */}
 
-            <CaptionStylePicker
-              style={captionStyle}
-              onChange={setCaptionStyle}
-              disabled={loading}
-              lockEnabled={isFullVideoMode}
-            />
+            {intent !== "enhance-speech" && (
+              <CaptionStylePicker
+                style={captionStyle}
+                onChange={setCaptionStyle}
+                disabled={loading}
+                lockEnabled={isFullVideoMode}
+              />
+            )}
 
             {/* =================================================
                 ERROR
@@ -2965,7 +2969,9 @@ export const NewProjectModal: React.FC<
                       <Sparkles className="h-3.5 w-3.5" />
 
                       <span>
-                        Create my clips
+                        {intent === "enhance-speech"
+                          ? "Continue"
+                          : "Create my clips"}
                       </span>
 
                       <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1" />
