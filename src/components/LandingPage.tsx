@@ -502,7 +502,7 @@ function PremiumButton({
 type ToolGridItem = {
   id: string;
   label: string;
-  badge?: "New";
+  badge?: "New" | "Beta";
   accent: string;
 };
 
