@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import YouTubePublishModal from "./YouTubePublishModal.js";
+import { supabase } from "../lib/supabase.ts";
 import {
   AlertCircle,
   Crown,
@@ -30,20 +31,34 @@ import {
   Wand2,
   Youtube,
   Zap,
+  Volume2,
+  VolumeX,
+  AudioWaveform,
 } from "lucide-react";
 
 import { Project, Clip } from "../types.js";
+/* =========================================================
+   TYPES
+========================================================= */
 
 interface ProjectDetailViewProps {
   project: Project;
   clips: Clip[];
   onBack: () => void;
   onDeleteProject: (id: string) => void;
-  /** Whether the current user has an active premium plan. Publishing is a premium-only action. */
+
+  /** Whether the current user has an active premium plan. */
   isPremium?: boolean;
-  /** Called when a non-premium user taps a premium-gated action. Falls back to /pricing if omitted. */
+
+  /** Called when a non-premium user taps a premium-gated action. */
   onUpgrade?: () => void;
 }
+
+type SpeechEnhanceStatus =
+  | "idle"
+  | "processing"
+  | "completed"
+  | "error";
 
 /* =========================================================
    HELPERS
@@ -97,11 +112,7 @@ function getClipScore(clip: Clip) {
 }
 
 function getClipTitle(clip: Clip) {
-  return (
-    clip.title ||
-    (clip as any).name ||
-    "Viral Clip"
-  );
+  return clip.title || (clip as any).name || "Viral Clip";
 }
 
 function getClipReason(clip: Clip) {
@@ -233,6 +244,7 @@ const PublishToYouTubeButton: React.FC<{
 
   const solidClasses =
     "bg-red-500 text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] hover:bg-red-400";
+
   const outlineClasses =
     "border border-red-500/15 bg-red-500/[0.06] text-red-300 hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200";
 
@@ -263,6 +275,7 @@ const PublishToYouTubeButton: React.FC<{
       ) : (
         <Lock className="h-3.5 w-3.5 shrink-0 text-violet-300" />
       )}
+
       <span className="truncate">
         {isPremium
           ? "Publish to YouTube"
@@ -325,10 +338,8 @@ const HeroVideo: React.FC<{
           </div>
         )}
 
-        {/* Minimal cinematic overlay */}
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
 
-        {/* top metadata */}
         <div className="absolute left-4 top-4 flex flex-wrap gap-2">
           <span className="rounded-full border border-white/10 bg-black/50 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-[0.14em] text-white backdrop-blur-xl">
             {project.source_type || "VIDEO"}
@@ -342,7 +353,6 @@ const HeroVideo: React.FC<{
           )}
         </div>
 
-        {/* bottom information */}
         <div className="absolute bottom-5 left-5 right-5">
           {!completed && !failed && (
             <>
@@ -380,7 +390,6 @@ const HeroVideo: React.FC<{
           )}
         </div>
 
-        {/* progress */}
         {!completed && !failed && (
           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10">
             <div
@@ -409,6 +418,682 @@ const HeroVideo: React.FC<{
 };
 
 /* =========================================================
+   ENHANCE SPEECH
+========================================================= */
+
+const EnhanceSpeechPanel: React.FC<{
+  project: Project;
+  isPremium?: boolean;
+  onUpgrade?: () => void;
+}> = ({
+  project,
+  isPremium = false,
+  onUpgrade,
+}) => {
+  const [status, setStatus] =
+    useState<SpeechEnhanceStatus>("idle");
+
+  const [outputUrl, setOutputUrl] =
+    useState("");
+
+  const [error, setError] =
+    useState("");
+
+  const [creditsUsed, setCreditsUsed] =
+    useState<number | null>(null);
+
+  const [creditsRemaining, setCreditsRemaining] =
+    useState<number | null>(null);
+
+  const [inputType, setInputType] =
+    useState<"source" | "clip">("source");
+
+  const [selectedClipId, setSelectedClipId] =
+    useState("");
+
+  const [startedAt, setStartedAt] =
+    useState<number | null>(null);
+
+  const sourceUrl =
+    (project as any).source_media_url ||
+    (project as any).video_url ||
+    "";
+
+  const enhancedFromProject =
+    (project as any).enhanced_speech_url ||
+    (project as any).enhancedSpeechUrl ||
+    "";
+
+  /*
+   * If backend/project polling already contains the enhanced
+   * speech URL, show it automatically.
+   */
+  useEffect(() => {
+    if (!outputUrl && enhancedFromProject) {
+      setOutputUrl(
+        String(enhancedFromProject),
+      );
+      setStatus("completed");
+    }
+  }, [
+    enhancedFromProject,
+    outputUrl,
+  ]);
+
+  /*
+   * Reset local result when user changes project.
+   */
+  useEffect(() => {
+    setStatus("idle");
+    setOutputUrl("");
+    setError("");
+    setCreditsUsed(null);
+    setCreditsRemaining(null);
+    setSelectedClipId("");
+    setInputType("source");
+    setStartedAt(null);
+  }, [project.id]);
+
+  /*
+   * Optional lightweight elapsed-time UI.
+   * The actual timeout is enforced by the backend.
+   */
+  const elapsedSeconds =
+    startedAt
+      ? Math.max(
+          0,
+          Math.floor(
+            (Date.now() - startedAt) / 1000,
+          ),
+        )
+      : 0;
+
+  useEffect(() => {
+    if (status !== "processing") {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      // Trigger a harmless state update through elapsed time.
+      setStartedAt((value) => value);
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [status]);
+
+  const selectedClip =
+    selectedClipId
+      ? ((project as any).__clipsForSpeech || []).find(
+          (clip: Clip) =>
+            String(clip.id) ===
+            String(selectedClipId),
+        )
+      : null;
+
+  /*
+   * NOTE:
+   * ProjectDetailView receives clips separately, so the panel
+   * receives them below through a property assigned locally.
+   */
+  const runEnhancement = async () => {
+    if (status === "processing") {
+      return;
+    }
+
+    setError("");
+
+    if (!isPremium) {
+      if (onUpgrade) {
+        onUpgrade();
+      } else if (typeof window !== "undefined") {
+        window.location.href = "/pricing";
+      }
+
+      return;
+    }
+
+    if (
+      inputType === "clip" &&
+      !selectedClipId
+    ) {
+      setError(
+        "Please select a clip first.",
+      );
+      return;
+    }
+
+    try {
+      setStatus("processing");
+      setOutputUrl("");
+      setCreditsUsed(null);
+      setCreditsRemaining(null);
+      setStartedAt(Date.now());
+
+      const {
+        data: sessionData,
+        error: sessionError,
+      } = await supabase.auth.getSession();
+
+      if (sessionError) {
+        throw new Error(
+          sessionError.message ||
+            "Unable to get your login session.",
+        );
+      }
+
+      const accessToken =
+        sessionData.session?.access_token;
+
+      if (!accessToken) {
+        throw new Error(
+          "Your login session has expired. Please sign in again.",
+        );
+      }
+
+      const body: {
+        inputType: "source" | "clip";
+        clipId?: string;
+      } = {
+        inputType,
+      };
+
+      if (
+        inputType === "clip" &&
+        selectedClipId
+      ) {
+        body.clipId = selectedClipId;
+      }
+
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(
+          project.id,
+        )}/enhance-speech`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(body),
+        },
+      );
+
+      let data: any = null;
+
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            `Speech enhancement failed (${response.status}).`,
+        );
+      }
+
+      if (!data?.success) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Speech enhancement failed.",
+        );
+      }
+
+      const enhancedUrl =
+        data.outputUrl ||
+        data.output_url ||
+        data.url;
+
+      if (!enhancedUrl) {
+        throw new Error(
+          "Enhancement completed, but no output video URL was returned.",
+        );
+      }
+
+      setOutputUrl(
+        String(enhancedUrl),
+      );
+
+      setCreditsUsed(
+        Number(data.creditsUsed ?? 5),
+      );
+
+      if (
+        data.credits !== undefined &&
+        data.credits !== null
+      ) {
+        setCreditsRemaining(
+          Number(data.credits),
+        );
+      }
+
+      setStatus("completed");
+    } catch (err) {
+      console.error(
+        "LumoClip: speech enhancement failed",
+        err,
+      );
+
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while enhancing the speech.",
+      );
+
+      setStatus("error");
+    } finally {
+      setStartedAt(null);
+    }
+  };
+
+  const resetEnhancement = () => {
+    setStatus("idle");
+    setOutputUrl("");
+    setError("");
+    setCreditsUsed(null);
+    setCreditsRemaining(null);
+    setStartedAt(null);
+  };
+
+  return (
+    <section className="mt-4">
+      <Surface className="overflow-hidden">
+        {/* Header */}
+        <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-400/10 bg-cyan-500/[0.07]">
+                {status === "processing" ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                ) : status === "completed" ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                ) : (
+                  <AudioWaveform className="h-4 w-4 text-cyan-400" />
+                )}
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+                  <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-cyan-400">
+                    Audio enhancement
+                  </p>
+
+                  <span className="rounded-full border border-violet-400/15 bg-violet-500/[0.08] px-2 py-0.5 text-[7px] font-bold uppercase tracking-wider text-violet-300">
+                    5 Credits
+                  </span>
+                </div>
+
+                <h2 className="mt-1 text-base font-semibold text-white">
+                  Enhance Speech
+                </h2>
+
+                <p className="mt-1 text-[9px] text-zinc-600">
+                  Reduce background noise and make voices clearer.
+                </p>
+              </div>
+            </div>
+
+            {status === "completed" && (
+              <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/10 bg-emerald-500/[0.07] px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-emerald-300">
+                <Check className="h-3 w-3" />
+                Enhanced
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          {/* Processing */}
+          {status === "processing" && (
+            <div className="mb-5 rounded-xl border border-cyan-400/10 bg-cyan-500/[0.035] p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-cyan-400/10 bg-cyan-500/[0.07]">
+                  <Volume2 className="h-4 w-4 animate-pulse text-cyan-400" />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-white">
+                    Enhancing your speech...
+                  </p>
+
+                  <p className="mt-1 text-[8px] text-zinc-600">
+                    Removing noise, balancing voice levels and improving clarity.
+                  </p>
+                </div>
+
+                <div className="ml-auto shrink-0 text-right">
+                  <Loader2 className="ml-auto h-4 w-4 animate-spin text-cyan-400" />
+
+                  {elapsedSeconds > 0 && (
+                    <p className="mt-1 text-[7px] text-zinc-700">
+                      {elapsedSeconds}s
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/[0.05]">
+                <div className="h-full w-1/2 animate-pulse rounded-full bg-cyan-400/60" />
+              </div>
+            </div>
+          )}
+
+          {/* Completed result */}
+          {status === "completed" &&
+            outputUrl && (
+              <div className="space-y-4">
+                <div className="overflow-hidden rounded-xl border border-emerald-400/10 bg-black">
+                  <div className="flex items-center gap-2 border-b border-white/[0.05] bg-emerald-500/[0.025] px-4 py-3">
+                    <Volume2 className="h-3.5 w-3.5 text-emerald-400" />
+
+                    <div>
+                      <p className="text-[9px] font-semibold text-white">
+                        Enhanced speech ready
+                      </p>
+
+                      <p className="mt-0.5 text-[7px] text-zinc-600">
+                        Cleaner voice • reduced background noise • normalized loudness
+                      </p>
+                    </div>
+                  </div>
+
+                  <video
+                    src={outputUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="max-h-[600px] min-h-[220px] w-full object-contain"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2 text-[8px] text-zinc-600">
+                    {creditsUsed !== null && (
+                      <span>
+                        {creditsUsed} credits used
+                      </span>
+                    )}
+
+                    {creditsRemaining !== null && (
+                      <>
+                        <span>•</span>
+                        <span>
+                          {creditsRemaining} credits remaining
+                        </span>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <a
+                      href={outputUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-[9px] font-bold text-black transition hover:bg-zinc-200 sm:flex-none"
+                    >
+                      <Download className="h-3 w-3" />
+                      Download
+                    </a>
+
+                    <button
+                      type="button"
+                      onClick={resetEnhancement}
+                      className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-4 py-2 text-[9px] font-bold text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Enhance again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          {/* Error */}
+          {status === "error" && (
+            <div className="mb-5 rounded-xl border border-red-400/10 bg-red-500/[0.035] p-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-400/10 bg-red-500/[0.07]">
+                  <AlertCircle className="h-4 w-4 text-red-400" />
+                </div>
+
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold text-red-200">
+                    Speech enhancement failed
+                  </p>
+
+                  <p className="mt-1 text-[9px] leading-5 text-red-300/60">
+                    {error ||
+                      "Something went wrong while enhancing your audio."}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={resetEnhancement}
+                className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[8px] font-bold uppercase tracking-wider text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Try again
+              </button>
+            </div>
+          )}
+
+          {/* Input selector */}
+          {status !== "completed" &&
+            status !== "processing" && (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setInputType("source")
+                    }
+                    className={[
+                      "rounded-xl border p-4 text-left transition",
+                      inputType === "source"
+                        ? "border-cyan-400/20 bg-cyan-500/[0.055]"
+                        : "border-white/[0.06] bg-white/[0.015] hover:border-white/[0.11]",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+                        <FileVideo className="h-3.5 w-3.5 text-zinc-400" />
+                      </div>
+
+                      {inputType ===
+                        "source" && (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />
+                      )}
+                    </div>
+
+                    <p className="mt-3 text-[10px] font-semibold text-white">
+                      Full source video
+                    </p>
+
+                    <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                      Enhance speech across the entire original video.
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setInputType("clip")
+                    }
+                    className={[
+                      "rounded-xl border p-4 text-left transition",
+                      inputType === "clip"
+                        ? "border-cyan-400/20 bg-cyan-500/[0.055]"
+                        : "border-white/[0.06] bg-white/[0.015] hover:border-white/[0.11]",
+                    ].join(" ")}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+                        <Scissors className="h-3.5 w-3.5 text-zinc-400" />
+                      </div>
+
+                      {inputType ===
+                        "clip" && (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />
+                      )}
+                    </div>
+
+                    <p className="mt-3 text-[10px] font-semibold text-white">
+                      Selected clip
+                    </p>
+
+                    <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                      Enhance speech in one generated short clip.
+                    </p>
+                  </button>
+                </div>
+
+                {inputType === "clip" && (
+                  <div className="mt-3">
+                    <label className="mb-2 block text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                      Select clip
+                    </label>
+
+                    <select
+                      value={selectedClipId}
+                      onChange={(event) =>
+                        setSelectedClipId(
+                          event.target.value,
+                        )
+                      }
+                      className="h-11 w-full rounded-xl border border-white/[0.07] bg-[#060608] px-3 text-[10px] text-white outline-none transition focus:border-cyan-400/25"
+                    >
+                      <option value="">
+                        Choose a clip...
+                      </option>
+
+                      {((project as any).__clipsForSpeech || []).map(
+                        (clip: Clip, index: number) => (
+                          <option
+                            key={clip.id}
+                            value={String(
+                              clip.id,
+                            )}
+                          >
+                            {String(
+                              index + 1,
+                            ).padStart(
+                              2,
+                              "0",
+                            )}{" "}
+                            —{" "}
+                            {getClipTitle(
+                              clip,
+                            )}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+                )}
+
+                {/* Enhancement features */}
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    [
+                      "Noise reduction",
+                      VolumeX,
+                    ],
+                    [
+                      "Voice clarity",
+                      Volume2,
+                    ],
+                    [
+                      "Dynamic compression",
+                      AudioWaveform,
+                    ],
+                    [
+                      "Loudness normalize",
+                      Wand2,
+                    ],
+                  ].map(
+                    ([label, Icon]) => {
+                      const FeatureIcon =
+                        Icon as React.ElementType;
+
+                      return (
+                        <div
+                          key={label as string}
+                          className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.01] px-3 py-2.5"
+                        >
+                          <FeatureIcon className="h-3 w-3 text-cyan-400/70" />
+
+                          <span className="text-[7.5px] font-medium text-zinc-500">
+                            {label as string}
+                          </span>
+                        </div>
+                      );
+                    },
+                  )}
+                </div>
+
+                {/* CTA */}
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-[9px] font-medium text-zinc-500">
+                      Uses 5 credits
+                    </p>
+
+                    <p className="mt-1 text-[7.5px] text-zinc-700">
+                      Your original video will remain unchanged.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={runEnhancement}
+                    className={[
+                      "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[9px] font-bold uppercase tracking-[0.1em] transition active:scale-[0.98]",
+                      isPremium
+                        ? "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-[0_10px_30px_rgba(34,211,238,0.12)] hover:from-cyan-400 hover:to-violet-400"
+                        : "border border-violet-400/20 bg-violet-500/[0.1] text-violet-200 hover:bg-violet-500/[0.16]",
+                    ].join(" ")}
+                  >
+                    {isPremium ? (
+                      <Volume2 className="h-3.5 w-3.5" />
+                    ) : (
+                      <Lock className="h-3.5 w-3.5" />
+                    )}
+
+                    {isPremium
+                      ? "Enhance Speech · 5 Credits"
+                      : "Enhance Speech · Premium"}
+                  </button>
+                </div>
+              </>
+            )}
+
+          {/* No source warning */}
+          {!sourceUrl &&
+            inputType === "source" &&
+            status === "idle" && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl border border-amber-400/10 bg-amber-500/[0.03] px-3 py-3">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-amber-400" />
+
+                <p className="text-[8px] leading-5 text-amber-300/60">
+                  The original source video is not currently available for enhancement.
+                </p>
+              </div>
+            )}
+        </div>
+      </Surface>
+    </section>
+  );
+};
+
+/* =========================================================
    FULL CAPTIONED VIDEO
 ========================================================= */
 
@@ -417,7 +1102,12 @@ const FullCaptionedVideoResult: React.FC<{
   onPublish: () => void;
   isPremium?: boolean;
   onUpgrade?: () => void;
-}> = ({ project, onPublish, isPremium = false, onUpgrade }) => {
+}> = ({
+  project,
+  onPublish,
+  isPremium = false,
+  onUpgrade,
+}) => {
   const fullVideoUrl =
     getFullVideoUrl(project);
 
@@ -456,6 +1146,7 @@ const FullCaptionedVideoResult: React.FC<{
           ) : (
             <div className="flex aspect-video flex-col items-center justify-center gap-3">
               <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
+
               <p className="text-[10px] text-zinc-600">
                 Preparing your captioned video...
               </p>
@@ -466,8 +1157,11 @@ const FullCaptionedVideoResult: React.FC<{
         <div className="flex flex-col gap-3 border-t border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-[10px] text-zinc-600">
             <Clock3 className="h-3.5 w-3.5" />
+
             {formatDuration(project.duration)}
+
             <span>•</span>
+
             Captions burned in
           </div>
 
@@ -803,7 +1497,8 @@ const Pipeline: React.FC<{
 
           const active =
             !done &&
-            progress >= step.threshold - 15;
+            progress >=
+              step.threshold - 15;
 
           return (
             <div
@@ -897,7 +1592,13 @@ const ClipCard: React.FC<{
   onPublish?: (clip: Clip) => void;
   isPremium?: boolean;
   onUpgrade?: () => void;
-}> = ({ clip, index, onPublish, isPremium = false, onUpgrade }) => {
+}> = ({
+  clip,
+  index,
+  onPublish,
+  isPremium = false,
+  onUpgrade,
+}) => {
   const [showDetails, setShowDetails] =
     useState(false);
 
@@ -905,6 +1606,7 @@ const ClipCard: React.FC<{
   const title = getClipTitle(clip);
   const reason = getClipReason(clip);
   const videoUrl = getClipVideoUrl(clip);
+
   const thumbnailUrl =
     getClipThumbnailUrl(clip);
 
@@ -946,7 +1648,6 @@ const ClipCard: React.FC<{
 
   return (
     <article className="group overflow-hidden rounded-xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:border-violet-400/20 sm:hover:-translate-y-0.5">
-      {/* preview */}
       <div className="relative aspect-[9/12] overflow-hidden bg-[#050507]">
         {videoUrl ? (
           <video
@@ -954,7 +1655,9 @@ const ClipCard: React.FC<{
             controls
             playsInline
             preload="metadata"
-            poster={thumbnailUrl || undefined}
+            poster={
+              thumbnailUrl || undefined
+            }
             className="h-full w-full object-cover"
             onError={(event) => {
               console.error(
@@ -963,7 +1666,8 @@ const ClipCard: React.FC<{
                   clipId: (clip as any).id,
                   videoUrl,
                   error:
-                    event.currentTarget.error,
+                    event.currentTarget
+                      .error,
                 },
               );
             }}
@@ -982,12 +1686,13 @@ const ClipCard: React.FC<{
 
         <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/70 to-transparent" />
 
-        {/* clip number */}
         <div className="absolute left-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-black/55 text-[7px] font-bold text-white backdrop-blur-xl">
-          {String(index + 1).padStart(2, "0")}
+          {String(index + 1).padStart(
+            2,
+            "0",
+          )}
         </div>
 
-        {/* top pick */}
         {index === 0 && (
           <div className="absolute left-10 top-2.5 inline-flex items-center gap-1 rounded-md border border-amber-300/15 bg-black/55 px-1.5 py-1 text-[6.5px] font-bold uppercase tracking-wider text-amber-300 backdrop-blur-xl">
             <Flame className="h-2.5 w-2.5" />
@@ -995,13 +1700,11 @@ const ClipCard: React.FC<{
           </div>
         )}
 
-        {/* score */}
         <div className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[7.5px] font-bold text-white backdrop-blur-xl">
           <Flame className="h-2.5 w-2.5 text-amber-300" />
           {score}
         </div>
 
-        {/* bottom metadata */}
         <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between">
           <span className="rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[6.5px] font-bold uppercase tracking-wider text-zinc-200 backdrop-blur-xl">
             9:16
@@ -1013,7 +1716,6 @@ const ClipCard: React.FC<{
         </div>
       </div>
 
-      {/* body */}
       <div className="p-3">
         <p className="mb-0.5 text-[6.5px] font-bold uppercase tracking-[0.16em] text-violet-400">
           AI selected
@@ -1023,50 +1725,57 @@ const ClipCard: React.FC<{
           {title}
         </h3>
 
-        {/* metrics — single unified row, no boxed pills */}
         <div className="mt-3 flex items-stretch divide-x divide-white/[0.06] rounded-lg bg-black/20 py-2">
-          {metrics.map(([label, value]) => (
-            <div
-              key={label}
-              className="flex-1 px-2 first:pl-2.5 last:pr-2.5"
-            >
-              <div className="flex items-baseline justify-between">
-                <span className="text-[6px] font-bold uppercase tracking-wider text-zinc-600">
-                  {label}
-                </span>
-                <span className="text-[7px] font-semibold text-zinc-400">
-                  {value}
-                </span>
-              </div>
+          {metrics.map(
+            ([label, value]) => (
+              <div
+                key={label}
+                className="flex-1 px-2 first:pl-2.5 last:pr-2.5"
+              >
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[6px] font-bold uppercase tracking-wider text-zinc-600">
+                    {label}
+                  </span>
 
-              <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
-                <div
-                  className="h-full rounded-full bg-violet-500/60"
-                  style={{
-                    width: `${value}%`,
-                  }}
-                />
+                  <span className="text-[7px] font-semibold text-zinc-400">
+                    {value}
+                  </span>
+                </div>
+
+                <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
+                  <div
+                    className="h-full rounded-full bg-violet-500/60"
+                    style={{
+                      width: `${value}%`,
+                    }}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
 
-        {/* details toggle — reason + caption together */}
         <button
           type="button"
           onClick={() =>
-            setShowDetails((value) => !value)
+            setShowDetails(
+              (value) => !value,
+            )
           }
           className="mt-2.5 flex min-h-10 w-full touch-manipulation items-center justify-between text-left"
         >
           <span className="text-[7.5px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-            {showDetails ? "Hide details" : "Why this clip"}
+            {showDetails
+              ? "Hide details"
+              : "Why this clip"}
           </span>
 
           <ChevronDown
             className={[
               "h-3 w-3 text-zinc-700 transition",
-              showDetails ? "rotate-180" : "",
+              showDetails
+                ? "rotate-180"
+                : "",
             ].join(" ")}
           />
         </button>
@@ -1102,7 +1811,6 @@ const ClipCard: React.FC<{
           </div>
         )}
 
-        {/* actions */}
         <div className="mt-2.5 grid grid-cols-[1fr_auto] gap-1.5 border-t border-white/[0.05] pt-2.5">
           {videoUrl ? (
             <>
@@ -1138,7 +1846,9 @@ const ClipCard: React.FC<{
           <div className="mt-1.5">
             <PublishToYouTubeButton
               isPremium={isPremium}
-              onPublish={() => onPublish(clip)}
+              onPublish={() =>
+                onPublish(clip)
+              }
               onUpgrade={onUpgrade}
               variant="outline"
             />
@@ -1187,7 +1897,6 @@ const ClipsSection: React.FC<{
 
   return (
     <section className="mt-9">
-      {/* heading */}
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2.5">
@@ -1210,7 +1919,9 @@ const ClipsSection: React.FC<{
         <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-[#09090d] p-1">
           <button
             type="button"
-            onClick={() => setSort("score")}
+            onClick={() =>
+              setSort("score")
+            }
             className={[
               "rounded-lg px-3 py-2 text-[8px] font-bold transition",
               sort === "score"
@@ -1223,7 +1934,9 @@ const ClipsSection: React.FC<{
 
           <button
             type="button"
-            onClick={() => setSort("newest")}
+            onClick={() =>
+              setSort("newest")
+            }
             className={[
               "rounded-lg px-3 py-2 text-[8px] font-bold transition",
               sort === "newest"
@@ -1236,7 +1949,6 @@ const ClipsSection: React.FC<{
         </div>
       </div>
 
-      {/* processing notice */}
       {processing && (
         <div className="mb-5 flex items-center gap-3 rounded-xl border border-violet-500/10 bg-violet-500/[0.035] px-4 py-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/[0.08]">
@@ -1276,30 +1988,35 @@ const ClipsSection: React.FC<{
             Array.from({
               length: Math.max(
                 0,
-                4 - sortedClips.length,
+                4 -
+                  sortedClips.length,
               ),
-            }).map((_, index) => (
-              <div
-                key={`loading-${index}`}
-                className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#09090d]"
-              >
-                <div className="relative aspect-[9/14] animate-pulse bg-white/[0.02]">
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Loader2 className="h-5 w-5 animate-spin text-violet-500/40" />
+            }).map(
+              (_, index) => (
+                <div
+                  key={`loading-${index}`}
+                  className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#09090d]"
+                >
+                  <div className="relative aspect-[9/14] animate-pulse bg-white/[0.02]">
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 className="h-5 w-5 animate-spin text-violet-500/40" />
+                    </div>
+
+                    <div className="absolute bottom-5 left-4 right-4">
+                      <div className="h-3 w-3/4 rounded bg-white/[0.05]" />
+
+                      <div className="mt-2 h-2 w-1/2 rounded bg-white/[0.035]" />
+                    </div>
                   </div>
 
-                  <div className="absolute bottom-5 left-4 right-4">
+                  <div className="space-y-2 p-4">
                     <div className="h-3 w-3/4 rounded bg-white/[0.05]" />
-                    <div className="mt-2 h-2 w-1/2 rounded bg-white/[0.035]" />
+
+                    <div className="h-2 w-full rounded bg-white/[0.03]" />
                   </div>
                 </div>
-
-                <div className="space-y-2 p-4">
-                  <div className="h-3 w-3/4 rounded bg-white/[0.05]" />
-                  <div className="h-2 w-full rounded bg-white/[0.03]" />
-                </div>
-              </div>
-            ))}
+              ),
+            )}
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-white/[0.08] bg-[#09090d] px-6 py-16 text-center">
@@ -1352,12 +2069,13 @@ const CompletedOverview: React.FC<{
 
   const bestScore =
     clips.length > 0
-      ? Math.max(...clips.map(getClipScore))
+      ? Math.max(
+          ...clips.map(getClipScore),
+        )
       : 0;
 
   return (
     <div className="space-y-3">
-      {/* summary */}
       <Surface className="p-5">
         <div className="flex items-center gap-3">
           <div className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-emerald-400/10 bg-emerald-500/[0.07]">
@@ -1390,7 +2108,9 @@ const CompletedOverview: React.FC<{
             </span>
 
             <span className="text-[10px] font-semibold text-zinc-300">
-              {formatDuration(project.duration)}
+              {formatDuration(
+                project.duration,
+              )}
             </span>
           </div>
 
@@ -1417,7 +2137,6 @@ const CompletedOverview: React.FC<{
         </div>
       </Surface>
 
-      {/* optimization */}
       <Surface className="p-5">
         <div className="flex items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/[0.07]">
@@ -1576,11 +2295,12 @@ export const ProjectDetailView: React.FC<
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
-  const [publishTarget, setPublishTarget] = useState<
-    | { kind: "clip"; clip: Clip }
-    | { kind: "project" }
-    | null
-  >(null);
+  const [publishTarget, setPublishTarget] =
+    useState<
+      | { kind: "clip"; clip: Clip }
+      | { kind: "project" }
+      | null
+    >(null);
 
   const safeClips = Array.isArray(clips)
     ? clips
@@ -1593,12 +2313,26 @@ export const ProjectDetailView: React.FC<
       ? "failed"
       : "processing";
 
+  /*
+   * EnhanceSpeechPanel is intentionally rendered only
+   * when the project has completed.
+   */
+  const projectForSpeech =
+    project as any;
+
+  /*
+   * Pass clips to the speech panel without changing
+   * your Project type/interface.
+   */
+  projectForSpeech.__clipsForSpeech =
+    safeClips;
+
   return (
     <div className="min-h-full bg-[#030304] text-white">
-      {/* very subtle background */}
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.055),transparent_35%)]" />
 
       <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
+
         {/* =====================================================
             HEADER
         ====================================================== */}
@@ -1672,9 +2406,7 @@ export const ProjectDetailView: React.FC<
               </div>
             </div>
 
-            {/* project actions */}
             <div className="relative ml-auto flex shrink-0 items-center gap-2">
-              {/* Premium CTA */}
               {!isPremium && (
                 <a
                   href="/pricing"
@@ -1688,7 +2420,10 @@ export const ProjectDetailView: React.FC<
                   aria-label="Upgrade to Premium"
                 >
                   <Crown className="h-3.5 w-3.5 shrink-0 text-violet-300 transition group-hover:scale-110" />
-                  <span className="hidden sm:inline">Premium</span>
+
+                  <span className="hidden sm:inline">
+                    Premium
+                  </span>
                 </a>
               )}
 
@@ -1770,7 +2505,10 @@ export const ProjectDetailView: React.FC<
                   clips={safeClips}
                   processing
                   onPublish={(clip) =>
-                    setPublishTarget({ kind: "clip", clip })
+                    setPublishTarget({
+                      kind: "clip",
+                      clip,
+                    })
                   }
                   isPremium={isPremium}
                   onUpgrade={onUpgrade}
@@ -1843,7 +2581,10 @@ export const ProjectDetailView: React.FC<
                 <ClipsSection
                   clips={safeClips}
                   onPublish={(clip) =>
-                    setPublishTarget({ kind: "clip", clip })
+                    setPublishTarget({
+                      kind: "clip",
+                      clip,
+                    })
                   }
                   isPremium={isPremium}
                   onUpgrade={onUpgrade}
@@ -1858,8 +2599,7 @@ export const ProjectDetailView: React.FC<
 
         {isCompleted && (
           <>
-            {/* success strip */}
-            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/[0.08]">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -1889,7 +2629,9 @@ export const ProjectDetailView: React.FC<
                 <FullCaptionedVideoResult
                   project={project}
                   onPublish={() =>
-                    setPublishTarget({ kind: "project" })
+                    setPublishTarget({
+                      kind: "project",
+                    })
                   }
                   isPremium={isPremium}
                   onUpgrade={onUpgrade}
@@ -1901,6 +2643,13 @@ export const ProjectDetailView: React.FC<
                     clips={[]}
                   />
                 </div>
+
+                {/* NEW */}
+                <EnhanceSpeechPanel
+                  project={project}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
+                />
               </>
             ) : (
               <>
@@ -1933,10 +2682,23 @@ export const ProjectDetailView: React.FC<
                   />
                 </div>
 
+                {/* =================================================
+                    NEW ENHANCE SPEECH
+                ================================================== */}
+
+                <EnhanceSpeechPanel
+                  project={project}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
+                />
+
                 <ClipsSection
                   clips={safeClips}
                   onPublish={(clip) =>
-                    setPublishTarget({ kind: "clip", clip })
+                    setPublishTarget({
+                      kind: "clip",
+                      clip,
+                    })
                   }
                   isPremium={isPremium}
                   onUpgrade={onUpgrade}
@@ -1992,29 +2754,40 @@ export const ProjectDetailView: React.FC<
             </>
           )}
 
+        {/* =====================================================
+            YOUTUBE PUBLISH MODAL
+        ====================================================== */}
+
         {publishTarget && (
           <YouTubePublishModal
             open={Boolean(publishTarget)}
-            onClose={() => setPublishTarget(null)}
+            onClose={() =>
+              setPublishTarget(null)
+            }
             target={
-              publishTarget.kind === "clip"
+              publishTarget.kind ===
+              "clip"
                 ? {
                     kind: "clip",
-                    clipId: publishTarget.clip.id,
-                    defaultTitle: getClipTitle(
-                      publishTarget.clip,
-                    ),
+                    clipId:
+                      publishTarget.clip.id,
+                    defaultTitle:
+                      getClipTitle(
+                        publishTarget.clip,
+                      ),
                     defaultDescription:
                       (publishTarget.clip as any)
                         .caption || "",
                   }
                 : {
                     kind: "project",
-                    projectId: project.id,
+                    projectId:
+                      project.id,
                     defaultTitle:
                       project.name ||
                       "LumoClip Captioned Video",
-                    defaultDescription: "",
+                    defaultDescription:
+                      "",
                   }
             }
           />
@@ -2024,7 +2797,7 @@ export const ProjectDetailView: React.FC<
             FOOTER
         ====================================================== */}
 
-        <footer className="mt-10 flex flex-col items-center sm:mt-14 justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
+        <footer className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/[0.05] pt-5 sm:mt-14 sm:flex-row">
           <div className="flex items-center gap-2 text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-800">
             <Sparkles className="h-3 w-3 text-violet-500/40" />
             Powered by LumoClip AI

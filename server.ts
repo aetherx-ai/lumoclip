@@ -52,6 +52,10 @@ const GEMINI_MODEL =
 
 const VIDEO_COST = 10;
 
+// Speech enhancement is a separate processing action.
+// It uses the same atomic Supabase credit system and daily 150-credit cap.
+const SPEECH_ENHANCE_COST = 5;
+
 const DAILY_CREDIT_LIMIT = 150;
 
 const MAX_CLIPS = Number(
@@ -202,6 +206,10 @@ const FFMPEG_CRF =
 // occupy a Render worker forever.
 const FFMPEG_TIMEOUT_MS = Number(
   process.env.FFMPEG_TIMEOUT_MS || 15 * 60 * 1000,
+);
+
+const SPEECH_ENHANCE_TIMEOUT_MS = Number(
+  process.env.SPEECH_ENHANCE_TIMEOUT_MS || 10 * 60 * 1000,
 );
 
 /* =========================================================
@@ -8104,6 +8112,412 @@ app.get(
 );
 
 /* =========================================================
+   ENHANCE SPEECH
+
+   Takes an existing project source video or generated clip, removes
+   common background noise, shapes the voice frequencies, compresses
+   dynamic range, and normalizes loudness. The result is always a
+   browser/social-friendly H.264 + AAC MP4.
+
+   Request JSON:
+     {
+       projectId: string,
+       inputType?: "source" | "clip",
+       clipId?: string
+     }
+
+   - source: enhances the project's original uploaded/worker video.
+   - clip: enhances an existing clip identified by clipId.
+
+   Cost: SPEECH_ENHANCE_COST credits. Failed processing is refunded.
+========================================================= */
+
+async function chargeSpeechEnhanceCredits(userId: string) {
+  const {
+    data,
+    error,
+  } = await supabase.rpc(
+    "charge_video_credits",
+    {
+      p_user_id: userId,
+      p_cost: SPEECH_ENHANCE_COST,
+      p_daily_limit: DAILY_CREDIT_LIMIT,
+    },
+  );
+
+  if (error) {
+    console.error("Speech enhancement credit charge failed:", error);
+
+    const message = String(error.message || "");
+
+    if (message.includes("INSUFFICIENT_CREDITS")) {
+      const creditError: any = new Error(
+        `You need ${SPEECH_ENHANCE_COST} credits to enhance speech.`,
+      );
+      creditError.statusCode = 402;
+      creditError.credits = 0;
+      throw creditError;
+    }
+
+    throw new Error("Failed to charge speech enhancement credits.");
+  }
+
+  return Number(data?.credits ?? 0);
+}
+
+async function refundSpeechEnhanceCredits(userId: string, projectId: string) {
+  try {
+    const { data, error } = await supabase.rpc(
+      "refund_video_credits",
+      {
+        p_user_id: userId,
+        p_cost: SPEECH_ENHANCE_COST,
+        p_daily_limit: DAILY_CREDIT_LIMIT,
+      },
+    );
+
+    if (error) throw error;
+
+    const refunded = Number(data?.refunded ?? SPEECH_ENHANCE_COST);
+
+    await supabase.from("usage_logs").insert({
+      user_id: userId,
+      action: `Refund: failed speech enhancement ${projectId}`,
+      credits_used: -refunded,
+    });
+
+    return refunded;
+  } catch (error) {
+    console.error(
+      `Speech enhancement credit refund failed for project ${projectId}:`,
+      error,
+    );
+    return 0;
+  }
+}
+
+function resolveProjectSourcePath(projectId: string): string {
+  const projectDir = path.resolve(
+    mediaDir,
+    safeSegment(projectId),
+  );
+
+  const allowedRoot = projectDir + path.sep;
+
+  if (!fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
+    throw new Error("Project media directory is not available.");
+  }
+
+  const candidates = fs
+    .readdirSync(projectDir)
+    .filter((name) => /^source\.(mp4|mov|webm|avi|mpeg)$/i.test(name));
+
+  const source = candidates[0] || "";
+
+  if (!source) {
+    throw new Error("Original project video is not available on the server.");
+  }
+
+  const resolved = path.resolve(projectDir, source);
+
+  if (!resolved.startsWith(allowedRoot) || !fs.statSync(resolved).isFile()) {
+    throw new Error("Invalid project source path.");
+  }
+
+  return resolved;
+}
+
+function resolveClipPathFromUrl(projectId: string, videoUrl: string): string {
+  const marker = "/clips/";
+  const markerIndex = videoUrl.indexOf(marker);
+
+  if (markerIndex === -1) {
+    throw new Error("Clip video path is invalid.");
+  }
+
+  const filename = videoUrl
+    .slice(markerIndex + marker.length)
+    .split("?")[0]
+    .split("#")[0];
+
+  const cleanFilename = path.basename(decodeURIComponent(filename));
+  const clipsDir = path.resolve(
+    mediaDir,
+    safeSegment(projectId),
+    "clips",
+  );
+  const clipPath = path.resolve(clipsDir, cleanFilename);
+  const allowedRoot = clipsDir + path.sep;
+
+  if (
+    !clipPath.startsWith(allowedRoot) ||
+    !fs.existsSync(clipPath) ||
+    !fs.statSync(clipPath).isFile()
+  ) {
+    throw new Error("Clip video file is not available on the server.");
+  }
+
+  return clipPath;
+}
+
+function runSpeechEnhancement(
+  inputPath: string,
+  outputPath: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      error ? reject(error) : resolve();
+    };
+
+    const command = ffmpeg(inputPath)
+      .outputOptions([
+        "-y",
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a:0",
+        "-c:v",
+        "libx264",
+        "-preset",
+        FFMPEG_PRESET,
+        "-crf",
+        "23",
+        "-threads",
+        String(FFMPEG_THREADS_PER_CLIP),
+        "-pix_fmt",
+        "yuv420p",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "192k",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-movflags",
+        "+faststart",
+      ])
+      .audioFilters([
+        "highpass=f=70",
+        "lowpass=f=12000",
+        "afftdn=nf=-25",
+        "acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=2",
+        "loudnorm=I=-16:TP=-1.5:LRA=11",
+      ])
+      .on("start", (commandLine) => {
+        console.log("Speech enhancement started:", commandLine);
+      })
+      .on("progress", (progress) => {
+        if (typeof progress.percent === "number" && Number.isFinite(progress.percent)) {
+          console.log(
+            `Speech enhancement progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`,
+          );
+        }
+      })
+      .on("end", () => {
+        if (
+          !fs.existsSync(outputPath) ||
+          !fs.statSync(outputPath).isFile() ||
+          fs.statSync(outputPath).size <= 0
+        ) {
+          return finish(new Error("Enhanced speech video was not created."));
+        }
+
+        console.log("Speech enhancement completed:", outputPath);
+        finish();
+      })
+      .on("error", (error) => {
+        console.error("Speech enhancement FFmpeg error:", error);
+        finish(error);
+      });
+
+    timer = setTimeout(() => {
+      console.error(
+        `Speech enhancement timed out after ${SPEECH_ENHANCE_TIMEOUT_MS}ms.`,
+      );
+      try {
+        command.kill("SIGKILL");
+      } catch {}
+      finish(new Error("Speech enhancement timed out. Please try a shorter video."));
+    }, Math.max(1000, SPEECH_ENHANCE_TIMEOUT_MS));
+
+    command.run();
+  });
+}
+
+app.post(
+  "/api/projects/:projectId/enhance-speech",
+  async (req, res) => {
+    const projectId = String(req.params.projectId || "").trim();
+    let userId = "";
+    let charged = false;
+    let outputPath = "";
+
+    try {
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required." });
+      }
+
+      const user = await getAuthenticatedUser(req);
+      userId = user.id;
+
+      const inputType =
+        req.body?.inputType === "clip" ? "clip" : "source";
+      const clipId =
+        typeof req.body?.clipId === "string"
+          ? req.body.clipId.trim()
+          : "";
+
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id, user_id, name, source_media_url")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (projectError || !project) {
+        return res.status(404).json({ error: "Project not found." });
+      }
+
+      let inputPath = "";
+
+      if (inputType === "clip") {
+        if (!clipId) {
+          return res.status(400).json({ error: "clipId is required when inputType is clip." });
+        }
+
+        const { data: clip, error: clipError } = await supabase
+          .from("clips")
+          .select("id, project_id, user_id, video_url, title")
+          .eq("id", clipId)
+          .eq("project_id", projectId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (clipError || !clip) {
+          return res.status(404).json({ error: "Clip not found." });
+        }
+
+        inputPath = resolveClipPathFromUrl(projectId, String(clip.video_url || ""));
+      } else {
+        inputPath = resolveProjectSourcePath(projectId);
+      }
+
+      const duration = await getVideoDuration(inputPath);
+
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return res.status(400).json({ error: "The selected video has no valid duration." });
+      }
+
+      if (duration > MAX_VIDEO_DURATION) {
+        return res.status(400).json({
+          error: `Video duration cannot exceed ${MAX_VIDEO_DURATION} seconds.`,
+        });
+      }
+
+      // Require an actual audio stream before spending credits.
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg.ffprobe(inputPath, (error, metadata) => {
+          if (error) return reject(error);
+          const hasAudio = Array.isArray(metadata.streams) &&
+            metadata.streams.some((stream: any) => stream.codec_type === "audio");
+          if (!hasAudio) return reject(new Error("This video does not contain an audio track."));
+          resolve();
+        });
+      });
+
+      const remainingCredits = await chargeSpeechEnhanceCredits(user.id);
+      charged = true;
+
+      const outputName = `enhanced-speech-${generateId()}.mp4`;
+      outputPath = path.join(
+        mediaDir,
+        safeSegment(projectId),
+        "clips",
+        outputName,
+      );
+
+      await supabase
+        .from("projects")
+        .update({ current_step: "Enhancing speech" })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      await runSpeechEnhancement(inputPath, outputPath);
+
+      const outputUrl = publicMediaUrl(projectId, `clips/${outputName}`);
+
+      await supabase.from("usage_logs").insert({
+        user_id: user.id,
+        action: `Enhance Speech: ${project.name || projectId}`,
+        credits_used: SPEECH_ENHANCE_COST,
+      });
+
+      try {
+        await createNotification({
+          userId: user.id,
+          type: "speech_enhanced",
+          title: "Speech enhanced",
+          message: "Your enhanced speech video is ready.",
+          projectId,
+          metadata: {
+            inputType,
+            credits: SPEECH_ENHANCE_COST,
+          },
+        });
+      } catch (notificationError) {
+        console.error("Speech enhancement notification failed:", notificationError);
+      }
+
+      await supabase
+        .from("projects")
+        .update({ current_step: "Speech enhancement complete" })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      return res.json({
+        success: true,
+        projectId,
+        inputType,
+        outputUrl,
+        filename: outputName,
+        creditsUsed: SPEECH_ENHANCE_COST,
+        credits: remainingCredits,
+        message: "Speech enhanced successfully.",
+      });
+    } catch (error: any) {
+      console.error("Enhance speech endpoint failed:", error);
+
+      if (outputPath) {
+        try {
+          if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        } catch {}
+      }
+
+      if (charged && userId) {
+        await refundSpeechEnhanceCredits(userId, projectId);
+      }
+
+      if (error?.message === "UNAUTHORIZED") {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+
+      return res.status(error?.statusCode || 500).json({
+        error: error?.message || "Speech enhancement failed.",
+      });
+    }
+  },
+);
+
+/* =========================================================
    DELETE PROJECT
 ========================================================= */
 
@@ -8507,6 +8921,10 @@ app.listen(
 
     console.log(
       `Video cost: ${VIDEO_COST} credits`,
+    );
+
+    console.log(
+      `Speech enhancement cost: ${SPEECH_ENHANCE_COST} credits`,
     );
 
     console.log(
