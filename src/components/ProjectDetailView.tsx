@@ -18,6 +18,7 @@ import {
   Flame,
   Layers3,
   Loader2,
+  Lock,
   MoreHorizontal,
   RefreshCw,
   Scissors,
@@ -38,6 +39,10 @@ interface ProjectDetailViewProps {
   clips: Clip[];
   onBack: () => void;
   onDeleteProject: (id: string) => void;
+  /** Whether the current user has an active premium plan. Publishing is a premium-only action. */
+  isPremium?: boolean;
+  /** Called when a non-premium user taps a premium-gated action. Falls back to /pricing if omitted. */
+  onUpgrade?: () => void;
 }
 
 /* =========================================================
@@ -159,7 +164,7 @@ const Surface: React.FC<{
 }> = ({ children, className = "" }) => (
   <div
     className={[
-      "rounded-[24px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(18,18,25,0.96),rgba(7,7,11,0.98))] shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-2xl",
+      "rounded-2xl border border-white/[0.07] bg-[#09090d] shadow-[0_14px_45px_rgba(0,0,0,0.16)]",
       className,
     ].join(" ")}
   >
@@ -197,6 +202,76 @@ const StatusBadge: React.FC<{
   );
 };
 
+const PublishToYouTubeButton: React.FC<{
+  isPremium: boolean;
+  onPublish: () => void;
+  onUpgrade?: () => void;
+  variant?: "solid" | "outline";
+  className?: string;
+}> = ({
+  isPremium,
+  onPublish,
+  onUpgrade,
+  variant = "solid",
+  className = "",
+}) => {
+  const handleClick = () => {
+    if (isPremium) {
+      onPublish();
+      return;
+    }
+
+    if (onUpgrade) {
+      onUpgrade();
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.location.href = "/pricing";
+    }
+  };
+
+  const solidClasses =
+    "bg-red-500 text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] hover:bg-red-400";
+  const outlineClasses =
+    "border border-red-500/15 bg-red-500/[0.06] text-red-300 hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200";
+
+  const lockedClasses =
+    "border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.14] to-fuchsia-500/[0.09] text-violet-200 hover:border-violet-300/35 hover:from-violet-500/[0.2] hover:to-fuchsia-500/[0.14] hover:text-white";
+
+  return (
+    <button
+      type="button"
+      onClick={handleClick}
+      aria-label={
+        isPremium
+          ? "Publish to YouTube"
+          : "Publish to YouTube — Premium feature, tap to upgrade"
+      }
+      className={[
+        "inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[9px] font-bold uppercase tracking-[0.08em] transition active:scale-[0.98] sm:text-[10px]",
+        isPremium
+          ? variant === "solid"
+            ? solidClasses
+            : outlineClasses
+          : lockedClasses,
+        className,
+      ].join(" ")}
+    >
+      {isPremium ? (
+        <Youtube className="h-3.5 w-3.5 shrink-0" />
+      ) : (
+        <Lock className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+      )}
+      <span className="truncate">
+        {isPremium
+          ? "Publish to YouTube"
+          : "Publish to YouTube · Premium"}
+      </span>
+    </button>
+  );
+};
+
 /* =========================================================
    HERO VIDEO
 ========================================================= */
@@ -226,7 +301,7 @@ const HeroVideo: React.FC<{
 
   return (
     <Surface className="overflow-hidden">
-      <div className="relative aspect-video overflow-hidden bg-black ring-1 ring-inset ring-white/[0.06]">
+      <div className="relative aspect-video overflow-hidden bg-black">
         {sourceUrl ? (
           <video
             src={sourceUrl}
@@ -265,14 +340,6 @@ const HeroVideo: React.FC<{
               Captions
             </span>
           )}
-        </div>
-
-        {/* floating AI status */}
-        <div className="absolute right-4 top-4 hidden sm:flex items-center gap-2 rounded-full border border-white/[0.10] bg-black/55 px-3 py-2 text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-200 shadow-lg backdrop-blur-xl">
-          <span className="h-1.5 w-1.5 rounded-full bg-violet-400 lumo-pulse" />
-          AI engine
-          <span className="text-zinc-600">•</span>
-          {completed ? "Ready" : failed ? "Attention" : "Live"}
         </div>
 
         {/* bottom information */}
@@ -348,7 +415,9 @@ const HeroVideo: React.FC<{
 const FullCaptionedVideoResult: React.FC<{
   project: Project;
   onPublish: () => void;
-}> = ({ project, onPublish }) => {
+  isPremium?: boolean;
+  onUpgrade?: () => void;
+}> = ({ project, onPublish, isPremium = false, onUpgrade }) => {
   const fullVideoUrl =
     getFullVideoUrl(project);
 
@@ -403,36 +472,35 @@ const FullCaptionedVideoResult: React.FC<{
           </div>
 
           {fullVideoUrl && (
-            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-              <button
-                type="button"
-                onClick={onPublish}
-                className="group inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-red-400/20 bg-gradient-to-r from-red-500 to-rose-500 px-4 py-2.5 text-[10px] font-extrabold text-white shadow-[0_10px_30px_rgba(239,68,68,0.20)] transition duration-200 hover:-translate-y-0.5 hover:from-red-400 hover:to-rose-400 active:translate-y-0"
-              >
-                <Youtube className="h-3.5 w-3.5" />
-                <span>Publish</span>
-                <ExternalLink className="h-3 w-3 opacity-50 transition group-hover:translate-x-0.5" />
-              </button>
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <PublishToYouTubeButton
+                isPremium={isPremium}
+                onPublish={onPublish}
+                onUpgrade={onUpgrade}
+                className="sm:w-auto"
+              />
 
-              <a
-                href={fullVideoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center justify-center gap-2 min-h-11 touch-manipulation rounded-xl bg-white px-4 py-2.5 text-[10px] font-bold text-black transition hover:bg-zinc-200"
-              >
-                <Download className="h-3.5 w-3.5" />
-                Download
-              </a>
+              <div className="flex gap-2">
+                <a
+                  href={fullVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[10px] font-bold text-black transition hover:bg-zinc-200 sm:flex-none"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </a>
 
-              <a
-                href={fullVideoUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
-                title="Open in new tab"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-              </a>
+                <a
+                  href={fullVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
             </div>
           )}
         </div>
@@ -491,10 +559,9 @@ const PremiumStats: React.FC<{
         return (
           <div
             key={stat.label}
-            className="group relative overflow-hidden rounded-[20px] border border-white/[0.08] bg-white/[0.025] p-4 shadow-[0_16px_50px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.14] hover:bg-white/[0.04]"
+            className="group rounded-2xl border border-white/[0.07] bg-[#09090d] p-4 transition hover:border-white/[0.12]"
           >
-            <div className="pointer-events-none absolute -right-8 -top-8 h-20 w-20 rounded-full bg-violet-500/[0.08] blur-2xl transition group-hover:bg-violet-400/[0.14]" />
-            <div className="relative flex items-center justify-between">
+            <div className="flex items-center justify-between">
               <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-zinc-600">
                 {stat.label}
               </span>
@@ -547,11 +614,11 @@ const AIInsightPanel: React.FC<{
   ];
 
   return (
-    <section className="relative overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(16,14,25,.96),rgba(8,8,12,.98))] shadow-[0_24px_70px_rgba(0,0,0,.25)]">
+    <section className="rounded-2xl border border-white/[0.07] bg-[#09090d]">
       <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/20 bg-gradient-to-br from-violet-500/[0.16] to-fuchsia-500/[0.06] shadow-[0_8px_30px_rgba(139,92,246,.12)]">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-400/10 bg-violet-500/[0.07]">
               <Sparkles className="h-4 w-4 text-violet-400" />
             </div>
 
@@ -711,7 +778,7 @@ const Pipeline: React.FC<{
       ];
 
   return (
-    <Surface className="relative h-full overflow-hidden p-5 sm:p-6">
+    <Surface className="h-full p-5 sm:p-6">
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">
@@ -729,18 +796,7 @@ const Pipeline: React.FC<{
         </span>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-full bg-white/[0.05]">
-        <div
-          className="h-1 rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-400 to-violet-400 transition-all duration-700"
-          style={{ width: `${progress}%` }}
-        />
-      </div>
-      <div className="mt-2 flex items-center justify-between">
-        <span className="text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-700">Progress</span>
-        <span className="font-mono text-[9px] font-semibold text-violet-300">{progress}%</span>
-      </div>
-
-      <div className="mt-5 space-y-1">
+      <div className="mt-7 space-y-1">
         {steps.map((step, index) => {
           const done =
             progress >= step.threshold;
@@ -839,8 +895,10 @@ const ClipCard: React.FC<{
   clip: Clip;
   index: number;
   onPublish?: (clip: Clip) => void;
-}> = ({ clip, index, onPublish }) => {
-  const [showReason, setShowReason] =
+  isPremium?: boolean;
+  onUpgrade?: () => void;
+}> = ({ clip, index, onPublish, isPremium = false, onUpgrade }) => {
+  const [showDetails, setShowDetails] =
     useState(false);
 
   const score = getClipScore(clip);
@@ -884,18 +942,12 @@ const ClipCard: React.FC<{
     ["Hook", hookScore],
     ["Retention", retentionScore],
     ["Share", shareScore],
-  ];
+  ] as const;
 
   return (
-    <article
-      className="group overflow-hidden rounded-[24px] border border-white/[0.08] bg-[linear-gradient(145deg,rgba(15,15,21,.98),rgba(7,7,10,.99))] shadow-[0_20px_65px_rgba(0,0,0,.28)] transition duration-300 hover:-translate-y-1 hover:border-violet-300/20 hover:shadow-[0_28px_85px_rgba(0,0,0,.38)]"
-      style={{
-        contentVisibility: "auto",
-        containIntrinsicSize: "0 700px",
-      }}
-    >
+    <article className="group overflow-hidden rounded-xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:border-violet-400/20 sm:hover:-translate-y-0.5">
       {/* preview */}
-      <div className="relative aspect-[9/14] overflow-hidden bg-[#050507] ring-1 ring-inset ring-white/[0.06]">
+      <div className="relative aspect-[9/12] overflow-hidden bg-[#050507]">
         {videoUrl ? (
           <video
             src={videoUrl}
@@ -918,89 +970,76 @@ const ClipCard: React.FC<{
           />
         ) : (
           <div className="flex h-full flex-col items-center justify-center bg-[#060608]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025]">
-              <Film className="h-5 w-5 text-zinc-600" />
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.025]">
+              <Film className="h-4 w-4 text-zinc-600" />
             </div>
 
-            <p className="mt-3 text-[9px] text-zinc-700">
+            <p className="mt-2.5 text-[9px] text-zinc-700">
               Preview unavailable
             </p>
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/70 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/70 to-transparent" />
 
         {/* clip number */}
-        <div className="absolute left-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-black/55 text-[8px] font-bold text-white backdrop-blur-xl">
+        <div className="absolute left-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-md border border-white/10 bg-black/55 text-[7px] font-bold text-white backdrop-blur-xl">
           {String(index + 1).padStart(2, "0")}
         </div>
 
         {/* top pick */}
         {index === 0 && (
-          <div className="absolute left-12 top-3 inline-flex items-center gap-1.5 rounded-lg border border-amber-300/15 bg-black/55 px-2 py-1.5 text-[7px] font-bold uppercase tracking-wider text-amber-300 backdrop-blur-xl">
-            <Flame className="h-3 w-3" />
+          <div className="absolute left-10 top-2.5 inline-flex items-center gap-1 rounded-md border border-amber-300/15 bg-black/55 px-1.5 py-1 text-[6.5px] font-bold uppercase tracking-wider text-amber-300 backdrop-blur-xl">
+            <Flame className="h-2.5 w-2.5" />
             Top pick
           </div>
         )}
 
         {/* score */}
-        <div className="absolute right-3 top-3 flex items-center gap-1.5 rounded-full border border-amber-300/20 bg-black/60 px-2.5 py-1.5 text-[8px] font-extrabold text-white shadow-lg backdrop-blur-xl">
-          <span className="flex h-5 w-5 items-center justify-center rounded-full border border-amber-300/25 bg-amber-400/10">
-            <Flame className="h-2.5 w-2.5 text-amber-300" />
-          </span>
-          <span>{score}</span>
+        <div className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[7.5px] font-bold text-white backdrop-blur-xl">
+          <Flame className="h-2.5 w-2.5 text-amber-300" />
+          {score}
         </div>
 
         {/* bottom metadata */}
-        <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
-          <span className="rounded-lg border border-white/10 bg-black/55 px-2.5 py-1.5 text-[7px] font-bold uppercase tracking-wider text-zinc-200 backdrop-blur-xl">
+        <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between">
+          <span className="rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[6.5px] font-bold uppercase tracking-wider text-zinc-200 backdrop-blur-xl">
             9:16
           </span>
 
-          <span className="rounded-lg border border-white/10 bg-black/55 px-2.5 py-1.5 font-mono text-[8px] text-white backdrop-blur-xl">
+          <span className="rounded-md border border-white/10 bg-black/55 px-2 py-1 font-mono text-[7.5px] text-white backdrop-blur-xl">
             {formatDuration(clip.duration)}
           </span>
         </div>
       </div>
 
       {/* body */}
-      <div className="p-4 sm:p-5">
-        <div className="flex items-start gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="mb-1 text-[7px] font-bold uppercase tracking-[0.16em] text-violet-400">
-              AI selected
-            </p>
+      <div className="p-3">
+        <p className="mb-0.5 text-[6.5px] font-bold uppercase tracking-[0.16em] text-violet-400">
+          AI selected
+        </p>
 
-            <h3 className="line-clamp-2 text-[13px] font-semibold leading-5 text-white">
-              {title}
-            </h3>
-          </div>
+        <h3 className="line-clamp-2 text-[12px] font-semibold leading-4 text-white">
+          {title}
+        </h3>
 
-          <div className="shrink-0 rounded-lg border border-white/[0.06] bg-white/[0.025] px-2 py-1.5">
-            <p className="text-[8px] font-semibold text-violet-300">
-              {score}/100
-            </p>
-          </div>
-        </div>
-
-        {/* metrics */}
-        <div className="mt-4 grid grid-cols-3 gap-1.5">
+        {/* metrics — single unified row, no boxed pills */}
+        <div className="mt-3 flex items-stretch divide-x divide-white/[0.06] rounded-lg bg-black/20 py-2">
           {metrics.map(([label, value]) => (
             <div
               key={label}
-              className="rounded-xl border border-white/[0.05] bg-black/20 p-2"
+              className="flex-1 px-2 first:pl-2.5 last:pr-2.5"
             >
-              <div className="flex items-center justify-between">
-                <span className="text-[6px] font-bold uppercase tracking-wider text-zinc-700">
+              <div className="flex items-baseline justify-between">
+                <span className="text-[6px] font-bold uppercase tracking-wider text-zinc-600">
                   {label}
                 </span>
-
                 <span className="text-[7px] font-semibold text-zinc-400">
                   {value}
                 </span>
               </div>
 
-              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.05]">
+              <div className="mt-1 h-[3px] overflow-hidden rounded-full bg-white/[0.06]">
                 <div
                   className="h-full rounded-full bg-violet-500/60"
                   style={{
@@ -1012,91 +1051,99 @@ const ClipCard: React.FC<{
           ))}
         </div>
 
-        {/* why */}
+        {/* details toggle — reason + caption together */}
         <button
           type="button"
           onClick={() =>
-            setShowReason((value) => !value)
+            setShowDetails((value) => !value)
           }
-          className="mt-4 flex min-h-11 w-full touch-manipulation items-center justify-between border-t border-white/[0.05] pt-3 text-left"
+          className="mt-2.5 flex min-h-10 w-full touch-manipulation items-center justify-between text-left"
         >
-          <span className="text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-            Why this clip
+          <span className="text-[7.5px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+            {showDetails ? "Hide details" : "Why this clip"}
           </span>
 
           <ChevronDown
             className={[
-              "h-3.5 w-3.5 text-zinc-700 transition",
-              showReason
-                ? "rotate-180"
-                : "",
+              "h-3 w-3 text-zinc-700 transition",
+              showDetails ? "rotate-180" : "",
             ].join(" ")}
           />
         </button>
 
-        {showReason && (
-          <div className="mt-2 rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+        {showDetails && (
+          <div className="mb-1 space-y-2">
             <p className="text-[9px] leading-5 text-zinc-500">
               {reason}
             </p>
+
+            {caption && (
+              <div className="rounded-lg bg-black/20 p-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[6.5px] font-bold uppercase tracking-[0.14em] text-zinc-700">
+                    Caption
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={copyCaption}
+                    className="flex h-8 w-8 touch-manipulation items-center justify-center rounded-md text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
+                    title="Copy caption"
+                  >
+                    <Copy className="h-3 w-3" />
+                  </button>
+                </div>
+
+                <p className="mt-1.5 line-clamp-3 text-[9px] leading-5 text-zinc-500">
+                  {caption}
+                </p>
+              </div>
+            )}
           </div>
         )}
 
-        {/* caption */}
-        {caption && (
-          <div className="mt-4 rounded-xl border border-white/[0.05] bg-black/20 p-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[7px] font-bold uppercase tracking-[0.14em] text-zinc-700">
-                Caption
-              </span>
-
-              <button
-                type="button"
-                onClick={copyCaption}
-                className="flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
-                title="Copy caption"
+        {/* actions */}
+        <div className="mt-2.5 grid grid-cols-[1fr_auto] gap-1.5 border-t border-white/[0.05] pt-2.5">
+          {videoUrl ? (
+            <>
+              <a
+                href={videoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex min-h-10 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[9px] font-bold text-black transition hover:bg-zinc-200"
               >
-                <Copy className="h-3 w-3" />
-              </button>
+                <Download className="h-3 w-3" />
+                Export
+              </a>
+
+              <a
+                href={videoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-10 w-10 shrink-0 touch-manipulation items-center justify-center rounded-lg border border-white/[0.07] bg-white/[0.02] text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
+                title="Open clip"
+              >
+                <ExternalLink className="h-3 w-3" />
+              </a>
+            </>
+          ) : (
+            <div className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2 text-[9px] font-medium text-zinc-700">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Processing
             </div>
+          )}
+        </div>
 
-            <p className="mt-2 line-clamp-3 text-[9px] leading-5 text-zinc-500">
-              {caption}
-            </p>
+        {videoUrl && onPublish && (
+          <div className="mt-1.5">
+            <PublishToYouTubeButton
+              isPremium={isPremium}
+              onPublish={() => onPublish(clip)}
+              onUpgrade={onUpgrade}
+              variant="outline"
+            />
           </div>
         )}
-
-        {/* premium actions */}
-        {videoUrl && onPublish ? (
-          <div className="mt-4 grid grid-cols-1 gap-2 border-t border-white/[0.05] pt-3 sm:grid-cols-[1fr_1.35fr]">
-            <a
-              href={videoUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5 text-[9px] font-bold text-zinc-300 transition hover:border-white/[0.14] hover:bg-white/[0.07] hover:text-white active:scale-[0.99]"
-            >
-              <Download className="h-3.5 w-3.5" />
-              Export clip
-            </a>
-
-            <button
-              type="button"
-              onClick={() => onPublish(clip)}
-              className="group relative flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-xl border border-red-400/20 bg-gradient-to-r from-red-500 to-rose-500 px-3 py-2.5 text-[9px] font-extrabold text-white shadow-[0_10px_30px_rgba(239,68,68,0.18)] transition duration-200 hover:-translate-y-0.5 hover:from-red-400 hover:to-rose-400 active:translate-y-0"
-            >
-              <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/15 to-transparent transition duration-700 group-hover:translate-x-full" />
-              <Youtube className="relative h-3.5 w-3.5" />
-              <span className="relative">Publish to YouTube</span>
-              <ExternalLink className="relative h-3 w-3 opacity-50 transition group-hover:translate-x-0.5" />
-            </button>
-          </div>
-        ) : (
-          <div className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-3 text-[9px] font-medium text-zinc-700">
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            Processing
-          </div>
-        )}
-
       </div>
     </article>
   );
@@ -1110,10 +1157,14 @@ const ClipsSection: React.FC<{
   clips: Clip[];
   processing?: boolean;
   onPublish?: (clip: Clip) => void;
+  isPremium?: boolean;
+  onUpgrade?: () => void;
 }> = ({
   clips,
   processing = false,
   onPublish,
+  isPremium = false,
+  onUpgrade,
 }) => {
   const [sort, setSort] =
     useState<"score" | "newest">(
@@ -1135,7 +1186,7 @@ const ClipsSection: React.FC<{
   }, [clips, sort]);
 
   return (
-    <section className="mt-10 sm:mt-12">
+    <section className="mt-9">
       {/* heading */}
       <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
@@ -1156,12 +1207,12 @@ const ClipsSection: React.FC<{
           </p>
         </div>
 
-        <div className="flex w-full items-center gap-1 rounded-[14px] border border-white/[0.08] bg-white/[0.025] p-1 shadow-[0_10px_35px_rgba(0,0,0,.18)] backdrop-blur-xl sm:w-auto">
+        <div className="flex items-center gap-1 rounded-xl border border-white/[0.06] bg-[#09090d] p-1">
           <button
             type="button"
             onClick={() => setSort("score")}
             className={[
-              "min-h-9 flex-1 rounded-lg px-3 py-2 text-[8px] font-bold transition sm:flex-none",
+              "rounded-lg px-3 py-2 text-[8px] font-bold transition",
               sort === "score"
                 ? "bg-white text-black"
                 : "text-zinc-600 hover:text-zinc-300",
@@ -1174,7 +1225,7 @@ const ClipsSection: React.FC<{
             type="button"
             onClick={() => setSort("newest")}
             className={[
-              "min-h-9 flex-1 rounded-lg px-3 py-2 text-[8px] font-bold transition sm:flex-none",
+              "rounded-lg px-3 py-2 text-[8px] font-bold transition",
               sort === "newest"
                 ? "bg-white text-black"
                 : "text-zinc-600 hover:text-zinc-300",
@@ -1207,7 +1258,7 @@ const ClipsSection: React.FC<{
       )}
 
       {sortedClips.length > 0 ? (
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {sortedClips.map(
             (clip, index) => (
               <ClipCard
@@ -1215,6 +1266,8 @@ const ClipsSection: React.FC<{
                 clip={clip}
                 index={index}
                 onPublish={onPublish}
+                isPremium={isPremium}
+                onUpgrade={onUpgrade}
               />
             ),
           )}
@@ -1491,6 +1544,8 @@ export const ProjectDetailView: React.FC<
   clips,
   onBack,
   onDeleteProject,
+  isPremium = false,
+  onUpgrade,
 }) => {
   const progress = normalizeProgress(
     project.progress,
@@ -1539,32 +1594,22 @@ export const ProjectDetailView: React.FC<
       : "processing";
 
   return (
-    <div className="min-h-full overflow-x-hidden bg-[#030304] text-white">
-      <style>{`
-        @keyframes lumoFloat { 0%,100% { transform: translateY(0) } 50% { transform: translateY(-3px) } }
-        @keyframes lumoShimmer { 0% { transform: translateX(-120%) } 100% { transform: translateX(120%) } }
-        @keyframes lumoPulse { 0%,100% { opacity:.45; transform:scale(.92) } 50% { opacity:1; transform:scale(1) } }
-        .lumo-float { animation:lumoFloat 4s ease-in-out infinite; }
-        .lumo-shimmer { animation:lumoShimmer 2.4s ease-in-out infinite; }
-        .lumo-pulse { animation:lumoPulse 2s ease-in-out infinite; }
-        .lumo-scroll::-webkit-scrollbar { width:5px; height:5px; }
-        .lumo-scroll::-webkit-scrollbar-thumb { background:rgba(255,255,255,.10); border-radius:999px; }
-      `}</style>
+    <div className="min-h-full bg-[#030304] text-white">
       {/* very subtle background */}
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_-10%,rgba(139,92,246,0.13),transparent_32%),radial-gradient(circle_at_100%_45%,rgba(59,130,246,0.045),transparent_28%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.055),transparent_35%)]" />
 
-      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 pb-8 pt-3 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
+      <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
         {/* =====================================================
             HEADER
         ====================================================== */}
 
-        <header className="mb-6 sm:mb-8">
+        <header className="mb-7">
           <div className="flex flex-wrap items-center justify-between gap-3 sm:gap-4">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={onBack}
-                className="group flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-[14px] border border-white/[0.09] bg-white/[0.035] text-zinc-500 shadow-[0_10px_30px_rgba(0,0,0,.18)] backdrop-blur-xl transition duration-200 hover:border-violet-400/25 hover:bg-violet-500/[0.06] hover:text-white active:scale-95"
+                className="group flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-[#09090d] text-zinc-500 transition hover:border-white/[0.12] hover:bg-white/[0.03] hover:text-white"
                 aria-label="Back"
               >
                 <ArrowLeft className="h-4 w-4 transition group-hover:-translate-x-0.5" />
@@ -1628,48 +1673,24 @@ export const ProjectDetailView: React.FC<
             </div>
 
             {/* project actions */}
-            <div className="relative ml-auto flex w-full shrink-0 items-center justify-end gap-2 sm:w-auto">
-              {isCompleted && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPublishTarget(
-                      isFullVideoMode
-                        ? { kind: "project" }
-                        : safeClips.length > 0
-                        ? {
-                            kind: "clip",
-                            clip: [...safeClips].sort(
-                              (a, b) => getClipScore(b) - getClipScore(a),
-                            )[0],
-                          }
-                        : null,
-                    )
-                  }
-                  disabled={!isFullVideoMode && safeClips.length === 0}
-                  className="group relative inline-flex min-h-11 items-center justify-center gap-2 overflow-hidden rounded-xl border border-red-400/25 bg-gradient-to-r from-red-500 via-rose-500 to-red-500 bg-[length:200%_100%] px-3.5 text-[9px] font-extrabold uppercase tracking-[0.11em] text-white shadow-[0_10px_34px_rgba(239,68,68,0.20)] transition duration-300 hover:-translate-y-0.5 hover:bg-right hover:shadow-[0_14px_38px_rgba(239,68,68,0.28)] active:translate-y-0 disabled:cursor-not-allowed disabled:opacity-40 sm:px-4"
-                  aria-label={
-                    isFullVideoMode
-                      ? "Publish video to YouTube"
-                      : "Publish best clip to YouTube"
-                  }
-                >
-                  <span className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/20 to-transparent transition duration-700 group-hover:translate-x-full" />
-                  <Youtube className="relative h-3.5 w-3.5" />
-                  <span className="relative">Publish</span>
-                  <ExternalLink className="relative h-3 w-3 opacity-55" />
-                </button>
-              )}
-
+            <div className="relative ml-auto flex shrink-0 items-center gap-2">
               {/* Premium CTA */}
-              <a
-                href="/pricing"
-                className="group inline-flex min-h-11 items-center justify-center gap-1.5 rounded-xl border border-violet-300/25 bg-[linear-gradient(135deg,rgba(139,92,246,.22),rgba(217,70,239,.12))] px-3.5 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-200 shadow-[0_12px_36px_rgba(139,92,246,0.18)] transition hover:-translate-y-0.5 hover:border-violet-300/35 hover:from-violet-500/[0.24] hover:to-fuchsia-500/[0.16] hover:text-white active:translate-y-0 sm:px-4"
-                aria-label="Upgrade to Premium"
-              >
-                <Crown className="h-3.5 w-3.5 text-violet-300 transition group-hover:scale-110" />
-                <span className="hidden xs:inline sm:inline">Premium</span>
-              </a>
+              {!isPremium && (
+                <a
+                  href="/pricing"
+                  onClick={(event) => {
+                    if (onUpgrade) {
+                      event.preventDefault();
+                      onUpgrade();
+                    }
+                  }}
+                  className="group inline-flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.16] to-fuchsia-500/[0.10] px-3 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-200 shadow-[0_8px_28px_rgba(139,92,246,0.12)] transition hover:-translate-y-0.5 hover:border-violet-300/35 hover:from-violet-500/[0.24] hover:to-fuchsia-500/[0.16] hover:text-white active:translate-y-0 sm:px-4"
+                  aria-label="Upgrade to Premium"
+                >
+                  <Crown className="h-3.5 w-3.5 shrink-0 text-violet-300 transition group-hover:scale-110" />
+                  <span className="hidden sm:inline">Premium</span>
+                </a>
+              )}
 
               <button
                 type="button"
@@ -1751,6 +1772,8 @@ export const ProjectDetailView: React.FC<
                   onPublish={(clip) =>
                     setPublishTarget({ kind: "clip", clip })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               </>
             )}
@@ -1822,6 +1845,8 @@ export const ProjectDetailView: React.FC<
                   onPublish={(clip) =>
                     setPublishTarget({ kind: "clip", clip })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               )}
           </>
@@ -1834,7 +1859,7 @@ export const ProjectDetailView: React.FC<
         {isCompleted && (
           <>
             {/* success strip */}
-            <div className="mb-4 flex flex-col gap-3 rounded-[22px] border border-emerald-300/15 bg-[linear-gradient(135deg,rgba(16,185,129,.08),rgba(6,78,59,.035))] shadow-[0_18px_55px_rgba(16,185,129,.06)] px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-4 py-4 sm:px-5 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/[0.08]">
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -1866,6 +1891,8 @@ export const ProjectDetailView: React.FC<
                   onPublish={() =>
                     setPublishTarget({ kind: "project" })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
 
                 <div className="mt-4">
@@ -1911,6 +1938,8 @@ export const ProjectDetailView: React.FC<
                   onPublish={(clip) =>
                     setPublishTarget({ kind: "clip", clip })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               </>
             )}
@@ -1995,7 +2024,7 @@ export const ProjectDetailView: React.FC<
             FOOTER
         ====================================================== */}
 
-        <footer className="mt-12 flex flex-col items-center sm:mt-16 justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
+        <footer className="mt-10 flex flex-col items-center sm:mt-14 justify-between gap-3 border-t border-white/[0.05] pt-5 sm:flex-row">
           <div className="flex items-center gap-2 text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-800">
             <Sparkles className="h-3 w-3 text-violet-500/40" />
             Powered by LumoClip AI
