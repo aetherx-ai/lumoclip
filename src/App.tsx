@@ -28,6 +28,7 @@ import {
 
 import { Navbar } from "./components/Navbar.js";
 import LandingPage from "./components/LandingPage.js";
+import ChunkErrorBoundary from "./components/ChunkErrorBoundary.tsx";
 
 /* =========================================================
    LAZY COMPONENTS
@@ -1467,31 +1468,33 @@ function App() {
         ================================================= */}
 
         {activeTab === "dashboard" && (
-          <Suspense
-            fallback={
-              <div className="min-h-[60vh]" />
-            }
-          >
-            <DashboardView
-              user={user}
-              projects={projects}
-              onSelectProject={
-                handleSelectProject
+          <ChunkErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="min-h-[60vh]" />
               }
-              onOpenNewProject={() => {
-                openNewProject();
-              }}
-              onProcessYouTube={
-                handleProcessYouTube
-              }
-              onDeleteProject={
-                handleDeleteProject
-              }
-              onOpenPricing={() => {
-                setActiveTab("pricing");
-              }}
-            />
-          </Suspense>
+            >
+              <DashboardView
+                user={user}
+                projects={projects}
+                onSelectProject={
+                  handleSelectProject
+                }
+                onOpenNewProject={() => {
+                  openNewProject();
+                }}
+                onProcessYouTube={
+                  handleProcessYouTube
+                }
+                onDeleteProject={
+                  handleDeleteProject
+                }
+                onOpenPricing={() => {
+                  setActiveTab("pricing");
+                }}
+              />
+            </Suspense>
+          </ChunkErrorBoundary>
         )}
 
         {/* =================================================
@@ -1500,32 +1503,34 @@ function App() {
 
         {activeTab === "projects" &&
           selectedProject && (
-            <Suspense
-              fallback={
-                <div className="min-h-[60vh]" />
-              }
-            >
-              <ProjectDetailView
-                project={
-                  selectedProject
+            <ChunkErrorBoundary>
+              <Suspense
+                fallback={
+                  <div className="min-h-[60vh]" />
                 }
-                clips={selectedClips}
-                onBack={() => {
-                  setSelectedProject(
-                    null,
-                  );
+              >
+                <ProjectDetailView
+                  project={
+                    selectedProject
+                  }
+                  clips={selectedClips}
+                  onBack={() => {
+                    setSelectedProject(
+                      null,
+                    );
 
-                  setSelectedClips([]);
+                    setSelectedClips([]);
 
-                  setActiveTab(
-                    "dashboard",
-                  );
-                }}
-                onDeleteProject={
-                  handleDeleteProject
-                }
-              />
-            </Suspense>
+                    setActiveTab(
+                      "dashboard",
+                    );
+                  }}
+                  onDeleteProject={
+                    handleDeleteProject
+                  }
+                />
+              </Suspense>
+            </ChunkErrorBoundary>
           )}
 
         {/* =================================================
@@ -1533,30 +1538,32 @@ function App() {
         ================================================= */}
 
         {activeTab === "pricing" && (
-          <Suspense
-            fallback={
-              <div className="min-h-[60vh]" />
-            }
-          >
-            <PricingView
-              user={user}
-              subscription={
-                subscription
+          <ChunkErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="min-h-[60vh]" />
               }
-              onUpgradeSuccess={(
-                updatedUser,
-                updatedSubscription,
-              ) => {
-                setUser(
+            >
+              <PricingView
+                user={user}
+                subscription={
+                  subscription
+                }
+                onUpgradeSuccess={(
                   updatedUser,
-                );
-
-                setSubscription(
                   updatedSubscription,
-                );
-              }}
-            />
-          </Suspense>
+                ) => {
+                  setUser(
+                    updatedUser,
+                  );
+
+                  setSubscription(
+                    updatedSubscription,
+                  );
+                }}
+              />
+            </Suspense>
+          </ChunkErrorBoundary>
         )}
 
         {/* =================================================
@@ -1564,22 +1571,24 @@ function App() {
         ================================================= */}
 
         {activeTab === "settings" && (
-          <Suspense
-            fallback={
-              <div className="min-h-[60vh]" />
-            }
-          >
-            <SettingsView
-              user={user}
-              onUserUpdated={(
-                updatedUser,
-              ) => {
-                setUser(
+          <ChunkErrorBoundary>
+            <Suspense
+              fallback={
+                <div className="min-h-[60vh]" />
+              }
+            >
+              <SettingsView
+                user={user}
+                onUserUpdated={(
                   updatedUser,
-                );
-              }}
-            />
-          </Suspense>
+                ) => {
+                  setUser(
+                    updatedUser,
+                  );
+                }}
+              />
+            </Suspense>
+          </ChunkErrorBoundary>
         )}
       </main>
 
@@ -1659,102 +1668,106 @@ function App() {
           AUTH MODAL
       ===================================================== */}
 
-      <Suspense fallback={null}>
-        <AuthModal
-          isOpen={
-            isAuthModalOpen
-          }
-          onClose={() => {
-            setIsAuthModalOpen(
-              false,
-            );
-          }}
-        />
-      </Suspense>
+      <ChunkErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <AuthModal
+            isOpen={
+              isAuthModalOpen
+            }
+            onClose={() => {
+              setIsAuthModalOpen(
+                false,
+              );
+            }}
+          />
+        </Suspense>
+      </ChunkErrorBoundary>
 
       {/* =====================================================
           NEW PROJECT MODAL
       ===================================================== */}
 
-      <Suspense fallback={null}>
-        <NewProjectModalWithInitialUrl
-          isOpen={
-            isNewProjectModalOpen
-          }
-          onClose={() => {
-            setIsNewProjectModalOpen(
-              false,
-            );
+      <ChunkErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <NewProjectModalWithInitialUrl
+            isOpen={
+              isNewProjectModalOpen
+            }
+            onClose={() => {
+              setIsNewProjectModalOpen(
+                false,
+              );
 
-            setNewProjectInitialUrl(
-              "",
-            );
+              setNewProjectInitialUrl(
+                "",
+              );
 
-            pendingProjectUrlRef.current =
-              "";
-          }}
-          credits={
-            user?.credits ?? 0
-          }
-          initialUrl={
-            newProjectInitialUrl
-          }
-          onSuccess={(data: any) => {
-            if (data?.project) {
-              const project =
-                data.project;
+              pendingProjectUrlRef.current =
+                "";
+            }}
+            credits={
+              user?.credits ?? 0
+            }
+            initialUrl={
+              newProjectInitialUrl
+            }
+            onSuccess={(data: any) => {
+              if (data?.project) {
+                const project =
+                  data.project;
 
-              setProjects(
-                (previous) => [
+                setProjects(
+                  (previous) => [
+                    project,
+                    ...previous.filter(
+                      (p) =>
+                        p.id !==
+                        project.id,
+                    ),
+                  ],
+                );
+
+                setSelectedProject(
                   project,
-                  ...previous.filter(
-                    (p) =>
-                      p.id !==
-                      project.id,
-                  ),
-                ],
+                );
+
+                setSelectedClips(
+                  Array.isArray(
+                    data.clips,
+                  )
+                    ? data.clips
+                    : [],
+                );
+
+                setActiveTab(
+                  "projects",
+                );
+
+                pollProjectProcessing(
+                  project.id,
+                );
+              }
+
+              if (data?.user) {
+                setUser(
+                  data.user,
+                );
+              }
+
+              setNewProjectInitialUrl(
+                "",
               );
 
-              setSelectedProject(
-                project,
+              pendingProjectUrlRef.current =
+                "";
+
+              setIsNewProjectModalOpen(
+                false,
               );
-
-              setSelectedClips(
-                Array.isArray(
-                  data.clips,
-                )
-                  ? data.clips
-                  : [],
-              );
-
-              setActiveTab(
-                "projects",
-              );
-
-              pollProjectProcessing(
-                project.id,
-              );
-            }
-
-            if (data?.user) {
-              setUser(
-                data.user,
-              );
-            }
-
-            setNewProjectInitialUrl(
-              "",
-            );
-
-            pendingProjectUrlRef.current =
-              "";
-
-            setIsNewProjectModalOpen(
-              false,
-            );
-          }}
-        />
-      </Suspense>
+            }}
+          />
+        </Suspense>
+      </ChunkErrorBoundary>
 
       {/* =====================================================
           APP ANIMATION
