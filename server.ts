@@ -204,23 +204,6 @@ const FFMPEG_TIMEOUT_MS = Number(
   process.env.FFMPEG_TIMEOUT_MS || 15 * 60 * 1000,
 );
 
-// Full-video captioning is a single encode, so it can use more CPU than
-// concurrent clip encoders. Keep its settings separate.
-const configuredFullVideoThreads = Number(
-  process.env.FFMPEG_FULL_VIDEO_THREADS || 0,
-);
-const FFMPEG_FULL_VIDEO_THREADS =
-  configuredFullVideoThreads > 0
-    ? Math.min(configuredFullVideoThreads, 8)
-    : Math.min(Math.max(1, CPU_COUNT), 4);
-const FFMPEG_FULL_VIDEO_PRESET =
-  process.env.FFMPEG_FULL_VIDEO_PRESET?.trim() || "ultrafast";
-const FFMPEG_FULL_VIDEO_CRF =
-  process.env.FFMPEG_FULL_VIDEO_CRF?.trim() || "27";
-const FFMPEG_FULL_VIDEO_TIMEOUT_MS = Number(
-  process.env.FFMPEG_FULL_VIDEO_TIMEOUT_MS || 30 * 60 * 1000,
-);
-
 /* =========================================================
    SELF-HOSTED YOUTUBE WORKER
 
@@ -5034,11 +5017,11 @@ function createFullCaptionedVideo(
           "-c:v",
           "libx264",
           "-preset",
-          FFMPEG_FULL_VIDEO_PRESET,
+          FFMPEG_PRESET,
           "-crf",
-          FFMPEG_FULL_VIDEO_CRF,
+          FFMPEG_CRF,
           "-threads",
-          String(FFMPEG_FULL_VIDEO_THREADS),
+          String(FFMPEG_THREADS_PER_CLIP),
           "-pix_fmt",
           "yuv420p",
           "-c:a",
@@ -5078,21 +5061,6 @@ function createFullCaptionedVideo(
           console.error("Full-video caption FFmpeg failed:", error.message);
           return finish(error);
         });
-
-      const timeout = setTimeout(() => {
-        console.error(
-          `Full-video caption FFmpeg timed out after ${Math.round(FFMPEG_FULL_VIDEO_TIMEOUT_MS / 60000)} minutes.`,
-        );
-        try {
-          command.kill("SIGKILL");
-        } catch {}
-        finish(
-          new Error(
-            `Full-video caption encoding timed out after ${Math.round(FFMPEG_FULL_VIDEO_TIMEOUT_MS / 60000)} minutes.`,
-          ),
-        );
-      }, FFMPEG_FULL_VIDEO_TIMEOUT_MS);
-      timeout.unref?.();
 
       command.save(absoluteOutputPath);
     } catch (error) {
