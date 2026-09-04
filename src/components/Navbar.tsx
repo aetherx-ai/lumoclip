@@ -114,55 +114,62 @@ const Avatar: React.FC<AvatarProps> = ({
 
   if (avatar && !failed) {
     return (
-      <img
-        src={avatar}
-        alt={
-          name
-            ? `${name} avatar`
-            : "User avatar"
-        }
-        onError={() => setFailed(true)}
-        referrerPolicy="no-referrer"
-        className={`
-          ${sizeClass}
-          shrink-0
-          rounded-full
-          object-cover
-          ring-1
-          ring-white/15
-          shadow-[0_0_30px_rgba(34,211,238,.18)]
-        `}
-      />
+      <span className={`relative inline-flex shrink-0 ${sizeClass}`}>
+        <span className="absolute -inset-[2px] rounded-full bg-[conic-gradient(from_0deg,transparent,rgba(34,211,238,.85),rgba(59,130,246,.65),transparent)] opacity-80 [animation:spin_5s_linear_infinite]" />
+
+        <img
+          src={avatar}
+          alt={
+            name
+              ? `${name} avatar`
+              : "User avatar"
+          }
+          onError={() => setFailed(true)}
+          referrerPolicy="no-referrer"
+          className={`
+            ${sizeClass}
+            relative
+            rounded-full
+            object-cover
+            ring-2
+            ring-[#050609]
+            shadow-[0_0_30px_rgba(34,211,238,.18)]
+          `}
+        />
+      </span>
     );
   }
 
   return (
-    <div
-      className={`
-        ${sizeClass}
-        relative
-        flex
-        shrink-0
-        items-center
-        justify-center
-        overflow-hidden
-        rounded-full
-        bg-gradient-to-br
-        from-cyan-300
-        via-sky-500
-        to-blue-700
-        font-black
-        text-white
-        shadow-[0_0_30px_rgba(14,165,233,.28)]
-        ring-1
-        ring-white/15
-      `}
-    >
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,.35),transparent_35%)]" />
-      <span className="relative z-10">
-        {getInitials(name)}
-      </span>
-    </div>
+    <span className={`relative inline-flex shrink-0 ${sizeClass}`}>
+      <span className="absolute -inset-[2px] rounded-full bg-[conic-gradient(from_0deg,transparent,rgba(34,211,238,.85),rgba(59,130,246,.65),transparent)] opacity-80 [animation:spin_5s_linear_infinite]" />
+
+      <div
+        className={`
+          ${sizeClass}
+          relative
+          flex
+          items-center
+          justify-center
+          overflow-hidden
+          rounded-full
+          bg-gradient-to-br
+          from-cyan-300
+          via-sky-500
+          to-blue-700
+          font-black
+          text-white
+          shadow-[0_0_30px_rgba(14,165,233,.28)]
+          ring-2
+          ring-[#050609]
+        `}
+      >
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,.35),transparent_35%)]" />
+        <span className="relative z-10">
+          {getInitials(name)}
+        </span>
+      </div>
+    </span>
   );
 };
 
@@ -197,6 +204,7 @@ const NavItem: React.FC<NavItemProps> = ({
         items-center
         gap-2
         rounded-xl
+        border
         px-3.5
         py-2.5
         text-[11px]
@@ -207,12 +215,17 @@ const NavItem: React.FC<NavItemProps> = ({
         ${
           active
             ? `
-              bg-white/[0.075]
+              border-cyan-400/25
+              bg-gradient-to-b
+              from-cyan-400/[0.12]
+              to-blue-500/[0.05]
               text-white
-              shadow-[inset_0_1px_0_rgba(255,255,255,.07)]
+              shadow-[inset_0_1px_0_rgba(255,255,255,.09),0_0_22px_rgba(34,211,238,.16)]
             `
             : `
+              border-transparent
               text-zinc-500
+              hover:border-white/[0.06]
               hover:bg-white/[0.045]
               hover:text-zinc-200
             `
@@ -790,8 +803,12 @@ export const Navbar: React.FC<
           z-[80]
           w-full
           border-b
-          border-white/[0.055]
-          bg-[#050609]/75
+          border-white/[0.06]
+          bg-gradient-to-b
+          from-[#07090d]/90
+          via-[#050609]/80
+          to-[#050609]/70
+          shadow-[0_1px_0_rgba(255,255,255,.03)_inset,0_20px_60px_rgba(0,0,0,.35)]
           backdrop-blur-2xl
         "
       >
@@ -832,11 +849,11 @@ export const Navbar: React.FC<
         ================================================= */}
 
         <div className="pointer-events-none absolute inset-0 overflow-hidden">
-          <div className="absolute -left-24 top-[-120px] h-56 w-56 rounded-full bg-cyan-500/[0.055] blur-[70px]" />
+          <div className="absolute -left-24 top-[-120px] h-56 w-56 rounded-full bg-cyan-500/[0.08] blur-[70px]" />
 
-          <div className="absolute left-1/2 top-[-150px] h-64 w-64 -translate-x-1/2 rounded-full bg-sky-500/[0.035] blur-[100px]" />
+          <div className="absolute left-1/2 top-[-150px] h-64 w-64 -translate-x-1/2 rounded-full bg-sky-500/[0.05] blur-[100px]" />
 
-          <div className="absolute -right-24 top-[-100px] h-52 w-52 rounded-full bg-blue-600/[0.045] blur-[600px]" />
+          <div className="absolute -right-24 top-[-100px] h-52 w-52 rounded-full bg-blue-600/[0.065] blur-[600px]" />
         </div>
 
         {/* =================================================
@@ -1106,23 +1123,32 @@ export const Navbar: React.FC<
                   }
                   className="
                     group
+                    relative
                     hidden
                     h-11
                     items-center
                     gap-2
+                    overflow-hidden
                     rounded-xl
                     border
-                    border-white/[0.07]
-                    bg-white/[0.025]
+                    border-cyan-400/[0.16]
+                    bg-gradient-to-b
+                    from-cyan-400/[0.06]
+                    to-white/[0.015]
                     px-3
+                    shadow-[0_0_18px_rgba(34,211,238,.08)]
                     transition-all
-                    hover:border-cyan-400/20
-                    hover:bg-cyan-400/[0.045]
+                    hover:border-cyan-400/30
+                    hover:bg-cyan-400/[0.06]
+                    hover:shadow-[0_0_26px_rgba(34,211,238,.18)]
                     sm:flex
                   "
                 >
+                  <span className="pointer-events-none absolute inset-0 animate-[creditsPulse_3.2s_ease-in-out_infinite] bg-cyan-400/[0.05]" />
+
                   <span
                     className="
+                      relative
                       flex
                       h-7
                       w-7
@@ -1130,14 +1156,14 @@ export const Navbar: React.FC<
                       justify-center
                       rounded-lg
                       border
-                      border-cyan-400/10
-                      bg-cyan-400/[0.07]
+                      border-cyan-400/15
+                      bg-cyan-400/[0.09]
                     "
                   >
                     <Zap className="h-3.5 w-3.5 text-cyan-300 drop-shadow-[0_0_7px_rgba(34,211,238,.6)]" />
                   </span>
 
-                  <span className="flex flex-col items-start leading-none">
+                  <span className="relative flex flex-col items-start leading-none">
                     <span className="text-[11px] font-black text-white">
                       {user.credits ??
                         0}
@@ -1148,7 +1174,7 @@ export const Navbar: React.FC<
                     </span>
                   </span>
 
-                  <Plus className="ml-1 h-3 w-3 text-zinc-600 transition group-hover:text-cyan-300" />
+                  <Plus className="relative ml-1 h-3 w-3 text-zinc-600 transition group-hover:text-cyan-300" />
                 </button>
 
                 {/* NEW PROJECT */}
@@ -1175,15 +1201,15 @@ export const Navbar: React.FC<
                     text-[10px]
                     font-black
                     text-white
-                    shadow-[0_10px_35px_rgba(14,165,233,.22)]
+                    shadow-[0_10px_35px_rgba(14,165,233,.32),0_0_0_1px_rgba(255,255,255,.06)_inset]
                     transition-all
                     duration-300
-                    hover:-translate-y-[1px]
-                    hover:shadow-[0_15px_45px_rgba(14,165,233,.4)]
+                    hover:-translate-y-[2px]
+                    hover:shadow-[0_20px_55px_rgba(14,165,233,.5)]
                     active:scale-[.97]
                   "
                 >
-                  <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-120%] transition-transform duration-700 group-hover:translate-x-[120%]" />
+                  <span className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/25 to-white/0 translate-x-[-120%] transition-transform duration-700 group-hover:translate-x-[120%]" />
 
                   <Plus
                     className="
@@ -2045,7 +2071,7 @@ export const Navbar: React.FC<
                       onClick={
                         handleNewProject
                       }
-                      className="flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 text-[10px] font-black text-white shadow-[0_10px_30px_rgba(14,165,233,.2)]"
+                      className="flex h-12 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-400 to-blue-600 text-[10px] font-black text-white shadow-[0_12px_35px_rgba(14,165,233,.35)] transition-all active:scale-[.97]"
                     >
                       <Plus className="h-4 w-4" />
                       New Project
@@ -2188,6 +2214,16 @@ export const Navbar: React.FC<
             100% {
               transform: translateX(160px) rotate(20deg);
               opacity: 0;
+            }
+          }
+
+          @keyframes creditsPulse {
+            0%, 100% {
+              opacity: .35;
+            }
+
+            50% {
+              opacity: .85;
             }
           }
 
