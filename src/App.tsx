@@ -109,6 +109,32 @@ const SITE_KEYWORDS =
   "LumoClip, LumoClip AI, AI video clipper, AI video clipping, video repurposing, YouTube clipper, podcast clips, short video maker, AI shorts generator";
 
 const LOGO_URL = `${SITE_URL}/lumoclip-icon.png`;
+
+/* =========================================================
+   PREMIUM PAGE LOADER
+========================================================= */
+
+const PageLoader = ({
+  label = "Loading...",
+}: {
+  label?: string;
+}) => {
+  return (
+    <div className="flex min-h-[60vh] items-center justify-center px-4">
+      <div className="flex flex-col items-center justify-center text-center">
+        <div className="relative mb-6">
+          <div className="absolute inset-0 rounded-2xl bg-cyan-400/20 blur-xl animate-pulse" />
+          <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/20 bg-white/[0.04] shadow-[0_0_35px_rgba(34,211,238,0.12)]">
+            <Sparkles className="h-6 w-6 text-cyan-400 animate-pulse" />
+          </div>
+        </div>
+        <div className="mb-4 h-5 w-5 animate-spin rounded-full border-2 border-white/10 border-t-cyan-400" />
+        <p className="text-sm font-medium text-white/70">{label}</p>
+        <p className="mt-1 text-xs text-white/30">Preparing your workspace...</p>
+      </div>
+    </div>
+  );
+};
 /* =========================================================
    SEO / STRUCTURED DATA
 ========================================================= */
@@ -1470,9 +1496,7 @@ function App() {
         {activeTab === "dashboard" && (
           <ChunkErrorBoundary>
             <Suspense
-              fallback={
-                <div className="min-h-[60vh]" />
-              }
+              fallback={<PageLoader label="Loading Dashboard..." />}
             >
               <DashboardView
                 user={user}
@@ -1505,9 +1529,7 @@ function App() {
           selectedProject && (
             <ChunkErrorBoundary>
               <Suspense
-                fallback={
-                  <div className="min-h-[60vh]" />
-                }
+                fallback={<PageLoader label="Loading Project..." />}
               >
                 <ProjectDetailView
                   project={
@@ -1540,9 +1562,7 @@ function App() {
         {activeTab === "pricing" && (
           <ChunkErrorBoundary>
             <Suspense
-              fallback={
-                <div className="min-h-[60vh]" />
-              }
+              fallback={<PageLoader label="Loading Pricing..." />}
             >
               <PricingView
                 user={user}
@@ -1573,9 +1593,7 @@ function App() {
         {activeTab === "settings" && (
           <ChunkErrorBoundary>
             <Suspense
-              fallback={
-                <div className="min-h-[60vh]" />
-              }
+              fallback={<PageLoader label="Loading Settings..." />}
             >
               <SettingsView
                 user={user}
