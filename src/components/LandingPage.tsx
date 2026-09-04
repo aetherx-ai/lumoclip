@@ -781,14 +781,14 @@ function ToolGrid({
 }: {
   onSelect?: (label: string) => void;
 }) {
+  // 12 tools → exactly 2 rows (6 + 6)
   const rows = [
-    toolGridItems.slice(0, 5),
-    toolGridItems.slice(5, 9),
-    toolGridItems.slice(9, 11),
+    toolGridItems.slice(0, 6),
+    toolGridItems.slice(6, 12),
   ];
 
   return (
-    <div className="mx-auto flex max-w-[700px] flex-col items-center gap-8 sm:gap-10">
+    <div className="mx-auto flex max-w-[820px] flex-col items-center gap-8 sm:gap-10">
       {rows.map((row, rowIndex) => (
         <div
           key={`tool-row-${rowIndex}`}
