@@ -7,6 +7,7 @@ import React, {
 
 import {
   ArrowRight,
+  AudioLines,
   BarChart3,
   Check,
   CheckCircle2,
@@ -154,6 +155,11 @@ const SEO_KEYWORDS = [
   "YouTube Shorts maker",
   "TikTok clip generator",
   "Instagram Reels maker",
+  "AI speech enhancement",
+  "speech enhancer",
+  "background noise removal",
+  "voice clarity",
+  "audio enhancement for video",
 ].join(", ");
 
 /* ============================================================================
@@ -192,6 +198,12 @@ const features = [
     text: "Understand which moments stand out and organize your content around meaningful signals.",
   },
   {
+    icon: AudioLines,
+    eyebrow: "AUDIO ENHANCEMENT",
+    title: "Cleaner speech",
+    text: "Reduce background noise, improve voice clarity and balance loudness before publishing.",
+  },
+  {
     icon: ShieldCheck,
     eyebrow: "WORKSPACE",
     title: "Everything in one place",
@@ -199,7 +211,17 @@ const features = [
   },
 ];
 
+const speechEnhancementFeatures = [
+  { icon: AudioLines, title: "Noise reduction", text: "Reduce unwanted background noise while keeping spoken words natural." },
+  { icon: Mic2, title: "Voice clarity", text: "Bring dialogue forward so speech is easier to hear and understand." },
+  { icon: BarChart3, title: "Loudness normalization", text: "Balance dialogue loudness for a more consistent listening experience." },
+] as const;
+
 const faqs = [
+  {
+    q: "Can LumoClip enhance speech?",
+    a: "Yes. Enhance Speech can process the audio of a project to reduce background noise, improve voice clarity and normalize loudness, then export an enhanced video.",
+  },
   {
     q: "What is LumoClip?",
     a: "LumoClip is an AI video clipper and content repurposing workspace designed to transform long-form videos into short-form clips and publishing-ready content.",
@@ -416,7 +438,7 @@ const toolGridItems: ToolGridItem[] = [
   { icon: Mic2, label: "Auto SFX", badge: "New" },
   { icon: Layers3, label: "Upscale", badge: "New" },
   { icon: WandSparkles, label: "Video dubbing", badge: "New" },
-  { icon: BarChart3, label: "Enhance speech" },
+  { icon: AudioLines, label: "Enhance speech", badge: "New" },
 ];
 
 function ToolGridButton({
@@ -1972,7 +1994,15 @@ export function LandingPage({
               {/* TOOL GRID (Opus-style small icon buttons) */}
 
               <Reveal immediate delay={260} className="mt-12">
-                <ToolGrid onSelect={onGetStarted} />
+                <ToolGrid
+                  onSelect={(label) => {
+                    if (label === "Enhance speech") {
+                      document.getElementById("enhance-speech")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      return;
+                    }
+                    onGetStarted();
+                  }}
+                />
               </Reveal>
             </div>
 
@@ -2011,6 +2041,7 @@ export function LandingPage({
                       [Sparkles, "Moment detection"],
                       [Scissors, "Clip generation"],
                       [Subtitles, "Caption generation"],
+                      [AudioLines, "Speech enhancement"],
                     ].map(([Icon, text]) => {
                       const I =
                         Icon as React.ElementType;
@@ -2234,6 +2265,45 @@ export function LandingPage({
 
               <Reveal delay={120}>
                 <ProcessingVisual />
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================================
+            ENHANCE SPEECH
+        ================================================================== */}
+        <section id="enhance-speech" aria-labelledby="enhance-speech-title" className="scroll-mt-20 relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32" style={lazySectionStyle}>
+          <Glow className="left-[-160px] top-[-120px] h-[520px] w-[520px] bg-cyan-400/[0.055]" />
+          <Glow className="right-[-180px] bottom-[-160px] h-[600px] w-[600px] bg-blue-500/[0.045]" />
+          <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
+            <div className="grid items-center gap-12 lg:grid-cols-[0.9fr_1.1fr]">
+              <Reveal>
+                <SectionLabel icon={AudioLines}>New · Enhance Speech</SectionLabel>
+                <h2 id="enhance-speech-title" className="mt-7 text-3xl font-black tracking-[-0.055em] sm:text-5xl">Cleaner voice.<br /><span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">Clearer message.</span></h2>
+                <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">Turn noisy recordings into cleaner, more professional dialogue. Enhance Speech is built for podcasts, interviews, tutorials, talking-head videos and creator content.</p>
+                <div className="mt-7 space-y-3">
+                  {speechEnhancementFeatures.map((item) => { const Icon = item.icon; return (
+                    <div key={item.title} className="flex items-center gap-3 rounded-2xl border border-white/[0.05] bg-white/[0.012] px-3 py-3 transition hover:border-cyan-300/10 hover:bg-white/[0.025]">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]"><Icon className="h-4 w-4 text-cyan-300" /></div>
+                      <div className="min-w-0"><p className="text-xs font-bold text-zinc-300">{item.title}</p><p className="mt-0.5 text-[10px] leading-5 text-zinc-700">{item.text}</p></div>
+                    </div>
+                  ); })}
+                </div>
+                <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <PremiumButton onClick={onGetStarted}>Enhance your speech</PremiumButton>
+                  <span className="text-[9px] font-medium text-zinc-700">Available inside your project workspace</span>
+                </div>
+              </Reveal>
+              <Reveal delay={100}>
+                <div className="relative overflow-hidden rounded-[32px] border border-white/[0.07] bg-[#080b10]/90 p-5 shadow-[0_40px_120px_rgba(0,0,0,0.4)]">
+                  <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent" />
+                  <div className="flex items-center justify-between gap-4"><div className="flex items-center gap-3"><div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]"><AudioLines className="h-4 w-4 text-cyan-300" /></div><div><p className="text-[10px] font-bold text-zinc-200">Speech enhancement</p><p className="mt-0.5 text-[8px] text-zinc-700">Audio cleanup workflow</p></div></div><span className="rounded-full border border-emerald-300/10 bg-emerald-400/[0.04] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-300">Ready</span></div>
+                  <div className="mt-6 rounded-[24px] border border-white/[0.055] bg-black/20 p-4"><div className="mb-3 flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-700">Original</span><span className="rounded-full bg-red-400/[0.06] px-2 py-1 text-[8px] text-red-300">Background noise</span></div><div className="flex h-16 items-center gap-[3px] overflow-hidden">{Array.from({length:58}).map((_,i)=><span key={i} className="w-1 shrink-0 rounded-full bg-white/[0.10]" style={{height:`${18+((i*37+13)%72)}%`}} />)}</div></div>
+                  <div className="flex items-center justify-center py-4"><div className="flex items-center gap-2 rounded-full border border-cyan-300/10 bg-cyan-400/[0.045] px-3 py-1.5"><Sparkles className="h-3 w-3 text-cyan-300" /><span className="text-[8px] font-bold uppercase tracking-[0.14em] text-cyan-200">AI audio processing</span></div></div>
+                  <div className="rounded-[24px] border border-cyan-300/10 bg-cyan-400/[0.018] p-4"><div className="mb-3 flex items-center justify-between"><span className="text-[9px] font-bold uppercase tracking-[0.16em] text-cyan-200">Enhanced</span><span className="rounded-full bg-emerald-400/[0.06] px-2 py-1 text-[8px] text-emerald-300">Clear voice</span></div><div className="flex h-16 items-center gap-[3px] overflow-hidden">{Array.from({length:58}).map((_,i)=><span key={i} className="w-1 shrink-0 rounded-full bg-cyan-300/45" style={{height:`${24+((i*23+19)%55)}%`}} />)}</div></div>
+                  <div className="mt-5 grid grid-cols-3 gap-2">{[["Noise","Reduced"],["Voice","Clearer"],["Loudness","Balanced"]].map(([title,value])=><div key={title} className="rounded-xl border border-white/[0.045] bg-white/[0.018] px-3 py-2.5"><p className="text-[8px] uppercase tracking-[0.12em] text-zinc-700">{title}</p><p className="mt-1 text-[10px] font-bold text-cyan-200">{value}</p></div>)}</div>
+                </div>
               </Reveal>
             </div>
           </div>
