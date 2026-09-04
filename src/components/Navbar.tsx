@@ -1268,355 +1268,253 @@ export const Navbar: React.FC<
                   </button>
 
                   {/* NOTIFICATION PANEL */}
+                  {notificationsOpen && (
+                    <div
+                      className="
+                        absolute right-0 top-full z-50 mt-3
+                        w-[420px] max-w-[calc(100vw-20px)]
+                        overflow-hidden rounded-[24px]
+                        border border-white/[0.10]
+                        bg-[#080a0f]/[0.985]
+                        shadow-[0_30px_100px_rgba(0,0,0,.78),0_0_45px_rgba(34,211,238,.045)]
+                        backdrop-blur-2xl
+                        animate-[dropdownIn_.2s_cubic-bezier(.16,1,.3,1)]
+                      "
+                    >
+                      {/* HEADER */}
+                      <div className="relative overflow-hidden border-b border-white/[0.07] px-5 py-4">
+                        <div className="pointer-events-none absolute -right-16 -top-24 h-48 w-48 rounded-full bg-cyan-400/[0.075] blur-3xl" />
+                        <div className="pointer-events-none absolute -left-20 -top-20 h-40 w-40 rounded-full bg-blue-500/[0.055] blur-3xl" />
 
-                  {/* PREMIUM NOTIFICATION PANEL */}
+                        <div className="relative flex items-center justify-between gap-4">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-cyan-400/[0.14] bg-cyan-400/[0.075] shadow-[0_0_30px_rgba(34,211,238,.08)]">
+                              <Bell className="h-[17px] w-[17px] text-cyan-300" />
+                              {unreadCount > 0 && (
+                                <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_10px_rgba(34,211,238,.95)]" />
+                              )}
+                            </div>
 
-{notificationsOpen && (
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-[13px] font-extrabold tracking-[-0.02em] text-white">
+                                  Activity
+                                </h3>
 
-  <div
-    className="
-      absolute right-0 top-full z-50 mt-3
-      w-[390px] max-w-[calc(100vw-24px)]
-      overflow-hidden
-      rounded-[22px]
-      border border-white/[0.10]
-      bg-[#08090d]/[0.97]
-      shadow-[0_25px_100px_rgba(0,0,0,.75),0_0_40px_rgba(34,211,238,.04)]
-      backdrop-blur-2xl
-      animate-[dropdownIn_.2s_cubic-bezier(.16,1,.3,1)]
-    "
-  >
-    {/* HEADER */}
-    <div className="relative overflow-hidden border-b border-white/[0.07] px-4 py-4">
-      {/* Ambient glow */}
-      <div className="pointer-events-none absolute -right-16 -top-20 h-40 w-40 rounded-full bg-cyan-400/[0.08] blur-3xl" />
-      <div className="pointer-events-none absolute -left-20 -top-24 h-32 w-32 rounded-full bg-blue-500/[0.05] blur-3xl" />
+                                {unreadCount > 0 && (
+                                  <span className="rounded-full border border-cyan-400/15 bg-cyan-400/[0.08] px-2 py-0.5 text-[7px] font-black uppercase tracking-[0.12em] text-cyan-300">
+                                    {unreadCount} new
+                                  </span>
+                                )}
+                              </div>
 
-      <div className="relative flex items-center justify-between">
-    <div className="flex items-center gap-3">
-      {/* Bell */}
-      <div
-        className="
-          relative flex h-9 w-9 items-center justify-center
-          rounded-xl
-          border border-cyan-400/[0.12]
-          bg-cyan-400/[0.07]
-          shadow-[0_0_25px_rgba(34,211,238,.05)]
-        "
-      >
-        <Bell className="h-4 w-4 text-cyan-300" />
+                              <p className="mt-1 text-[9px] font-medium leading-4 text-zinc-500">
+                                Stay up to date with your workspace
+                              </p>
+                            </div>
+                          </div>
 
-        {unreadCount > 0 && (
-          <span
-            className="
-              absolute -right-0.5 -top-0.5
-              h-2 w-2 rounded-full
-              bg-cyan-400
-              shadow-[0_0_10px_rgba(34,211,238,.9)]
-            "
-          />
-        )}
-      </div>
+                          <div className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-400/10 bg-emerald-400/[0.045] px-2 py-1">
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
+                              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                            </span>
+                            <span className="text-[7px] font-black uppercase tracking-[0.12em] text-emerald-400/80">
+                              Live
+                            </span>
+                          </div>
+                        </div>
 
-      <div>
-        <div className="flex items-center gap-2">
-          <p className="text-[12px] font-extrabold tracking-tight text-white">
-            Activity
-          </p>
+                        {unreadCount > 0 && (
+                          <div className="relative mt-4 flex items-center justify-between rounded-xl border border-cyan-400/[0.08] bg-cyan-400/[0.025] px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-cyan-400/[0.08] text-cyan-300">
+                                <Sparkles className="h-3 w-3" />
+                              </span>
+                              <div>
+                                <p className="text-[8px] font-bold text-zinc-300">
+                                  You have {unreadCount} unread {unreadCount === 1 ? "update" : "updates"}
+                                </p>
+                                <p className="mt-0.5 text-[7px] text-zinc-600">
+                                  Review your latest workspace activity
+                                </p>
+                              </div>
+                            </div>
 
-          {unreadCount > 0 && (
-            <span
-              className="
-                rounded-full
-                border border-cyan-400/[0.15]
-                bg-cyan-400/[0.08]
-                px-1.5 py-0.5
-                text-[7px] font-black
-                tracking-[0.12em]
-                text-cyan-300
-              "
-            >
-              {unreadCount} NEW
-            </span>
-          )}
-        </div>
+                            <button
+                              type="button"
+                              disabled={notificationAction === "all"}
+                              onClick={() => void handleMarkAllRead()}
+                              className="rounded-lg px-2 py-1.5 text-[7px] font-black uppercase tracking-[0.08em] text-cyan-400 transition hover:bg-cyan-400/[0.08] hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {notificationAction === "all" ? "Updating" : "Mark read"}
+                            </button>
+                          </div>
+                        )}
+                      </div>
 
-        <p className="mt-0.5 text-[8px] font-medium text-zinc-600">
-          Your latest workspace activity
-        </p>
-      </div>
-    </div>
+                      {/* NOTIFICATION LIST */}
+                      <div
+                        className="
+                          max-h-[470px]
+                          overflow-y-auto
+                          overscroll-contain
+                          scrollbar-thin
+                          scrollbar-track-transparent
+                          scrollbar-thumb-white/[0.08]
+                          hover:scrollbar-thumb-white/[0.14]
+                        "
+                      >
+                        {notificationsLoading && notifications.length === 0 ? (
+                          <div className="px-6 py-16 text-center">
+                            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-400/[0.10] bg-cyan-400/[0.04]">
+                              <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/[0.08] border-t-cyan-400" />
+                            </div>
+                            <p className="mt-4 text-[11px] font-bold text-zinc-400">
+                              Loading activity
+                            </p>
+                            <p className="mt-1 text-[8px] leading-4 text-zinc-600">
+                              Fetching your latest updates...
+                            </p>
+                          </div>
+                        ) : notifications.length === 0 ? (
+                          <div className="px-6 py-16 text-center">
+                            <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-[20px] border border-white/[0.07] bg-white/[0.025] shadow-[0_15px_50px_rgba(0,0,0,.28)]">
+                              <div className="absolute inset-0 rounded-[20px] bg-cyan-400/[0.035] blur-xl" />
+                              <Bell className="relative h-6 w-6 text-zinc-600" />
+                            </div>
+                            <p className="mt-5 text-[12px] font-extrabold text-zinc-300">
+                              You're all caught up
+                            </p>
+                            <p className="mx-auto mt-1.5 max-w-[240px] text-[9px] leading-4 text-zinc-600">
+                              No new activity right now. We'll notify you when something important happens.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="p-2">
+                            {notifications.map((notification) => {
+                              const isUnread = !notification.read;
+                              const isCompleted = notification.type === "project_completed";
+                              const isFailed = notification.type === "project_failed";
+                              const isRefunded = notification.type === "credits_refunded";
 
-    {/* LIVE INDICATOR */}
-    <div className="flex items-center gap-1.5">
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-50" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
-      </span>
+                              const statusLabel = isCompleted
+                                ? "Completed"
+                                : isFailed
+                                  ? "Failed"
+                                  : isRefunded
+                                    ? "Credits"
+                                    : "Processing";
 
-      <span className="text-[7px] font-bold uppercase tracking-[0.12em] text-zinc-600">
-        Live
-      </span>
-    </div>
-  </div>
-</div>
+                              const statusClass = isCompleted
+                                ? "border-emerald-400/10 bg-emerald-400/[0.06] text-emerald-300"
+                                : isFailed
+                                  ? "border-red-400/10 bg-red-400/[0.06] text-red-300"
+                                  : isRefunded
+                                    ? "border-amber-400/10 bg-amber-400/[0.06] text-amber-300"
+                                    : "border-cyan-400/10 bg-cyan-400/[0.06] text-cyan-300";
 
-{/* NOTIFICATION LIST */}
-<div
-  className="
-    max-h-[390px]
-    overflow-y-auto
-    overscroll-contain
-    scrollbar-thin
-    scrollbar-track-transparent
-    scrollbar-thumb-white/[0.08]
-    hover:scrollbar-thumb-white/[0.14]
-  "
->
-  {/* LOADING */}
-  {notificationsLoading && notifications.length === 0 ? (
-    <div className="px-5 py-14 text-center">
-      <div
-        className="
-          mx-auto flex h-11 w-11
-          items-center justify-center
-          rounded-2xl
-          border border-cyan-400/[0.08]
-          bg-cyan-400/[0.035]
-        "
-      >
-        <div
-          className="
-            h-5 w-5 animate-spin
-            rounded-full
-            border-2 border-white/[0.08]
-            border-t-cyan-400
-          "
-        />
-      </div>
+                              return (
+                                <button
+                                  key={notification.id}
+                                  type="button"
+                                  onClick={() => void handleNotificationClick(notification)}
+                                  aria-label={`${notification.title}${isUnread ? ", unread" : ""}`}
+                                  className={`group relative mb-1 flex w-full gap-3 rounded-[17px] border px-3.5 py-3.5 text-left transition-all duration-200 last:mb-0 ${
+                                    isUnread
+                                      ? "border-cyan-400/[0.10] bg-cyan-400/[0.035] hover:border-cyan-400/[0.16] hover:bg-cyan-400/[0.055]"
+                                      : "border-transparent bg-white/[0.012] hover:border-white/[0.06] hover:bg-white/[0.035]"
+                                  }`}
+                                >
+                                  {isUnread && (
+                                    <span className="absolute bottom-3 left-0 top-3 w-[2px] rounded-r-full bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,.65)]" />
+                                  )}
 
-      <p className="mt-3 text-[10px] font-semibold text-zinc-500">
-        Loading activity
-      </p>
+                                  <div
+                                    className={`relative mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-white/[0.06] transition-all duration-200 group-hover:scale-[1.04] ${getNotificationBg(notification.type)}`}
+                                  >
+                                    {getNotificationIcon(notification.type)}
 
-      <p className="mt-1 text-[8px] text-zinc-700">
-        Fetching your latest updates...
-      </p>
-    </div>
-  ) : notifications.length === 0 ? (
-    /* EMPTY STATE */
-    <div className="px-5 py-14 text-center">
-      <div
-        className="
-          relative mx-auto flex h-14 w-14
-          items-center justify-center
-          rounded-[18px]
-          border border-white/[0.07]
-          bg-white/[0.025]
-          shadow-[0_10px_40px_rgba(0,0,0,.25)]
-        "
-      >
-        <div className="absolute inset-0 rounded-[18px] bg-cyan-400/[0.025] blur-xl" />
+                                    {isUnread && (
+                                      <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#080a0f] bg-cyan-400 shadow-[0_0_9px_rgba(34,211,238,.85)]" />
+                                    )}
+                                  </div>
 
-        <Bell className="relative h-5 w-5 text-zinc-700" />
-      </div>
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <p
+                                        className={`line-clamp-1 text-[11px] leading-4 ${
+                                          isUnread
+                                            ? "font-extrabold text-white"
+                                            : "font-bold text-zinc-300"
+                                        }`}
+                                      >
+                                        {notification.title}
+                                      </p>
 
-      <p className="mt-4 text-[11px] font-bold text-zinc-400">
-        You're all caught up
-      </p>
+                                      <span className="shrink-0 pt-0.5 text-[8px] font-semibold text-zinc-600">
+                                        {formatTime(notification.created_at)}
+                                      </span>
+                                    </div>
 
-      <p className="mx-auto mt-1 max-w-[210px] text-[8px] leading-4 text-zinc-700">
-        Nothing new right now. We'll show your workspace activity here.
-      </p>
-    </div>
-  ) : (
-    /* ITEMS */
-    <div className="divide-y divide-white/[0.045]">
-      {notifications.map((notification) => (
-        <button
-          key={notification.id}
-          type="button"
-          onClick={() =>
-            void handleNotificationClick(notification)
-          }
-          className={`
-            group relative flex w-full gap-3
-            px-4 py-3.5
-            text-left
-            transition-all duration-200
-            hover:bg-white/[0.035]
-            active:bg-white/[0.05]
-            ${
-              !notification.read
-                ? "bg-cyan-400/[0.012]"
-                : "opacity-55 hover:opacity-80"
-            }
-          `}
-        >
-          {/* UNREAD SIDE LINE */}
-          {!notification.read && (
-            <span
-              className="
-                absolute left-0 top-2 bottom-2
-                w-[2px]
-                rounded-r-full
-                bg-cyan-400
-                shadow-[0_0_10px_rgba(34,211,238,.55)]
-              "
-            />
-          )}
+                                    <p className="mt-1 line-clamp-2 text-[9.5px] leading-[1.55] text-zinc-500 transition-colors group-hover:text-zinc-400">
+                                      {notification.message}
+                                    </p>
 
-          {/* ICON */}
-          <div
-            className={`
-              relative mt-0.5
-              flex h-10 w-10 shrink-0
-              items-center justify-center
-              rounded-[13px]
-              border border-white/[0.05]
-              transition-transform duration-200
-              group-hover:scale-[1.04]
-              ${getNotificationBg(notification.type)}
-            `}
-          >
-            {getNotificationIcon(notification.type)}
+                                    <div className="mt-2.5 flex items-center gap-2">
+                                      <span className={`rounded-full border px-1.5 py-0.5 text-[6.5px] font-black uppercase tracking-[0.10em] ${statusClass}`}>
+                                        {statusLabel}
+                                      </span>
 
-            {!notification.read && (
-              <span
-                className="
-                  absolute -right-1 -top-1
-                  h-2.5 w-2.5
-                  rounded-full
-                  border-2 border-[#08090d]
-                  bg-cyan-400
-                  shadow-[0_0_8px_rgba(34,211,238,.8)]
-                "
-              />
-            )}
-          </div>
+                                      {isUnread && (
+                                        <span className="flex items-center gap-1 text-[7px] font-bold uppercase tracking-[0.10em] text-cyan-400/75">
+                                          <span className="h-1 w-1 rounded-full bg-cyan-400" />
+                                          New
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
 
-          {/* CONTENT */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <p
-                className={`
-                  line-clamp-1
-                  text-[10.5px]
-                  leading-4
-                  ${
-                    !notification.read
-                      ? "font-extrabold text-white"
-                      : "font-bold text-zinc-300"
-                  }
-                `}
-              >
-                {notification.title}
-              </p>
+                                  <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-zinc-700 opacity-0 transition-all duration-200 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:text-cyan-400 group-hover:opacity-100" />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
 
-              <span
-                className="
-                  shrink-0
-                  pt-0.5
-                  text-[7px]
-                  font-medium
-                  text-zinc-700
-                "
-              >
-                {formatTime(notification.created_at)}
-              </span>
-            </div>
+                      {/* FOOTER */}
+                      <div className="border-t border-white/[0.07] bg-white/[0.012] px-4 py-2.5">
+                        <div className="flex items-center justify-between">
+                          <p className="text-[7px] font-semibold uppercase tracking-[0.12em] text-zinc-700">
+                            LumoClip activity
+                          </p>
 
-            <p
-              className="
-                mt-1
-                line-clamp-2
-                text-[8.5px]
-                leading-[1.55]
-                text-zinc-600
-                transition-colors
-                group-hover:text-zinc-500
-              "
-            >
-              {notification.message}
-            </p>
-
-            {/* UNREAD LABEL */}
-            {!notification.read && (
-              <div className="mt-2 flex items-center gap-1.5">
-                <span className="h-1 w-1 rounded-full bg-cyan-400" />
-
-                <span
-                  className="
-                    text-[7px]
-                    font-bold
-                    uppercase
-                    tracking-[0.12em]
-                    text-cyan-500/80
-                  "
-                >
-                  New activity
-                </span>
-              </div>
-            )}
-          </div>
-        </button>
-      ))}
-    </div>
-  )}
-</div>
-
-{/* FOOTER */}
-{unreadCount > 0 && (
-  <div
-    className="
-      border-t border-white/[0.07]
-      bg-white/[0.012]
-      p-2
-    "
-  >
-    <button
-      type="button"
-      disabled={notificationAction === "all"}
-      onClick={() => void handleMarkAllRead()}
-      className="
-        flex w-full
-        items-center justify-center
-        gap-2
-        rounded-xl
-        border border-white/[0.05]
-        bg-white/[0.025]
-        py-2.5
-        text-[8px]
-        font-black
-        uppercase
-        tracking-[0.15em]
-        text-zinc-500
-        transition-all duration-200
-        hover:border-cyan-400/[0.12]
-        hover:bg-cyan-400/[0.05]
-        hover:text-cyan-300
-        disabled:cursor-not-allowed
-        disabled:opacity-40
-      "
-    >
-      {notificationAction === "all" ? (
-        <>
-          <div className="h-3 w-3 animate-spin rounded-full border border-zinc-600 border-t-cyan-400" />
-          Updating...
-        </>
-      ) : (
-        <>
-          <Check className="h-3 w-3" />
-          Mark all as read
-        </>
-      )}
-    </button>
-  </div>
-)}
-
-  </div>
-)}
-</div>
+                          {unreadCount > 0 ? (
+                            <button
+                              type="button"
+                              disabled={notificationAction === "all"}
+                              onClick={() => void handleMarkAllRead()}
+                              className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[7px] font-black uppercase tracking-[0.10em] text-zinc-500 transition hover:bg-white/[0.04] hover:text-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                            >
+                              {notificationAction === "all" ? (
+                                <div className="h-2.5 w-2.5 animate-spin rounded-full border border-zinc-700 border-t-cyan-400" />
+                              ) : (
+                                <Check className="h-3 w-3" />
+                              )}
+                              {notificationAction === "all" ? "Updating" : "Mark all as read"}
+                            </button>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-[7px] font-bold uppercase tracking-[0.10em] text-emerald-400/60">
+                              <Check className="h-3 w-3" />
+                              All caught up
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* PROFILE */}
 
