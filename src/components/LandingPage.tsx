@@ -493,28 +493,239 @@ function PremiumButton({
 }
 
 /* ============================================================================
-   TOOL GRID (Opus-style small icon buttons)
+   TOOL GRID — OPUS-INSPIRED LUMOCLIP TOOL DOCK
+   Visual style intentionally follows the same product-dock language:
+   circular dark tiles, floating New badges, colorful tool marks,
+   compact labels, centered rows and premium hover states.
 ============================================================================ */
 
 type ToolGridItem = {
-  icon: React.ElementType;
+  id: string;
   label: string;
   badge?: "New";
+  accent: string;
 };
 
 const toolGridItems: ToolGridItem[] = [
-  { icon: Zap, label: "Long to shorts" },
-  { icon: Scissors, label: "Video editor" },
-  { icon: Subtitles, label: "AI captions", badge: "New" },
-  { icon: Film, label: "AI reframe", badge: "New" },
-  { icon: Mic2, label: "Auto SFX", badge: "New" },
-  { icon: Layers3, label: "Upscale", badge: "New" },
-  { icon: WandSparkles, label: "Video dubbing", badge: "New" },
-  { icon: BarChart3, label: "Enhance speech", badge: "New" },
-  { icon: Target, label: "Viral score", badge: "New" },
-  { icon: Clock3, label: "Remove silence", badge: "New" },
-  { icon: Download, label: "Social export", badge: "New" },
+  { id: "long-to-shorts", label: "Long to shorts", accent: "gold" },
+  { id: "video-editor", label: "Video editor", accent: "blue" },
+  { id: "ai-captions", label: "AI Captions", badge: "New", accent: "green" },
+  { id: "ai-producer", label: "AI Producer", badge: "Beta", accent: "cyan" },
+  { id: "ai-b-roll", label: "AI B-Roll", badge: "New", accent: "violet" },
+
+  { id: "ai-reframe", label: "AI Reframe", accent: "blue" },
+  { id: "auto-sfx", label: "Auto SFX", badge: "New", accent: "violet" },
+  { id: "upscale", label: "Upscale", badge: "New", accent: "diamond" },
+  { id: "video-dubbing", label: "Video dubbing", badge: "New", accent: "sky" },
+
+  { id: "enhance-speech", label: "Enhance speech", accent: "wave" },
+  { id: "voiceover-hook", label: "Voiceover hook", accent: "orange" },
+  { id: "script-to-video", label: "Script to video", badge: "New", accent: "paper" },
 ];
+
+function ToolLogo({ accent }: { accent: string }) {
+  const common =
+    "transition-transform duration-300 group-hover:scale-110";
+
+  if (accent === "gold") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <path
+          d="M24 3l4.3 13.7L42 21l-13.7 4.3L24 39l-4.3-13.7L6 21l13.7-4.3L24 3z"
+          fill="currentColor"
+          className="text-amber-300"
+        />
+        <path
+          d="M38 30l1.7 5.3L45 37l-5.3 1.7L38 44l-1.7-5.3L31 37l5.3-1.7L38 30z"
+          fill="currentColor"
+          className="text-yellow-100"
+        />
+      </svg>
+    );
+  }
+
+  if (accent === "green") {
+    return (
+      <span
+        className={`flex h-9 w-9 items-center justify-center rounded-md bg-emerald-400 text-[19px] font-black leading-none text-black ${common}`}
+      >
+        CC
+      </span>
+    );
+  }
+
+  if (accent === "cyan") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <rect x="7" y="8" width="25" height="20" rx="4" fill="#67e8f9" opacity=".95" />
+        <path d="M13 31h25c2.2 0 4 1.8 4 4v5H13c-2.2 0-4-1.8-4-4v-5h4z" fill="#d9f7ff" />
+        <path d="M17 36h13" stroke="#111827" strokeWidth="3" strokeLinecap="round" />
+        <path d="M28 20l5 4-5 4" fill="none" stroke="#0b1220" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        <circle cx="35" cy="15" r="4" fill="#f8fafc" />
+        <path d="M35 12v6M32 15h6" stroke="#38bdf8" strokeWidth="2" strokeLinecap="round" />
+      </svg>
+    );
+  }
+
+  if (accent === "violet") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <path
+          d="M12 9h24v30H12z"
+          fill="#8b5cf6"
+          opacity=".25"
+          transform="rotate(-8 24 24)"
+        />
+        <path
+          d="M10 12l7 5-3 8 8 5-3 8-8-5 3-8-7-5 3-8z"
+          fill="#c4b5fd"
+        />
+        <path
+          d="M29 8l3 8 8 3-8 3-3 8-3-8-8-3 8-3 3-8z"
+          fill="#f5f3ff"
+        />
+        <circle cx="35" cy="36" r="4" fill="#a78bfa" />
+      </svg>
+    );
+  }
+
+  if (accent === "diamond") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <path
+          d="M7 18l7-9h20l7 9-17 22L7 18z"
+          fill="#67e8f9"
+        />
+        <path
+          d="M7 18h34L24 40 7 18z"
+          fill="#22d3ee"
+          opacity=".5"
+        />
+        <path
+          d="M14 9l10 9 10-9M7 18h34"
+          fill="none"
+          stroke="#e0f2fe"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M18 18l6 22 6-22"
+          fill="none"
+          stroke="#ffffff"
+          strokeWidth="1.5"
+          opacity=".65"
+        />
+      </svg>
+    );
+  }
+
+  if (accent === "wave") {
+    return (
+      <svg viewBox="0 0 56 48" className={`h-9 w-10 ${common}`} aria-hidden="true">
+        <path
+          d="M3 27h5l4-11 5 22 6-31 6 35 5-25 5 16h8"
+          fill="none"
+          stroke="#38bdf8"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M3 34h50"
+          stroke="#0ea5e9"
+          strokeWidth="1.5"
+          opacity=".35"
+        />
+      </svg>
+    );
+  }
+
+  if (accent === "orange") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <path
+          d="M15 30c0-9 4-15 10-15 5 0 8 3 8 8 0 4-2 6-5 8-3 2-5 4-5 7H12c0-3 1-6 3-8z"
+          fill="#fb923c"
+        />
+        <path
+          d="M10 35c3-2 5-2 8 0"
+          fill="none"
+          stroke="#fed7aa"
+          strokeWidth="3"
+          strokeLinecap="round"
+        />
+        <path
+          d="M33 21c4 0 7 2 7 6 0 4-3 6-7 6"
+          fill="none"
+          stroke="#67e8f9"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M39 22v10"
+          stroke="#38bdf8"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+
+  if (accent === "paper") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <path
+          d="M9 5h21l9 9v29H9z"
+          fill="#f8fafc"
+          opacity=".95"
+        />
+        <path d="M30 5v10h9" fill="#cbd5e1" />
+        <rect x="22" y="27" width="17" height="11" rx="2" fill="#38bdf8" />
+        <path d="M29 30l5 2.5-5 2.5z" fill="#0f172a" />
+        <path
+          d="M14 18h10M14 23h8"
+          stroke="#94a3b8"
+          strokeWidth="2"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+
+  if (accent === "sky") {
+    return (
+      <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+        <circle cx="24" cy="24" r="18" fill="#38bdf8" opacity=".18" />
+        <circle cx="24" cy="24" r="15" fill="none" stroke="#7dd3fc" strokeWidth="2" />
+        <path
+          d="M9 24h30M24 9c5 5 7 10 7 15s-2 10-7 15c-5-5-7-10-7-15s2-10 7-15z"
+          fill="none"
+          stroke="#67e8f9"
+          strokeWidth="1.8"
+        />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 48 48" className={`h-9 w-9 ${common}`} aria-hidden="true">
+      <rect x="8" y="11" width="25" height="25" rx="5" fill="#60a5fa" opacity=".8" />
+      <path
+        d="M15 17h12v12H15z"
+        fill="none"
+        stroke="#0f172a"
+        strokeWidth="4"
+      />
+      <path
+        d="M20 14h14v14"
+        fill="none"
+        stroke="#22d3ee"
+        strokeWidth="3"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
 
 function ToolGridButton({
   item,
@@ -523,28 +734,42 @@ function ToolGridButton({
   item: ToolGridItem;
   onClick?: () => void;
 }) {
-  const Icon = item.icon;
+  const badgeLabel = item.badge;
 
   return (
     <button
       type="button"
       onClick={onClick}
-      className="group flex w-[84px] flex-col items-center gap-2 focus:outline-none"
+      aria-label={item.label}
+      className="group relative flex w-[108px] flex-col items-center gap-2.5 rounded-2xl py-1 focus:outline-none"
     >
-      <span className="relative flex h-14 w-14 items-center justify-center rounded-full border border-white/[0.06] bg-white/[0.03] transition-all duration-200 group-hover:-translate-y-0.5 group-hover:border-cyan-300/20 group-hover:bg-white/[0.06]">
-        {item.badge && (
-          <span className="absolute -top-1.5 rounded-full bg-cyan-300 px-1.5 py-[1px] text-[7px] font-bold uppercase tracking-wide text-black">
-            {item.badge}
+      <span
+        className="absolute inset-x-2 top-2 h-16 rounded-full opacity-0 blur-2xl transition-all duration-300 group-hover:opacity-100"
+        style={{
+          background:
+            item.accent === "green"
+              ? "rgba(52,211,153,.22)"
+              : item.accent === "gold"
+                ? "rgba(250,204,21,.18)"
+                : "rgba(56,189,248,.18)",
+        }}
+      />
+
+      <span className="relative flex h-[74px] w-[74px] items-center justify-center rounded-full border border-white/[0.055] bg-[#17181c] shadow-[0_12px_35px_rgba(0,0,0,.34)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-white/[0.12] group-hover:bg-[#1d1f24] group-hover:shadow-[0_18px_45px_rgba(0,0,0,.45)]">
+        <span className="absolute inset-[7px] rounded-full bg-[#202126] shadow-[inset_0_1px_0_rgba(255,255,255,.035)]" />
+
+        <span className="relative z-10 flex h-12 w-12 items-center justify-center">
+          <ToolLogo accent={item.accent} />
+        </span>
+
+        {badgeLabel && (
+          <span className="absolute -right-1 -top-2 z-30 rounded-lg bg-[#292b30] px-2.5 py-1.5 text-[10px] font-bold leading-none text-white shadow-[0_6px_16px_rgba(0,0,0,.4)]">
+            {badgeLabel}
           </span>
         )}
-
-        <Icon
-          aria-hidden="true"
-          className="h-5 w-5 text-zinc-400 transition-colors duration-200 group-hover:text-cyan-200"
-        />
       </span>
 
-      <span className="text-center text-[10px] leading-tight text-zinc-500 transition-colors duration-200 group-hover:text-zinc-300">
+      <span className="relative z-10 max-w-[108px] text-center text-[13px] font-semibold leading-[1.2] tracking-[-0.01em] text-zinc-300 transition-colors duration-200 group-hover:text-white">
         {item.label}
       </span>
     </button>
@@ -556,14 +781,27 @@ function ToolGrid({
 }: {
   onSelect?: (label: string) => void;
 }) {
+  const rows = [
+    toolGridItems.slice(0, 5),
+    toolGridItems.slice(5, 9),
+    toolGridItems.slice(9, 11),
+  ];
+
   return (
-    <div className="flex flex-wrap items-start justify-center gap-x-3 gap-y-5 sm:gap-x-5">
-      {toolGridItems.map((item) => (
-        <ToolGridButton
-          key={item.label}
-          item={item}
-          onClick={() => onSelect?.(item.label)}
-        />
+    <div className="mx-auto flex max-w-[700px] flex-col items-center gap-8 sm:gap-10">
+      {rows.map((row, rowIndex) => (
+        <div
+          key={`tool-row-${rowIndex}`}
+          className="flex flex-wrap items-start justify-center gap-x-5 gap-y-7 sm:gap-x-8 sm:gap-y-8"
+        >
+          {row.map((item) => (
+            <ToolGridButton
+              key={item.id}
+              item={item}
+              onClick={() => onSelect?.(item.label)}
+            />
+          ))}
+        </div>
       ))}
     </div>
   );
@@ -3162,6 +3400,19 @@ export function LandingPage({
         ::selection {
           background: rgba(34, 211, 238, 0.25);
           color: white;
+        }
+
+        @keyframes toolDockPulse {
+          0%,
+          100% {
+            transform: scale(1);
+            opacity: 0.65;
+          }
+
+          50% {
+            transform: scale(1.08);
+            opacity: 1;
+          }
         }
 
         @keyframes floatA {
