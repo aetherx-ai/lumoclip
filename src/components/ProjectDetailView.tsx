@@ -294,11 +294,14 @@ const HeroVideo: React.FC<{
   progress: number;
   completed: boolean;
   failed: boolean;
+  /** When speech enhancement is actively running, override the caption text. */
+  speechEnhancing?: boolean;
 }> = ({
   project,
   progress,
   completed,
   failed,
+  speechEnhancing = false,
 }) => {
   const sourceUrl =
     (project as any).source_media_url ||
@@ -351,10 +354,27 @@ const HeroVideo: React.FC<{
               Captions
             </span>
           )}
+
+          {speechEnhancing && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/20 bg-cyan-500/20 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-[0.12em] text-cyan-200 backdrop-blur-xl">
+              <AudioWaveform className="h-3 w-3 animate-pulse" />
+              Enhancing speech
+            </span>
+          )}
         </div>
 
         <div className="absolute bottom-5 left-5 right-5">
-          {!completed && !failed && (
+          {speechEnhancing ? (
+            <>
+              <p className="text-sm font-semibold text-white sm:text-base">
+                Enhancing your speech
+              </p>
+
+              <p className="mt-1 text-[10px] text-zinc-300">
+                Removing noise and balancing voice levels...
+              </p>
+            </>
+          ) : !completed && !failed ? (
             <>
               <p className="text-sm font-semibold text-white sm:text-base">
                 {fullVideoMode
@@ -367,9 +387,7 @@ const HeroVideo: React.FC<{
                   "Analyzing your content..."}
               </p>
             </>
-          )}
-
-          {completed && (
+          ) : completed ? (
             <>
               <p className="text-sm font-semibold text-white sm:text-base">
                 Your content is ready
@@ -381,22 +399,27 @@ const HeroVideo: React.FC<{
                   : "AI-generated content"}
               </p>
             </>
-          )}
-
-          {failed && (
+          ) : (
             <p className="text-sm font-semibold text-red-200">
               Processing failed
             </p>
           )}
         </div>
 
-        {!completed && !failed && (
+        {(speechEnhancing || (!completed && !failed)) && (
           <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10">
             <div
-              className="h-full bg-violet-500 transition-all duration-700"
-              style={{
-                width: `${progress}%`,
-              }}
+              className={[
+                "h-full transition-all duration-700",
+                speechEnhancing
+                  ? "w-1/2 animate-pulse bg-cyan-400"
+                  : "bg-violet-500",
+              ].join(" ")}
+              style={
+                speechEnhancing
+                  ? undefined
+                  : { width: `${progress}%` }
+              }
             />
           </div>
         )}
@@ -421,18 +444,22 @@ const HeroVideo: React.FC<{
    ENHANCE SPEECH
 ========================================================= */
 
-const EnhanceSpeechPanel: React.FC<{
+interface EnhanceSpeechPanelProps {
   project: Project;
   isPremium?: boolean;
   onUpgrade?: () => void;
-}> = ({
+  /** Lifted up so the rest of the page can react to this action running. */
+  status: SpeechEnhanceStatus;
+  onStatusChange: (status: SpeechEnhanceStatus) => void;
+}
+
+const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
   project,
   isPremium = false,
   onUpgrade,
+  status,
+  onStatusChange: setStatus,
 }) => {
-  const [status, setStatus] =
-    useState<SpeechEnhanceStatus>("idle");
-
   const [outputUrl, setOutputUrl] =
     useState("");
 
@@ -522,15 +549,6 @@ const EnhanceSpeechPanel: React.FC<{
       window.clearInterval(timer);
     };
   }, [status]);
-
-  const selectedClip =
-    selectedClipId
-      ? ((project as any).__clipsForSpeech || []).find(
-          (clip: Clip) =>
-            String(clip.id) ===
-            String(selectedClipId),
-        )
-      : null;
 
   /*
    * NOTE:
@@ -1583,6 +1601,143 @@ const Pipeline: React.FC<{
 };
 
 /* =========================================================
+   SPEECH ENHANCEMENT PIPELINE
+   (Shown instead of the clip-generation Pipeline while an
+   Enhance Speech job is actively running, so the person sees
+   the action they actually triggered.)
+========================================================= */
+
+const SpeechPipeline: React.FC = () => {
+  const steps = [
+    {
+      label: "Audio received",
+      description: "Source track queued for enhancement",
+      state: "done" as const,
+    },
+    {
+      label: "Reducing noise",
+      description: "Removing background hiss and hum",
+      state: "active" as const,
+    },
+    {
+      label: "Balancing voice levels",
+      description: "Normalizing loudness across the track",
+      state: "pending" as const,
+    },
+    {
+      label: "Finalizing audio",
+      description: "Re-muxing enhanced audio with your video",
+      state: "pending" as const,
+    },
+  ];
+
+  return (
+    <Surface className="h-full p-5 sm:p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-cyan-400">
+            Live pipeline
+          </p>
+
+          <h3 className="mt-1 text-base font-semibold text-white">
+            Enhancing speech
+          </h3>
+        </div>
+
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/10 bg-cyan-500/[0.05] px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-cyan-300">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+          Live
+        </span>
+      </div>
+
+      <div className="mt-7 space-y-1">
+        {steps.map((step, index) => {
+          const done = step.state === "done";
+          const active = step.state === "active";
+
+          return (
+            <div
+              key={step.label}
+              className="relative flex gap-3"
+            >
+              {index < steps.length - 1 && (
+                <div
+                  className={[
+                    "absolute left-[13px] top-7 h-[calc(100%-4px)] w-px",
+                    done
+                      ? "bg-emerald-500/25"
+                      : "bg-white/[0.05]",
+                  ].join(" ")}
+                />
+              )}
+
+              <div
+                className={[
+                  "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border",
+                  done
+                    ? "border-emerald-400/20 bg-emerald-400/[0.08]"
+                    : active
+                    ? "border-cyan-400/20 bg-cyan-500/[0.08]"
+                    : "border-white/[0.06] bg-white/[0.02]",
+                ].join(" ")}
+              >
+                {done ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : active ? (
+                  <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-700" />
+                )}
+              </div>
+
+              <div
+                className={[
+                  "mb-3 flex-1 rounded-xl px-3 py-2",
+                  active
+                    ? "bg-cyan-500/[0.035]"
+                    : "",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p
+                    className={[
+                      "text-[10px] font-medium sm:text-[11px]",
+                      done
+                        ? "text-zinc-300"
+                        : active
+                        ? "text-white"
+                        : "text-zinc-600",
+                    ].join(" ")}
+                  >
+                    {step.label}
+                  </p>
+
+                  {done && (
+                    <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-400">
+                      Done
+                    </span>
+                  )}
+
+                  {active && (
+                    <span className="text-[7px] font-bold uppercase tracking-wider text-cyan-400">
+                      Working
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-1 text-[9px] leading-5 text-zinc-700">
+                  {step.description}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Surface>
+  );
+};
+
+/* =========================================================
    CLIP CARD
 ========================================================= */
 
@@ -2302,6 +2457,18 @@ export const ProjectDetailView: React.FC<
       | null
     >(null);
 
+  /*
+   * Lifted up from EnhanceSpeechPanel so the header, hero video,
+   * and pipeline can all reflect "Enhancing speech" while that
+   * specific action is running — instead of always showing the
+   * generic clip-generation pipeline ("Creating short clips").
+   */
+  const [speechStatus, setSpeechStatus] =
+    useState<SpeechEnhanceStatus>("idle");
+
+  const isEnhancingSpeech =
+    speechStatus === "processing";
+
   const safeClips = Array.isArray(clips)
     ? clips
     : [];
@@ -2314,16 +2481,12 @@ export const ProjectDetailView: React.FC<
       : "processing";
 
   /*
-   * EnhanceSpeechPanel is intentionally rendered only
-   * when the project has completed.
+   * Pass clips to the speech panel without changing
+   * your Project type/interface.
    */
   const projectForSpeech =
     project as any;
 
-  /*
-   * Pass clips to the speech panel without changing
-   * your Project type/interface.
-   */
   projectForSpeech.__clipsForSpeech =
     safeClips;
 
@@ -2356,10 +2519,17 @@ export const ProjectDetailView: React.FC<
                       "Untitled Project"}
                   </h1>
 
-                  <StatusBadge
-                    status={badgeStatus}
-                    progress={progress}
-                  />
+                  {isEnhancingSpeech ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/15 bg-cyan-400/[0.08] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-cyan-300">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+                      Enhancing speech
+                    </span>
+                  ) : (
+                    <StatusBadge
+                      status={badgeStatus}
+                      progress={progress}
+                    />
+                  )}
 
                   {isFullVideoMode && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/10 bg-indigo-500/[0.07] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.12em] text-indigo-300">
@@ -2393,15 +2563,16 @@ export const ProjectDetailView: React.FC<
                     </>
                   )}
 
-                  {isCompleted && (
-                    <>
-                      <span>•</span>
+                  {isCompleted &&
+                    !isEnhancingSpeech && (
+                      <>
+                        <span>•</span>
 
-                      <span className="text-emerald-500/70">
-                        AI optimized
-                      </span>
-                    </>
-                  )}
+                        <span className="text-emerald-500/70">
+                          AI optimized
+                        </span>
+                      </>
+                    )}
                 </div>
               </div>
             </div>
@@ -2462,7 +2633,7 @@ export const ProjectDetailView: React.FC<
         </header>
 
         {/* =====================================================
-            PROCESSING
+            PROCESSING (clip generation still running)
         ====================================================== */}
 
         {isProcessing && (
@@ -2599,43 +2770,95 @@ export const ProjectDetailView: React.FC<
 
         {isCompleted && (
           <>
-            <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-emerald-400/10 bg-emerald-500/[0.035] px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div
+              className={[
+                "mb-4 flex flex-col gap-3 rounded-2xl border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5",
+                isEnhancingSpeech
+                  ? "border-cyan-400/10 bg-cyan-500/[0.035]"
+                  : "border-emerald-400/10 bg-emerald-500/[0.035]",
+              ].join(" ")}
+            >
               <div className="flex items-center gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/[0.08]">
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                <div
+                  className={[
+                    "flex h-9 w-9 items-center justify-center rounded-xl",
+                    isEnhancingSpeech
+                      ? "bg-cyan-500/[0.08]"
+                      : "bg-emerald-500/[0.08]",
+                  ].join(" ")}
+                >
+                  {isEnhancingSpeech ? (
+                    <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                  )}
                 </div>
 
                 <div>
-                  <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-emerald-400">
-                    AI processing complete
+                  <p
+                    className={[
+                      "text-[8px] font-bold uppercase tracking-[0.18em]",
+                      isEnhancingSpeech
+                        ? "text-cyan-400"
+                        : "text-emerald-400",
+                    ].join(" ")}
+                  >
+                    {isEnhancingSpeech
+                      ? "Audio enhancement running"
+                      : "AI processing complete"}
                   </p>
 
                   <p className="mt-1 text-sm font-semibold text-white">
-                    {isFullVideoMode
+                    {isEnhancingSpeech
+                      ? "Cleaning up your audio..."
+                      : isFullVideoMode
                       ? "Your captioned video is ready"
                       : "Your content is ready to publish"}
                   </p>
                 </div>
               </div>
 
-              <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/10 bg-emerald-500/[0.07] px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-emerald-300">
-                <Check className="h-3 w-3" />
-                Ready
-              </span>
+              {isEnhancingSpeech ? (
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-cyan-400/10 bg-cyan-500/[0.07] px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-cyan-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+                  Working
+                </span>
+              ) : (
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/10 bg-emerald-500/[0.07] px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-emerald-300">
+                  <Check className="h-3 w-3" />
+                  Ready
+                </span>
+              )}
             </div>
 
             {isFullVideoMode ? (
               <>
-                <FullCaptionedVideoResult
-                  project={project}
-                  onPublish={() =>
-                    setPublishTarget({
-                      kind: "project",
-                    })
-                  }
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
-                />
+                <div className="grid gap-4 xl:grid-cols-12">
+                  <div
+                    className={
+                      isEnhancingSpeech
+                        ? "xl:col-span-7"
+                        : "xl:col-span-12"
+                    }
+                  >
+                    <FullCaptionedVideoResult
+                      project={project}
+                      onPublish={() =>
+                        setPublishTarget({
+                          kind: "project",
+                        })
+                      }
+                      isPremium={isPremium}
+                      onUpgrade={onUpgrade}
+                    />
+                  </div>
+
+                  {isEnhancingSpeech && (
+                    <div className="xl:col-span-5">
+                      <SpeechPipeline />
+                    </div>
+                  )}
+                </div>
 
                 <div className="mt-4">
                   <PremiumStats
@@ -2644,27 +2867,38 @@ export const ProjectDetailView: React.FC<
                   />
                 </div>
 
-                {/* NEW */}
                 <EnhanceSpeechPanel
                   project={project}
                   isPremium={isPremium}
                   onUpgrade={onUpgrade}
+                  status={speechStatus}
+                  onStatusChange={setSpeechStatus}
                 />
               </>
             ) : (
               <>
                 <div className="grid gap-4 xl:grid-cols-12">
-                  <div className="xl:col-span-7">
+                  <div
+                    className={
+                      isEnhancingSpeech
+                        ? "xl:col-span-7"
+                        : "xl:col-span-7"
+                    }
+                  >
                     <SourceVideo
                       project={project}
                     />
                   </div>
 
                   <div className="xl:col-span-5">
-                    <CompletedOverview
-                      project={project}
-                      clips={safeClips}
-                    />
+                    {isEnhancingSpeech ? (
+                      <SpeechPipeline />
+                    ) : (
+                      <CompletedOverview
+                        project={project}
+                        clips={safeClips}
+                      />
+                    )}
                   </div>
                 </div>
 
@@ -2683,13 +2917,17 @@ export const ProjectDetailView: React.FC<
                 </div>
 
                 {/* =================================================
-                    NEW ENHANCE SPEECH
+                    ENHANCE SPEECH
+                    (status is lifted so the header/hero/pipeline
+                    above react to it too)
                 ================================================== */}
 
                 <EnhanceSpeechPanel
                   project={project}
                   isPremium={isPremium}
                   onUpgrade={onUpgrade}
+                  status={speechStatus}
+                  onStatusChange={setSpeechStatus}
                 />
 
                 <ClipsSection
