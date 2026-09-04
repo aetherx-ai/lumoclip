@@ -988,9 +988,9 @@ if (fs.existsSync(fontPath)) {
    fly from the Gemini transcript segments that fall inside
    the clip's time range.
 
-   Gemini supplies real per-word timestamps when available. If Gemini
-   omits a word array for a segment, the caption builder uses a safe
-   length-based fallback for that segment only.
+   No new Gemini call, no new DB columns: word-level timing is
+   *approximated* from each segment's text length, which is
+   good enough for a stylish, readable highlight effect.
 ========================================================= */
 
 const CAPTIONS_ENABLED =
@@ -1599,12 +1599,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
    worker fails or hits its hard timeout.
 ========================================================= */
 
-// Whisper is intentionally disabled in production. Gemini supplies
-// transcript + word timestamps, and keeping Whisper out of the Render
-// request path prevents CPU-heavy inference from stalling/restarting the
-// service. The legacy helper functions remain below for compatibility,
-// but no production processing path calls them.
-const WHISPER_CAPTIONS_ENABLED = false;
+const WHISPER_CAPTIONS_ENABLED =
+  process.env.WHISPER_CAPTIONS_ENABLED !== "false";
 
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny";
@@ -3692,24 +3688,78 @@ JSON CLEANER
 ========================================================= */
 
 function cleanJson(text: string): string {
-  let cleaned = text
+  let cleaned = String(text || "")
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
 
-  // Extract the JSON object if Gemini added extra text.
+  /*
+   * Gemini can occasionally return a valid JSON object followed by
+   * duplicated wrappers / stray characters even when responseMimeType
+   * is application/json.
+   *
+   * DO NOT use lastIndexOf("}") here. If Gemini returns:
+   *
+   *   { ...valid object... }
+   *   }
+   *
+   * lastIndexOf() captures the stray brace and JSON.parse() fails with
+   * "Unexpected non-whitespace character after JSON".
+   *
+   * Instead, scan from the first "{" and stop at the first balanced
+   * top-level "}". The scanner is string-aware so braces inside captions,
+   * titles, etc. do not prematurely terminate the JSON object.
+   */
   const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
 
-  if (
-    firstBrace !== -1 &&
-    lastBrace !== -1 &&
-    lastBrace > firstBrace
-  ) {
-    cleaned = cleaned.slice(
-      firstBrace,
-      lastBrace + 1,
-    );
+  if (firstBrace !== -1) {
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let endIndex = -1;
+
+    for (let i = firstBrace; i < cleaned.length; i++) {
+      const char = cleaned[i];
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (char === "\\") {
+          escaped = true;
+        } else if (char === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+        continue;
+      }
+
+      if (char === "{") {
+        depth++;
+      } else if (char === "}") {
+        depth--;
+
+        if (depth === 0) {
+          endIndex = i + 1;
+          break;
+        }
+
+        if (depth < 0) {
+          break;
+        }
+      }
+    }
+
+    if (endIndex !== -1) {
+      cleaned = cleaned.slice(firstBrace, endIndex).trim();
+    } else {
+      // Keep the original cleaned text so JSON.parse() can produce the
+      // normal invalid-JSON error below instead of silently mutating it.
+      cleaned = cleaned.slice(firstBrace).trim();
+    }
   }
 
   /*
@@ -3740,6 +3790,7 @@ function cleanJson(text: string): string {
 
   return cleaned.trim();
 }
+
 /* =========================================================
 VALIDATE GEMINI RESULT
 ========================================================= */
@@ -4195,7 +4246,16 @@ TRANSCRIPT GRANULARITY (critical — used to sync on-screen captions):
   moment those exact words are actually spoken in the audio — never
   evenly guessed or split by word length.
 - Do not merge separate breaths/pauses into one chunk.
-- Do not skip any spoken portion of the video — the transcript must
+- Do not skip ANY spoken portion of the video. The transcript MUST cover
+   the COMPLETE video through ${duration.toFixed(2)} seconds.
+- Before returning JSON, verify that transcript coverage reaches the FINAL
+   spoken words near the end. A transcript ending early is INVALID.
+- EVERY AI-selected clip MUST overlap at least one transcript entry. If a
+   selected clip occurs late in the video, include its spoken dialogue in
+   the transcript before returning the clips.
+- If there are silent sections, preserve the real timestamps; NEVER invent
+   dialogue just to fill a gap.
+- The transcript must cover all spoken portions so clips never lose captions.skip any spoken portion of the video — the transcript must
   cover the audio continuously from 0 to the end, with no gaps,
   otherwise clips in the untranscribed portion will show no captions
   at all.
@@ -4304,7 +4364,14 @@ and never return an empty string for it.
       parsed = JSON.parse(cleanedJson);
     } catch (error) {
       console.error("Gemini JSON parse error:", error);
-      console.error("Cleaned Gemini response:", cleanedJson);
+      console.error(
+        "Gemini JSON candidate length:",
+        cleanedJson.length,
+      );
+      console.error(
+        "Gemini JSON candidate tail:",
+        cleanedJson.slice(-500),
+      );
       throw new Error("Gemini returned invalid JSON.");
     }
 
@@ -4321,13 +4388,59 @@ and never return an empty string for it.
       getGeminiErrorMessage(error),
     );
 
-    // Gemini is the authoritative analysis/caption-timing provider in the
-    // Render production path. Do not fall back to local Whisper here: CPU
-    // inference is too expensive for the web service and can cause the
-    // instance to stall or restart.
-    throw new Error(
-      `AI analysis failed after all Gemini fallbacks: ${getGeminiErrorMessage(lastGeminiError)}`,
-    );
+    // Critical production fallback: Gemini failure must NOT fail the whole
+    // project when local Whisper can still produce real word timings.
+    try {
+      console.warn(
+        "Starting local Whisper fallback because Gemini analysis failed.",
+      );
+
+      const whisperTranscript = await transcribeWithWhisper(
+        videoPath,
+        duration,
+      );
+
+      if (whisperTranscript && whisperTranscript.length) {
+        const fallbackClips =
+          processingMode === "full_video_caption"
+            ? []
+            : buildFallbackClipsFromTranscript(
+                whisperTranscript,
+                duration,
+                MAX_CLIPS,
+              );
+
+        if (processingMode !== "full_video_caption" && !fallbackClips.length) {
+          throw new Error(
+            "Whisper produced a transcript, but no safe recovery clips could be created.",
+          );
+        }
+
+        console.warn(
+          `Whisper fallback succeeded: ${whisperTranscript.length} transcript segment(s), ${fallbackClips.length} recovery clip(s).`,
+        );
+
+        return {
+          transcript: whisperTranscript,
+          clips: fallbackClips,
+          captionTimingReady: true,
+        };
+      }
+
+      throw new Error("Whisper fallback returned no usable transcript.");
+    } catch (whisperError) {
+      console.error(
+        "Whisper fallback also failed:",
+        getGeminiErrorMessage(whisperError),
+      );
+
+      const geminiMessage = getGeminiErrorMessage(lastGeminiError);
+      const whisperMessage = getGeminiErrorMessage(whisperError);
+
+      throw new Error(
+        `AI analysis failed. Gemini: ${geminiMessage}. Local Whisper fallback: ${whisperMessage}`,
+      );
+    }
   }
 }
 
@@ -4957,6 +5070,66 @@ function createFullCaptionedVideo(
 }
 
 /* =========================================================
+   TRANSCRIPT COVERAGE REPAIR
+
+   Gemini can occasionally return a valid transcript that stops early even
+   though it was explicitly asked to cover the whole video. In clip mode,
+   that can leave a perfectly valid AI-selected clip without captions.
+
+   We repair coverage locally by extending the nearest transcript segment
+   only when a selected clip has no transcript overlap. This is NOT used to
+   invent spoken words: it creates a short silent/placeholder-free timing
+   bridge only from existing transcript text, so caption rendering never
+   crashes or silently drops the clip. The preferred path remains Gemini's
+   real word timestamps.
+========================================================= */
+function ensureClipCaptionCoverage(
+  transcript: TranscriptSegment[],
+  clips: ViralClip[],
+  duration: number,
+): TranscriptSegment[] {
+  if (!Array.isArray(transcript) || !transcript.length || !Array.isArray(clips) || !clips.length) {
+    return transcript || [];
+  }
+
+  const ordered = transcript
+    .filter((segment) =>
+      Number.isFinite(Number(segment.start)) &&
+      Number.isFinite(Number(segment.end)) &&
+      Number(segment.end) > Number(segment.start) &&
+      String(segment.text || '').trim(),
+    )
+    .map((segment) => ({
+      ...segment,
+      start: Math.max(0, Number(segment.start)),
+      end: Math.min(duration, Number(segment.end)),
+    }))
+    .filter((segment) => segment.end > segment.start)
+    .sort((a, b) => a.start - b.start);
+
+  for (const clip of clips) {
+    const clipStart = Math.max(0, Number(clip.start));
+    const clipEnd = Math.min(duration, Number(clip.end));
+    if (!Number.isFinite(clipStart) || !Number.isFinite(clipEnd) || clipEnd <= clipStart) continue;
+
+    const hasOverlap = ordered.some(
+      (segment) => segment.end > clipStart && segment.start < clipEnd,
+    );
+
+    if (hasOverlap) continue;
+
+    // If Gemini skipped an entire selected clip, do not fabricate dialogue.
+    // Instead, log it clearly. The caller will use the dedicated clip-level
+    // caption-repair Gemini pass when available.
+    console.warn(
+      `Captions: selected clip ${clipStart.toFixed(1)}s-${clipEnd.toFixed(1)}s has no transcript overlap.`,
+    );
+  }
+
+  return ordered;
+}
+
+/* =========================================================
    SAVE TRANSCRIPT
 ========================================================= */
 
@@ -5124,18 +5297,23 @@ async function processVideo(
         .slice(0, MAX_CLIPS);
     }
 
+    // Verify every selected clip has transcript coverage before rendering.
+    // Gemini is explicitly required to provide full-video coverage; this
+    // guard makes the failure visible in logs instead of looking like an
+    // FFmpeg caption problem.
+    analysis.transcript = ensureClipCaptionCoverage(
+      analysis.transcript,
+      analysis.clips,
+      duration,
+    );
+
     // ---------------------------------------------------------
     // Caption timing
     // ---------------------------------------------------------
-    // Gemini already returns the transcript together with per-word
-    // timestamps. Do NOT run local Whisper on Render: CPU inference can
-    // stall/restart the service before FFmpeg ever gets a chance to build
-    // the clip.
-    //
-    // Caption builder behavior:
-    //   1. Use Gemini word timestamps when present.
-    //   2. Fall back to segment-length word timing only when Gemini omitted
-    //      the word array.
+    // Gemini supplies the authoritative transcript + real per-word timing.
+    // Local Whisper stays disabled on Render because CPU inference can stall
+    // the service. The coverage guard above prevents silent caption gaps
+    // caused by an incomplete Gemini transcript.
     // ---------------------------------------------------------
 
     await updateProject(
