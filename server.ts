@@ -988,9 +988,9 @@ if (fs.existsSync(fontPath)) {
    fly from the Gemini transcript segments that fall inside
    the clip's time range.
 
-   No new Gemini call, no new DB columns: word-level timing is
-   *approximated* from each segment's text length, which is
-   good enough for a stylish, readable highlight effect.
+   Gemini supplies real per-word timestamps when available. If Gemini
+   omits a word array for a segment, the caption builder uses a safe
+   length-based fallback for that segment only.
 ========================================================= */
 
 const CAPTIONS_ENABLED =
@@ -1599,8 +1599,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
    worker fails or hits its hard timeout.
 ========================================================= */
 
-const WHISPER_CAPTIONS_ENABLED =
-  process.env.WHISPER_CAPTIONS_ENABLED !== "false";
+// Whisper is intentionally disabled in production. Gemini supplies
+// transcript + word timestamps, and keeping Whisper out of the Render
+// request path prevents CPU-heavy inference from stalling/restarting the
+// service. The legacy helper functions remain below for compatibility,
+// but no production processing path calls them.
+const WHISPER_CAPTIONS_ENABLED = false;
 
 const WHISPER_MODEL =
   process.env.WHISPER_MODEL?.trim() || "Xenova/whisper-tiny";
@@ -2607,13 +2611,11 @@ async function extractAudioForWhisperRanges(
     throw new Error("No valid Whisper target ranges were provided.");
   }
 
-  // Merge overlapping/nearby ranges so the same speech is not transcribed
+  // Merge overlapping/adjacent ranges so the same speech is not transcribed
   // repeatedly when Gemini returns overlapping clips.
   const merged: Array<{ start: number; end: number }> = [];
-
   for (const range of cleanedRanges) {
     const previous = merged[merged.length - 1];
-
     if (previous && range.start <= previous.end + 0.15) {
       previous.end = Math.max(previous.end, range.end);
     } else {
@@ -2626,6 +2628,8 @@ async function extractAudioForWhisperRanges(
     `${generateId()}-whisper-selected.wav`,
   );
 
+  const filterParts: string[] = [];
+  const concatInputs: string[] = [];
   const offsets: Array<{
     sourceStart: number;
     sourceEnd: number;
@@ -2635,16 +2639,22 @@ async function extractAudioForWhisperRanges(
 
   let combinedCursor = 0;
 
-  for (const range of merged) {
-    const rangeDuration = Math.max(0, range.end - range.start);
+  for (let i = 0; i < merged.length; i++) {
+    const range = merged[i];
+    const label = `a${i}`;
 
+    filterParts.push(
+      `[0:a]atrim=start=${range.start.toFixed(3)}:end=${range.end.toFixed(3)},asetpts=PTS-STARTPTS[${label}]`,
+    );
+    concatInputs.push(`[${label}]`);
+
+    const rangeDuration = Math.max(0, range.end - range.start);
     offsets.push({
       sourceStart: range.start,
       sourceEnd: range.end,
       combinedStart: combinedCursor,
       combinedEnd: combinedCursor + rangeDuration,
     });
-
     combinedCursor += rangeDuration;
   }
 
@@ -2652,32 +2662,8 @@ async function extractAudioForWhisperRanges(
     throw new Error("Selected Whisper audio duration is invalid.");
   }
 
-  /*
-   * IMPORTANT:
-   * Do not use fluent-ffmpeg's complexFilter(..., "outa") here.
-   *
-   * The previous implementation generated a concat filter graph and then
-   * asked fluent-ffmpeg to map the same label. On Render this could result in:
-   *
-   *   Output with label 'outa' does not exist in any defined filter graph
-   *
-   * We use a single `aselect` filter and invoke the FFmpeg binary directly.
-   * This keeps the selected ranges compact while avoiding fluent-ffmpeg's
-   * filter-label handling entirely.
-   */
-  const selectExpression = merged
-    .map(
-      (range) =>
-        `between(t\\,${range.start.toFixed(3)}\\,${range.end.toFixed(3)})`,
-    )
-    .join("+");
-
-  const filterComplex =
-    `[0:a]aselect='${selectExpression}',asetpts=N/SR/TB[outa]`;
-
-  console.log(
-    `Whisper: extracting ${merged.length} selected audio range(s) ` +
-      `(${combinedCursor.toFixed(2)}s total) with direct FFmpeg...`,
+  filterParts.push(
+    `${concatInputs.join("")}concat=n=${concatInputs.length}:v=0:a=1[outa]`,
   );
 
   await new Promise<void>((resolve, reject) => {
@@ -2692,76 +2678,35 @@ async function extractAudioForWhisperRanges(
 
     const fail = (error: Error) => {
       if (settled) return;
-
       settled = true;
-
-      if (timer) {
-        clearTimeout(timer);
-      }
-
+      if (timer) clearTimeout(timer);
       cleanupOutput();
       reject(error);
     };
 
-    const args = [
-      "-hide_banner",
-      "-loglevel",
-      "error",
-      "-i",
-      videoPath,
-      "-filter_complex",
-      filterComplex,
-      "-map",
-      "[outa]",
-      "-ac",
-      "1",
-      "-ar",
-      "16000",
-      "-c:a",
-      "pcm_s16le",
-      "-y",
-      audioPath,
-    ];
-
-    const child = execFile(
-      ffmpegPath,
-      args,
-      {
-        windowsHide: true,
-        timeout: FFMPEG_TIMEOUT_MS,
-        maxBuffer: 2 * 1024 * 1024,
-      },
-      (error, _stdout, stderr) => {
-        if (error) {
-          const detail = String(stderr || "").trim();
-
-          fail(
-            new Error(
-              `Whisper selected-audio FFmpeg failed: ` +
-                `${detail || error.message}`,
-            ),
-          );
-
-          return;
-        }
-
-        if (!settled) {
-          settled = true;
-
-          if (timer) {
-            clearTimeout(timer);
-          }
-
-          resolve();
-        }
-      },
-    );
+    const command = ffmpeg(videoPath)
+      .complexFilter(filterParts, "outa")
+      .outputOptions([
+        "-map [outa]",
+        "-ac 1",
+        "-ar 16000",
+        "-c:a pcm_s16le",
+        "-y",
+      ])
+      .format("wav")
+      .on("error", (error) => fail(error))
+      .on("end", () => {
+        if (settled) return;
+        settled = true;
+        if (timer) clearTimeout(timer);
+        resolve();
+      })
+      .save(audioPath);
 
     timer = setTimeout(() => {
       try {
-        child.kill("SIGKILL");
+        command.kill("SIGKILL");
       } catch {}
-
       fail(
         new Error(
           `Whisper selected-audio extraction timed out after ${FFMPEG_TIMEOUT_MS}ms.`,
@@ -2771,22 +2716,6 @@ async function extractAudioForWhisperRanges(
 
     timer.unref?.();
   });
-
-  if (!fs.existsSync(audioPath)) {
-    throw new Error("Whisper selected-audio FFmpeg produced no output file.");
-  }
-
-  const outputSize = fs.statSync(audioPath).size;
-
-  if (outputSize < 44) {
-    try {
-      fs.unlinkSync(audioPath);
-    } catch {}
-
-    throw new Error(
-      "Whisper selected-audio FFmpeg produced an empty/invalid WAV file.",
-    );
-  }
 
   return { audioPath, offsets };
 }
@@ -4392,59 +4321,13 @@ and never return an empty string for it.
       getGeminiErrorMessage(error),
     );
 
-    // Critical production fallback: Gemini failure must NOT fail the whole
-    // project when local Whisper can still produce real word timings.
-    try {
-      console.warn(
-        "Starting local Whisper fallback because Gemini analysis failed.",
-      );
-
-      const whisperTranscript = await transcribeWithWhisper(
-        videoPath,
-        duration,
-      );
-
-      if (whisperTranscript && whisperTranscript.length) {
-        const fallbackClips =
-          processingMode === "full_video_caption"
-            ? []
-            : buildFallbackClipsFromTranscript(
-                whisperTranscript,
-                duration,
-                MAX_CLIPS,
-              );
-
-        if (processingMode !== "full_video_caption" && !fallbackClips.length) {
-          throw new Error(
-            "Whisper produced a transcript, but no safe recovery clips could be created.",
-          );
-        }
-
-        console.warn(
-          `Whisper fallback succeeded: ${whisperTranscript.length} transcript segment(s), ${fallbackClips.length} recovery clip(s).`,
-        );
-
-        return {
-          transcript: whisperTranscript,
-          clips: fallbackClips,
-          captionTimingReady: true,
-        };
-      }
-
-      throw new Error("Whisper fallback returned no usable transcript.");
-    } catch (whisperError) {
-      console.error(
-        "Whisper fallback also failed:",
-        getGeminiErrorMessage(whisperError),
-      );
-
-      const geminiMessage = getGeminiErrorMessage(lastGeminiError);
-      const whisperMessage = getGeminiErrorMessage(whisperError);
-
-      throw new Error(
-        `AI analysis failed. Gemini: ${geminiMessage}. Local Whisper fallback: ${whisperMessage}`,
-      );
-    }
+    // Gemini is the authoritative analysis/caption-timing provider in the
+    // Render production path. Do not fall back to local Whisper here: CPU
+    // inference is too expensive for the web service and can cause the
+    // instance to stall or restart.
+    throw new Error(
+      `AI analysis failed after all Gemini fallbacks: ${getGeminiErrorMessage(lastGeminiError)}`,
+    );
   }
 }
 
@@ -5242,51 +5125,28 @@ async function processVideo(
     }
 
     // ---------------------------------------------------------
-    // Caption timing: in clip mode, Whisper runs ONLY on the AI-selected
-    // clip ranges. This avoids the expensive full-video Whisper pass while
-    // still giving the generated clips real per-word timestamps. Gemini's
-    // transcript remains the fallback when Whisper is unavailable.
+    // Caption timing
+    // ---------------------------------------------------------
+    // Gemini already returns the transcript together with per-word
+    // timestamps. Do NOT run local Whisper on Render: CPU inference can
+    // stall/restart the service before FFmpeg ever gets a chance to build
+    // the clip.
+    //
+    // Caption builder behavior:
+    //   1. Use Gemini word timestamps when present.
+    //   2. Fall back to segment-length word timing only when Gemini omitted
+    //      the word array.
     // ---------------------------------------------------------
 
     await updateProject(
       projectId,
       42,
-      "Transcribing audio for accurate caption sync",
+      "Preparing AI captions",
     );
 
-    if (analysis.captionTimingReady) {
-      console.log(
-        "Local Whisper fallback already supplied caption timing — skipping duplicate Whisper pass.",
-      );
-    } else {
-      const whisperTranscript =
-        mode === "clips" && analysis.clips.length
-          ? await transcribeWithWhisper(
-              sourcePath,
-              duration,
-              analysis.clips.map((clip) => ({
-                start: clip.start,
-                end: clip.end,
-              })),
-            )
-          : await transcribeWithWhisper(
-              sourcePath,
-              duration,
-            );
-
-      if (whisperTranscript && whisperTranscript.length) {
-        console.log(
-          `Using local Whisper transcript for caption timing ` +
-            `(${whisperTranscript.length} segment(s)) instead of Gemini's estimate.`,
-        );
-
-        analysis.transcript = whisperTranscript;
-      } else {
-        console.log(
-          "Whisper transcript unavailable — using Gemini's own transcript timing for captions.",
-        );
-      }
-    }
+    console.log(
+      `Captions: using Gemini transcript timing — ${analysis.transcript.length} transcript segment(s). Whisper is disabled for Render stability.`,
+    );
 
     await saveTranscript(
       projectId,
