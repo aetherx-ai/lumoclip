@@ -3046,8 +3046,18 @@ async function withGeminiTimeout<T>(
 }
 
 async function generateGeminiWithRetry(
-  params: Parameters<typeof ai.models.generateContent>[0],
+  buildParams: () =>
+    | Parameters<typeof ai.models.generateContent>[0]
+    | Promise<Parameters<typeof ai.models.generateContent>[0]>,
 ) {
+  // Gemini "files" (uploaded video/media) are scoped to the API key/project
+  // that uploaded them. If we rotate to a different API key mid-job, any
+  // previously uploaded file becomes inaccessible (403 PERMISSION_DENIED)
+  // even though the file itself is still ACTIVE. So params must be rebuilt
+  // (re-uploading the file, if the caller's builder does that) every time
+  // we move to a new key — not just built once up front.
+  let params = await buildParams();
+
   const primaryModel = String((params as any).model || "").trim();
 
   const modelsToTry = [
@@ -3118,6 +3128,11 @@ async function generateGeminiWithRetry(
               console.warn(
                 `Gemini model=${model} quota exhausted on key #${geminiKeyIndex}. Retrying same model on key #${geminiKeyIndex + 1}.`,
               );
+
+              // Rebuild params (e.g. re-upload the video file) under the
+              // new key — a file uploaded with the old key is not visible
+              // to the new one and would fail with 403 PERMISSION_DENIED.
+              params = await buildParams();
               continue keyLoop;
             }
 
@@ -4192,8 +4207,17 @@ async function analyzeLocalVideo(
 ): Promise<GeminiAnalysis> {
   let lastGeminiError: unknown;
 
-  try {
-    console.log("Uploading video to Gemini:", videoPath);
+  // Uploads the source video to whichever Gemini API key is currently
+  // active and waits for it to become ACTIVE. Gemini files are scoped to
+  // the API key/project that uploaded them, so this must be re-run (with
+  // a fresh file.uri) every time generateGeminiWithRetry rotates keys —
+  // reusing a file.uri from a different key fails with 403
+  // PERMISSION_DENIED even though the file itself is still valid.
+  async function uploadAndActivateGeminiFile() {
+    console.log(
+      `Uploading video to Gemini (key #${geminiKeyIndex + 1}/${geminiClients.length}):`,
+      videoPath,
+    );
 
     let file = await ai.files.upload({
       file: videoPath,
@@ -4216,6 +4240,10 @@ async function analyzeLocalVideo(
 
     console.log("Gemini file ACTIVE — starting analysis.");
 
+    return file;
+  }
+
+  try {
   const prompt = `
 You are LumoClip's professional AI video editor.
 
@@ -4346,16 +4374,20 @@ string written specifically for that clip's content. Never omit it
 and never return an empty string for it.
 `;
 
-    const response = await generateGeminiWithRetry({
-      model: GEMINI_MODEL,
-      contents: createUserContent([
-        createPartFromUri(file.uri!, file.mimeType!),
-        prompt,
-      ]),
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-      },
+    const response = await generateGeminiWithRetry(async () => {
+      const file = await uploadAndActivateGeminiFile();
+
+      return {
+        model: GEMINI_MODEL,
+        contents: createUserContent([
+          createPartFromUri(file.uri!, file.mimeType!),
+          prompt,
+        ]),
+        config: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
+      };
     });
 
     const text = response.text || "";
