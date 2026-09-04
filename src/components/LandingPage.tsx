@@ -7,24 +7,33 @@ import React, {
 
 import {
   ArrowRight,
+  Activity,
   BarChart3,
+  CheckCheck,
   Check,
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Download,
   Command,
   Film,
+  Gauge,
   Layers3,
   Link2,
+  Globe2,
   MessageSquareText,
+  MousePointer2,
   Mic2,
   Play,
   Scissors,
+  Target,
   ShieldCheck,
   Sparkles,
   Subtitles,
+  Smartphone,
   Upload,
   WandSparkles,
+  TrendingUp,
   Zap,
   X,
 } from "lucide-react";
@@ -215,6 +224,36 @@ const features = [
     title: "Dub into new languages",
     text: "Turn one video into AI dubbed versions so more of your audience can watch in their language.",
   },
+  {
+    icon: Target,
+    eyebrow: "VIRAL SCORE",
+    title: "Rank clips by potential",
+    text: "Surface the strongest hooks, pacing and story moments so you know what to publish first.",
+  },
+  {
+    icon: Clock3,
+    eyebrow: "SMART EDITING",
+    title: "Remove dead air",
+    text: "Cut repetitive pauses and low-value gaps to keep short-form content moving naturally.",
+  },
+  {
+    icon: Smartphone,
+    eyebrow: "SOCIAL PACK",
+    title: "Platform-ready exports",
+    text: "Prepare vertical, square and landscape outputs for the platforms you publish on most.",
+  },
+  {
+    icon: Activity,
+    eyebrow: "CONTENT SIGNALS",
+    title: "Spot the hook",
+    text: "See where curiosity, payoff, emotion and educational value appear inside your source video.",
+  },
+  {
+    icon: Download,
+    eyebrow: "EXPORT",
+    title: "Publish-ready workflow",
+    text: "Move from source video to organized outputs without rebuilding your editing process every time.",
+  },
 ];
 
 const faqs = [
@@ -267,6 +306,43 @@ const outputCards = [
     score: "94",
   },
 ] as const;
+
+/* ============================================================================
+   PREMIUM LANDING DATA
+============================================================================ */
+
+const platformItems = [
+  [Smartphone, "YouTube Shorts", "9:16"],
+  [Smartphone, "TikTok", "9:16"],
+  [Smartphone, "Instagram Reels", "9:16"],
+  [Film, "YouTube", "16:9"],
+  [BarChart3, "LinkedIn", "1:1"],
+  [Globe2, "Everywhere", "1:1 / 16:9"],
+] as const;
+
+const creatorUseCases = [
+  [Mic2, "Podcasters", "Turn long conversations into a library of short clips."],
+  [WandSparkles, "YouTubers", "Find the strongest moments without watching the timeline twice."],
+  [Scissors, "Agencies", "Repurpose client content faster across multiple platforms."],
+  [TrendingUp, "Growth teams", "Build a repeatable short-form content engine."],
+] as const;
+
+const premiumWorkflow = [
+  ["01", "Upload or paste", "Start with a video file or a supported YouTube URL."],
+  ["02", "Understand", "AI reads the story, topics, speech and high-value moments."],
+  ["03", "Score", "Potential clips are ranked using content and engagement signals."],
+  ["04", "Package", "Generate clips, captions, hooks and platform-ready directions."],
+  ["05", "Publish", "Review the best outputs and move them into your publishing workflow."],
+] as const;
+
+const trustPoints = [
+  "No timeline scrubbing required",
+  "Upload or start from a URL",
+  "AI captions and hooks",
+  "Vertical-first workflow",
+  "Organized project outputs",
+  "Built for creators and teams",
+];
 
 /* ============================================================================
    PERFORMANCE
@@ -435,6 +511,9 @@ const toolGridItems: ToolGridItem[] = [
   { icon: Layers3, label: "Upscale", badge: "New" },
   { icon: WandSparkles, label: "Video dubbing", badge: "New" },
   { icon: BarChart3, label: "Enhance speech", badge: "New" },
+  { icon: Target, label: "Viral score", badge: "New" },
+  { icon: Clock3, label: "Remove silence", badge: "New" },
+  { icon: Download, label: "Social export", badge: "New" },
 ];
 
 function ToolGridButton({
@@ -527,6 +606,60 @@ function FloatingSignal({
           {value}
         </p>
       </div>
+    </div>
+  );
+}
+
+/* ============================================================================
+   PREMIUM MICRO VISUALS
+============================================================================ */
+
+function PremiumSignalCard({
+  icon: Icon,
+  title,
+  value,
+  detail,
+}: {
+  icon: React.ElementType;
+  title: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="group relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-white/[0.018] p-4 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/15 hover:bg-white/[0.03]">
+      <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-cyan-400/[0.06] blur-2xl transition group-hover:bg-cyan-400/[0.12]" />
+      <div className="relative flex items-start justify-between gap-3">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
+          <Icon className="h-4 w-4 text-cyan-300" />
+        </div>
+        <span className="font-mono text-[8px] text-cyan-300/80">LIVE</span>
+      </div>
+      <p className="mt-5 text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">{title}</p>
+      <p className="mt-1 text-2xl font-black tracking-tight text-white">{value}</p>
+      <p className="mt-1 text-[9px] leading-4 text-zinc-700">{detail}</p>
+    </div>
+  );
+}
+
+function PlatformCard({
+  icon: Icon,
+  name,
+  format,
+}: {
+  icon: React.ElementType;
+  name: string;
+  format: string;
+}) {
+  return (
+    <div className="group flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.012] p-3 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/15 hover:bg-cyan-300/[0.025]">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-black/20">
+        <Icon className="h-4 w-4 text-zinc-500 transition group-hover:text-cyan-300" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[10px] font-bold text-zinc-300">{name}</p>
+        <p className="mt-0.5 font-mono text-[8px] text-zinc-700">{format}</p>
+      </div>
+      <CheckCheck className="h-3.5 w-3.5 text-emerald-300/70" />
     </div>
   );
 }
@@ -1272,6 +1405,10 @@ export function LandingPage({
   const [selectedFile, setSelectedFile] =
     useState<File | null>(null);
 
+  const [isDragging, setIsDragging] = useState(false);
+  const [fileError, setFileError] = useState("");
+  const [activePremiumMetric, setActivePremiumMetric] = useState(0);
+
   const [captionStyle, setCaptionStyle] =
     useState<CaptionStyleSettings>(() =>
       cloneCaptionStyle(DEFAULT_CAPTION_STYLE)
@@ -1302,6 +1439,24 @@ export function LandingPage({
     () => url.trim(),
     [url]
   );
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setActivePremiumMetric((value) => (value + 1) % 4);
+    }, 2400);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const acceptVideoFile = (file: File) => {
+    if (!file.type.startsWith("video/") && !/\.(mp4|mov|webm|mkv|avi)$/i.test(file.name)) {
+      setFileError("Please choose a supported video file.");
+      return;
+    }
+
+    setFileError("");
+    setSelectedFile(file);
+    setUrl("");
+  };
 
   /* ==========================================================================
      SEO HEAD
@@ -1911,7 +2066,24 @@ export function LandingPage({
                       <div className="h-px flex-1 bg-white/[0.045]" />
                     </div>
 
-                    <label className="group flex cursor-pointer items-center justify-between gap-4 rounded-[21px] border border-dashed border-cyan-300/10 bg-cyan-400/[0.018] px-4 py-3.5 transition-all duration-300 hover:border-cyan-300/25 hover:bg-cyan-400/[0.04]">
+                    <label
+                      className={`group flex cursor-pointer items-center justify-between gap-4 rounded-[21px] border border-dashed px-4 py-3.5 transition-all duration-300 ${
+                        isDragging
+                          ? "border-cyan-300/50 bg-cyan-400/[0.08] shadow-[0_0_45px_rgba(34,211,238,0.08)]"
+                          : "border-cyan-300/10 bg-cyan-400/[0.018] hover:border-cyan-300/25 hover:bg-cyan-400/[0.04]"
+                      }`}
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                        setIsDragging(true);
+                      }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        setIsDragging(false);
+                        const file = e.dataTransfer.files?.[0];
+                        if (file) acceptVideoFile(file);
+                      }}
+                    >
                       <input
                         type="file"
                         accept="video/*,.mp4,.mov,.webm,.mkv"
@@ -1922,11 +2094,7 @@ export function LandingPage({
 
                           if (!file) return;
 
-                          setSelectedFile(
-                            file
-                          );
-
-                          setUrl("");
+                          acceptVideoFile(file);
 
                           // Keep the file selected so the user can choose
                           // a caption style before starting the job.
@@ -1965,6 +2133,10 @@ export function LandingPage({
                           : "Choose file"}
                       </span>
                     </label>
+
+                    {fileError && (
+                      <p className="mt-2 px-2 text-left text-[9px] font-medium text-rose-300">{fileError}</p>
+                    )}
                   </div>
                 </div>
 
@@ -2530,6 +2702,254 @@ export function LandingPage({
         </section>
 
         {/* ==================================================================
+            PREMIUM AI DASHBOARD PREVIEW
+        ================================================================== */}
+
+        <section
+          aria-labelledby="premium-preview-title"
+          className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
+          style={lazySectionStyle}
+        >
+          <Glow className="left-[8%] top-[10%] h-[420px] w-[420px] bg-cyan-400/[0.025]" />
+          <Glow className="right-[4%] bottom-[4%] h-[500px] w-[500px] bg-blue-500/[0.025]" />
+
+          <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="mx-auto max-w-3xl text-center">
+                <SectionLabel icon={Gauge}>
+                  Creator intelligence dashboard
+                </SectionLabel>
+                <h2
+                  id="premium-preview-title"
+                  className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                >
+                  See the signal.
+                  <br />
+                  <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">
+                    Not just the clip.
+                  </span>
+                </h2>
+                <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-700">
+                  Give creators a clear reason to trust the output: what was detected, why it matters and which asset should be published first.
+                </p>
+              </div>
+            </Reveal>
+
+            <Reveal delay={90} className="mt-12">
+              <div className="relative overflow-hidden rounded-[34px] border border-white/[0.08] bg-[#080b10]/90 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:p-6">
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent" />
+                <div className="flex flex-col gap-4 border-b border-white/[0.05] pb-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
+                      <Activity className="h-4 w-4 text-cyan-300" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">AI Content Intelligence</p>
+                      <p className="mt-0.5 text-[9px] text-zinc-700">Example analysis · 18:42 source video</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-emerald-300/10 bg-emerald-300/[0.05] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-300">Analysis complete</span>
+                    <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2.5 py-1 font-mono text-[8px] text-zinc-600">AI v1</span>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    [Target, "Viral potential", "98%", "Strong hook + payoff"],
+                    [Clock3, "Best moment", "00:42", "High-value story beat"],
+                    [Subtitles, "Caption ready", "100%", "Speech detected"],
+                    [TrendingUp, "Publish score", "94/100", "Top output candidate"],
+                  ].map(([Icon, title, value, detail], index) => (
+                    <button
+                      key={String(title)}
+                      type="button"
+                      onClick={() => setActivePremiumMetric(index)}
+                      className={`text-left ${activePremiumMetric === index ? "ring-1 ring-cyan-300/20" : ""}`}
+                    >
+                      <PremiumSignalCard
+                        icon={Icon as React.ElementType}
+                        title={String(title)}
+                        value={String(value)}
+                        detail={String(detail)}
+                      />
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+                  <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-300">Moment map</p>
+                        <p className="mt-1 text-xs font-semibold text-zinc-300">Where the strongest content lives</p>
+                      </div>
+                      <MousePointer2 className="h-4 w-4 text-zinc-700" />
+                    </div>
+                    <div className="mt-5 flex h-24 items-end gap-1.5 overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.015] px-3 pb-3 pt-4">
+                      {Array.from({ length: 52 }).map((_, i) => {
+                        const height = 15 + ((i * 37 + 23) % 75);
+                        const hot = [6,7,8,9,10,22,23,24,25,38,39,40,41].includes(i);
+                        return (
+                          <div
+                            key={i}
+                            className={`w-full rounded-full transition-all duration-500 ${hot ? "bg-gradient-to-t from-cyan-500 to-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.25)]" : "bg-white/[0.07]"}`}
+                            style={{ height: `${height}%`, opacity: hot ? 1 : 0.45 }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex justify-between font-mono text-[7px] text-zinc-800">
+                      <span>00:00</span><span>06:00</span><span>12:00</span><span>18:42</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-300">Recommended output</p>
+                    <div className="mt-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 font-mono text-[7px] text-cyan-300">#01</span>
+                        <span className="font-mono text-[8px] text-emerald-300">98%</span>
+                      </div>
+                      <p className="mt-5 text-sm font-black text-white">The strongest idea</p>
+                      <p className="mt-1 text-[9px] leading-4 text-zinc-700">Hook → insight → payoff. Ideal for a short-form cut.</p>
+                      <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full w-[98%] rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" /></div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-[8px] text-zinc-700"><CheckCheck className="h-3 w-3 text-emerald-300/70" /> Ready for review</div>
+                  </div>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        {/* ==================================================================
+            PLATFORM READY
+        ================================================================== */}
+
+        <section
+          aria-labelledby="platform-title"
+          className="py-24 sm:py-32"
+          style={lazySectionStyle}
+        >
+          <div className="mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
+            <div className="grid items-center gap-12 lg:grid-cols-[0.8fr_1.2fr]">
+              <Reveal>
+                <SectionLabel icon={Smartphone}>
+                  Platform-ready content
+                </SectionLabel>
+                <h2 id="platform-title" className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                  One edit.
+                  <br />
+                  <span className="text-zinc-700">Every format.</span>
+                </h2>
+                <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">
+                  Design the landing page around the outcome creators want: content that is already structured for where it will be published.
+                </p>
+                <div className="mt-7 grid gap-2 sm:grid-cols-2">
+                  {trustPoints.slice(0, 4).map((item) => (
+                    <div key={item} className="flex items-center gap-2 text-[9px] font-semibold text-zinc-500">
+                      <Check className="h-3.5 w-3.5 text-emerald-300/80" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </Reveal>
+              <Reveal delay={100}>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {platformItems.map(([Icon, name, format]) => (
+                    <PlatformCard key={name} icon={Icon} name={name} format={format} />
+                  ))}
+                </div>
+              </Reveal>
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================================
+            CREATOR USE CASES
+        ================================================================== */}
+
+        <section
+          aria-labelledby="use-cases-title"
+          className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
+          style={lazySectionStyle}
+        >
+          <div className="mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="mx-auto max-w-2xl text-center">
+                <SectionLabel icon={Globe2}>
+                  Built for modern creators
+                </SectionLabel>
+                <h2 id="use-cases-title" className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                  Less editing.
+                  <br />
+                  <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">More publishing.</span>
+                </h2>
+              </div>
+            </Reveal>
+
+            <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {creatorUseCases.map(([Icon, title, text], index) => (
+                <Reveal key={String(title)} delay={index * 70}>
+                  <article className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-cyan-300/15 hover:bg-white/[0.025]">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.03]">
+                      <Icon className="h-5 w-5 text-cyan-300 transition group-hover:scale-110" />
+                    </div>
+                    <h3 className="mt-6 text-sm font-bold text-white">{title}</h3>
+                    <p className="mt-2 text-xs leading-5 text-zinc-700">{text}</p>
+                    <div className="mt-6 flex items-center gap-2 text-[8px] font-bold uppercase tracking-[0.17em] text-zinc-800 transition group-hover:text-cyan-300">Explore workflow <ArrowRight className="h-3 w-3" /></div>
+                  </article>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================================
+            PREMIUM WORKFLOW TIMELINE
+        ================================================================== */}
+
+        <section
+          aria-labelledby="premium-workflow-title"
+          className="py-24 sm:py-32"
+          style={lazySectionStyle}
+        >
+          <div className="mx-auto max-w-[1000px] px-5 sm:px-6">
+            <Reveal>
+              <div className="text-center">
+                <SectionLabel icon={Command}>
+                  From raw video to content engine
+                </SectionLabel>
+                <h2 id="premium-workflow-title" className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
+                  A workflow that
+                  <br />
+                  <span className="text-zinc-700">gets out of your way.</span>
+                </h2>
+              </div>
+            </Reveal>
+
+            <div className="relative mt-14">
+              <div className="absolute bottom-7 left-[18px] top-7 hidden w-px bg-gradient-to-b from-cyan-300/30 via-cyan-300/10 to-transparent sm:block" />
+              <div className="space-y-4">
+                {premiumWorkflow.map(([no, title, text], index) => (
+                  <Reveal key={no} delay={index * 60}>
+                    <article className="group relative flex gap-4 rounded-[25px] border border-white/[0.06] bg-white/[0.012] p-5 transition-all duration-300 hover:border-cyan-300/15 hover:bg-white/[0.022] sm:items-center sm:p-6">
+                      <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-[#070a0e] font-mono text-[8px] font-bold text-cyan-300">{no}</div>
+                      <div className="min-w-0 flex-1">
+                        <h3 className="text-sm font-bold text-white">{title}</h3>
+                        <p className="mt-1 text-xs leading-5 text-zinc-700">{text}</p>
+                      </div>
+                      <Check className="hidden h-4 w-4 text-emerald-300/70 sm:block" />
+                    </article>
+                  </Reveal>
+                ))}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================================
             FAQ
         ================================================================== */}
 
@@ -2702,7 +3122,7 @@ export function LandingPage({
             </span>
           </div>
 
-          <div className="flex items-center gap-5 text-[8px] font-bold uppercase tracking-[0.18em] text-zinc-800">
+          <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.18em] text-zinc-800">
             <span>
               LumoClip AI video clipper
             </span>
@@ -2711,6 +3131,12 @@ export function LandingPage({
 
             <span>
               Built for creators
+            </span>
+
+            <span>•</span>
+
+            <span>
+              AI content engine
             </span>
           </div>
         </div>
