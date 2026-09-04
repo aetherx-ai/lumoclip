@@ -2039,23 +2039,6 @@ export function LandingPage({
                       </PremiumButton>
                     </div>
 
-                    <CaptionStylePicker
-                      style={captionStyle}
-                      open={captionPickerOpen}
-                      onToggle={() => {
-                        setCaptionPickerOpen((open) => {
-                          if (!open) {
-                            setCaptionMode("full_video_caption");
-                          }
-                          return !open;
-                        });
-                      }}
-                      onChange={(nextStyle) => {
-                        setCaptionMode("full_video_caption");
-                        setCaptionStyle(nextStyle);
-                      }}
-                    />
-
                     <div className="my-2 flex items-center gap-3 px-2">
                       <div className="h-px flex-1 bg-white/[0.045]" />
 
