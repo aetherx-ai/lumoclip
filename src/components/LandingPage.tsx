@@ -11,10 +11,8 @@ import {
   BarChart3,
   CheckCheck,
   Check,
-  CheckCircle2,
   ChevronDown,
   Clock3,
-  Download,
   Command,
   Film,
   Gauge,
@@ -24,10 +22,8 @@ import {
   MessageSquareText,
   MousePointer2,
   Mic2,
-  Play,
   Scissors,
   Target,
-  ShieldCheck,
   Sparkles,
   Subtitles,
   Smartphone,
@@ -195,18 +191,6 @@ const features = [
     text: "Create structured short-form assets without rebuilding the same workflow every time.",
   },
   {
-    icon: BarChart3,
-    eyebrow: "INTELLIGENCE",
-    title: "Content intelligence",
-    text: "Understand which moments stand out and organize your content around meaningful signals.",
-  },
-  {
-    icon: ShieldCheck,
-    eyebrow: "WORKSPACE",
-    title: "Everything in one place",
-    text: "Projects, outputs, processing status and content assets stay organized inside your workspace.",
-  },
-  {
     icon: Mic2,
     eyebrow: "AUDIO AI",
     title: "Enhance speech",
@@ -236,24 +220,6 @@ const features = [
     title: "Remove dead air",
     text: "Cut repetitive pauses and low-value gaps to keep short-form content moving naturally.",
   },
-  {
-    icon: Smartphone,
-    eyebrow: "SOCIAL PACK",
-    title: "Platform-ready exports",
-    text: "Prepare vertical, square and landscape outputs for the platforms you publish on most.",
-  },
-  {
-    icon: Activity,
-    eyebrow: "CONTENT SIGNALS",
-    title: "Spot the hook",
-    text: "See where curiosity, payoff, emotion and educational value appear inside your source video.",
-  },
-  {
-    icon: Download,
-    eyebrow: "EXPORT",
-    title: "Publish-ready workflow",
-    text: "Move from source video to organized outputs without rebuilding your editing process every time.",
-  },
 ];
 
 const faqs = [
@@ -278,13 +244,6 @@ const faqs = [
     a: "Yes. LumoClip can generate titles, hooks, captions, descriptions and content directions alongside generated short-form content.",
   },
 ];
-
-const processingSignals = [
-  ["Strong hook detected", "98%"],
-  ["Story moment detected", "96%"],
-  ["Educational segment", "94%"],
-  ["High engagement potential", "92%"],
-] as const;
 
 const outputCards = [
   {
@@ -325,14 +284,6 @@ const creatorUseCases = [
   [WandSparkles, "YouTubers", "Find the strongest moments without watching the timeline twice."],
   [Scissors, "Agencies", "Repurpose client content faster across multiple platforms."],
   [TrendingUp, "Growth teams", "Build a repeatable short-form content engine."],
-] as const;
-
-const premiumWorkflow = [
-  ["01", "Upload or paste", "Start with a video file or a supported YouTube URL."],
-  ["02", "Understand", "AI reads the story, topics, speech and high-value moments."],
-  ["03", "Score", "Potential clips are ranked using content and engagement signals."],
-  ["04", "Package", "Generate clips, captions, hooks and platform-ready directions."],
-  ["05", "Publish", "Review the best outputs and move them into your publishing workflow."],
 ] as const;
 
 const trustPoints = [
@@ -443,10 +394,10 @@ function Reveal({
   return (
     <div
       ref={ref}
-      className={`transition-all duration-500 ${
+      className={`transition-all duration-700 ease-out ${
         visible
           ? "translate-y-0 opacity-100"
-          : "translate-y-8 opacity-0"
+          : "translate-y-3 opacity-0"
       } ${className}`}
       style={{
         transitionDelay: `${delay}ms`,
@@ -990,189 +941,6 @@ const AIOrb = React.memo(function AIOrb() {
 });
 
 /* ============================================================================
-   PROCESSING VISUAL
-============================================================================ */
-
-const ProcessingVisual = React.memo(function ProcessingVisual() {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-
-  const [visible, setVisible] = useState(false);
-  const [active, setActive] = useState(0);
-
-  useEffect(() => {
-    const node = containerRef.current;
-
-    if (!node) return;
-
-    const observer = new IntersectionObserver(
-      ([entry]) => setVisible(entry.isIntersecting),
-      { threshold: 0.15 }
-    );
-
-    observer.observe(node);
-
-    return () => observer.disconnect();
-  }, []);
-
-  useEffect(() => {
-    if (!visible) return;
-
-    const activeTimer = window.setInterval(() => {
-      setActive((value) => (value + 1) % 4);
-    }, 1500);
-
-    return () => window.clearInterval(activeTimer);
-  }, [visible]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="relative overflow-hidden rounded-[32px] border border-white/[0.08] bg-[#080b10]/90 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
-      aria-label="LumoClip AI video analysis preview"
-    >
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/50 to-transparent" />
-
-      <div className="flex items-center justify-between border-b border-white/[0.05] px-5 py-4 sm:px-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
-            <WandSparkles className="h-4 w-4 text-violet-300" />
-          </div>
-
-          <div>
-            <p className="text-[10px] font-bold text-white">
-              Lumo Intelligence
-            </p>
-
-            <p className="mt-0.5 text-[8px] text-zinc-700">
-              Content understanding engine
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 rounded-full border border-emerald-300/10 bg-emerald-400/[0.04] px-2.5 py-1">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-
-          <span className="text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-300">
-            analyzing
-          </span>
-        </div>
-      </div>
-
-      <div className="p-5 sm:p-6">
-        <div className="relative aspect-[16/8] overflow-hidden rounded-[22px] border border-white/[0.06] bg-gradient-to-br from-[#0e1820] via-[#090c12] to-[#06080d]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_35%,rgba(139,92,246,0.12),transparent_30%),radial-gradient(circle_at_80%_65%,rgba(217,70,239,0.10),transparent_34%)]" />
-
-          <div className="absolute inset-0 opacity-30">
-            <div className="absolute left-[10%] top-[25%] h-24 w-24 rounded-full border border-violet-300/10" />
-
-            <div className="absolute bottom-[18%] right-[14%] h-28 w-28 rounded-full border border-fuchsia-300/10" />
-          </div>
-
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] backdrop-blur-xl">
-              <Play
-                aria-hidden="true"
-                className="ml-0.5 h-4 w-4 fill-white text-white"
-              />
-            </div>
-          </div>
-
-          <div className="absolute bottom-4 left-4 right-4">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="font-mono text-[8px] text-zinc-500">
-                07:24 / 18:42
-              </span>
-
-              <span className="font-mono text-[8px] text-violet-300">
-                ANALYZING
-              </span>
-            </div>
-
-            <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
-              <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 animate-[progressLoop_6.5s_ease-in-out_infinite]" />
-            </div>
-          </div>
-        </div>
-
-        <div className="relative mt-5 flex h-20 items-center gap-[3px] overflow-hidden rounded-2xl border border-white/[0.045] bg-black/20 px-4">
-          {Array.from({ length: 74 }).map((_, i) => {
-            const height = 15 + ((i * 43 + 17) % 70);
-
-            const highlight =
-              i >= active * 17 &&
-              i < active * 17 + 18;
-
-            return (
-              <div
-                key={i}
-                className={`w-1 shrink-0 rounded-full transition-all duration-700 ${
-                  highlight
-                    ? "bg-gradient-to-t from-violet-500 to-violet-100"
-                    : "bg-white/[0.07]"
-                }`}
-                style={{
-                  height: `${height}%`,
-                  opacity: highlight ? 1 : 0.42,
-                }}
-              />
-            );
-          })}
-
-          <div className="absolute bottom-0 left-[38%] top-0 w-px bg-violet-300/30 shadow-[0_0_20px_rgba(139,92,246,0.4)]" />
-        </div>
-
-        <div className="mt-5 space-y-2">
-          {processingSignals.map(([title, score], index) => (
-            <div
-              key={title}
-              className={`flex items-center gap-3 rounded-2xl border p-3 transition-all duration-500 ${
-                active === index
-                  ? "translate-x-1 border-violet-300/15 bg-violet-300/[0.035]"
-                  : "border-white/[0.045] bg-white/[0.01]"
-              }`}
-            >
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-xl ${
-                  active === index
-                    ? "bg-violet-400/10"
-                    : "bg-white/[0.025]"
-                }`}
-              >
-                {active === index ? (
-                  <CheckCircle2 className="h-4 w-4 text-violet-300" />
-                ) : (
-                  <Sparkles className="h-3.5 w-3.5 text-zinc-700" />
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-[10px] font-semibold text-zinc-300">
-                  {title}
-                </p>
-
-                <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.04]">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 transition-all duration-700"
-                    style={{
-                      width:
-                        active === index ? score : "20%",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <span className="font-mono text-[9px] text-violet-300">
-                {score}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-});
-
-/* ============================================================================
    OUTPUT PREVIEW
 ============================================================================ */
 
@@ -1433,207 +1201,6 @@ const MiniStats = React.memo(function MiniStats() {
     </div>
   );
 });
-
-/* ============================================================================
-   AI CAPTION STYLE PICKER
-============================================================================ */
-
-function CaptionStylePicker({
-  style,
-  open,
-  onToggle,
-  onChange,
-}: {
-  style: CaptionStyleSettings;
-  open: boolean;
-  onToggle: () => void;
-  onChange: (next: CaptionStyleSettings) => void;
-}) {
-  const update = (patch: Partial<CaptionStyleSettings>) => {
-    onChange({ ...style, ...patch });
-  };
-
-  return (
-    <div className="mt-3 rounded-[24px] border border-violet-300/10 bg-violet-400/[0.025] p-3 text-left">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={open}
-        aria-controls="caption-style-panel"
-        className="flex w-full items-center justify-between gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-white/[0.03]"
-      >
-        <span className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.08]">
-            <Subtitles className="h-4 w-4 text-violet-200" />
-          </span>
-          <span className="min-w-0">
-            <span className="flex items-center gap-2 text-xs font-bold text-white">
-              AI Captions
-              <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.07] px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-200">
-                AI
-              </span>
-            </span>
-            <span className="mt-0.5 block truncate text-[10px] text-zinc-600">
-              {style.mode === "full_video_caption" ? "Full video · no clips" : "Clips mode"} · {CAPTION_STYLE_LABELS[style.preset] || "Custom style"} · {style.font} · {style.position}
-            </span>
-          </span>
-        </span>
-
-        <ChevronDown
-          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${open ? "rotate-180 text-violet-300" : ""}`}
-        />
-      </button>
-
-      {open && (
-        <div id="caption-style-panel" className="mt-4 border-t border-white/[0.06] pt-4">
-          <div className="mb-3 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-200">
-                Choose a caption style
-              </p>
-              <p className="mt-1 text-[10px] leading-5 text-zinc-600">
-                Select a preset now. You can fine-tune the look before processing.
-              </p>
-            </div>
-            <span className="shrink-0 rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 text-[9px] font-mono text-zinc-500">
-              9:16
-            </span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-            {CAPTION_STYLE_PRESETS.map((preset) => {
-              const selected = style.preset === preset.preset;
-              const previewText = preset.uppercase ? "MAKE IT POP" : "Make it pop";
-
-              return (
-                <button
-                  key={preset.preset}
-                  type="button"
-                  onClick={() => onChange(cloneCaptionStyle(preset))}
-                  aria-pressed={selected}
-                  className={`group relative overflow-hidden rounded-2xl border p-2 text-left transition-all ${
-                    selected
-                      ? "border-violet-300/50 bg-violet-300/[0.09] shadow-[0_0_28px_rgba(139,92,246,0.09)]"
-                      : "border-white/[0.07] bg-black/20 hover:border-violet-300/20 hover:bg-white/[0.035]"
-                  }`}
-                >
-                  <span className="relative flex h-20 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#111827] via-[#090d14] to-black px-2">
-                    <span
-                      className="text-center text-[11px] font-black leading-tight tracking-tight"
-                      style={{
-                        color: preset.textColor,
-                        fontFamily: preset.font,
-                        textTransform: preset.uppercase ? "uppercase" : "none",
-                        textShadow: `0 2px 14px ${preset.highlightColor}55`,
-                      }}
-                    >
-                      {previewText.split(" ").map((word, index) => (
-                        <React.Fragment key={`${preset.preset}-${word}`}>
-                          {index > 0 ? " " : ""}
-                          <span style={{ color: index === 1 ? preset.highlightColor : preset.textColor }}>
-                            {word}
-                          </span>
-                        </React.Fragment>
-                      ))}
-                    </span>
-                    <span
-                      className="absolute bottom-1.5 left-1/2 h-0.5 w-8 -translate-x-1/2 rounded-full"
-                      style={{ backgroundColor: preset.highlightColor }}
-                    />
-                  </span>
-                  <span className="mt-2 block truncate text-[10px] font-bold text-zinc-200">
-                    {CAPTION_STYLE_LABELS[preset.preset]}
-                  </span>
-                  <span className="mt-0.5 block min-h-7 text-[8px] leading-3 text-zinc-600">
-                    {CAPTION_STYLE_DESCRIPTIONS[preset.preset]}
-                  </span>
-                  {selected && (
-                    <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-violet-200" />
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <label className="block">
-              <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                Font
-              </span>
-              <select
-                value={style.font}
-                onChange={(event) => update({ font: event.target.value, preset: "custom" })}
-                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-violet-300/30"
-              >
-                {["Arial", "Inter", "Poppins", "Montserrat", "Impact", "Liberation Sans"].map((font) => (
-                  <option key={font} value={font}>{font}</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                Position
-              </span>
-              <select
-                value={style.position}
-                onChange={(event) => update({ position: event.target.value as CaptionPosition, preset: "custom" })}
-                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-violet-300/30"
-              >
-                <option value="top">Top</option>
-                <option value="center">Center</option>
-                <option value="bottom">Bottom</option>
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
-                Text case
-              </span>
-              <button
-                type="button"
-                onClick={() => update({ uppercase: !style.uppercase, preset: "custom" })}
-                className={`flex h-10 w-full items-center justify-between rounded-xl border px-3 text-xs transition ${
-                  style.uppercase
-                    ? "border-violet-300/25 bg-violet-300/[0.08] text-violet-100"
-                    : "border-white/[0.08] bg-[#080b10] text-zinc-400"
-                }`}
-              >
-                <span>{style.uppercase ? "UPPERCASE" : "Sentence case"}</span>
-                <span className={`h-4 w-7 rounded-full p-0.5 transition ${style.uppercase ? "bg-violet-300/40" : "bg-white/10"}`}>
-                  <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${style.uppercase ? "translate-x-3" : ""}`} />
-                </span>
-              </button>
-            </label>
-          </div>
-
-          <div className="mt-3 grid grid-cols-2 gap-3">
-            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
-              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-600">Text color</span>
-              <input
-                type="color"
-                value={style.textColor}
-                onChange={(event) => update({ textColor: event.target.value, preset: "custom" })}
-                className="h-7 w-9 cursor-pointer rounded-md border-0 bg-transparent p-0"
-                aria-label="Caption text color"
-              />
-            </label>
-            <label className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-black/20 px-3 py-2.5">
-              <span className="text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-600">Highlight</span>
-              <input
-                type="color"
-                value={style.highlightColor}
-                onChange={(event) => update({ highlightColor: event.target.value, preset: "custom" })}
-                className="h-7 w-9 cursor-pointer rounded-md border-0 bg-transparent p-0"
-                aria-label="Caption highlight color"
-              />
-            </label>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ============================================================================
    LUMOCLIP ASSISTANT — PREMIUM AI SUPPORT WIDGET
@@ -1923,16 +1490,8 @@ export function LandingPage({
   const [fileError, setFileError] = useState("");
   const [activePremiumMetric, setActivePremiumMetric] = useState(0);
 
-  const [captionStyle, setCaptionStyle] =
-    useState<CaptionStyleSettings>(() =>
-      cloneCaptionStyle(DEFAULT_CAPTION_STYLE)
-    );
-
-  const [captionPickerOpen, setCaptionPickerOpen] =
-    useState(false);
-
-  const [captionMode, setCaptionMode] =
-    useState<CaptionProcessingMode>("clips");
+  const captionStyle = DEFAULT_CAPTION_STYLE;
+  const captionMode: CaptionProcessingMode = "clips";
 
   const [openFaq, setOpenFaq] =
     useState<number | null>(null);
@@ -2885,115 +2444,125 @@ export function LandingPage({
         </section>
 
         {/* ==================================================================
-            AI ENGINE
+            PREMIUM AI DASHBOARD PREVIEW
         ================================================================== */}
 
         <section
-          aria-labelledby="intelligence-title"
+          aria-labelledby="premium-preview-title"
           className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
-          <Glow className="left-1/2 top-1/2 h-[600px] w-[900px] -translate-x-1/2 -translate-y-1/2 bg-violet-400/[0.035]" />
+          <Glow className="left-[8%] top-[10%] h-[420px] w-[420px] bg-violet-400/[0.025]" />
+          <Glow className="right-[4%] bottom-[4%] h-[500px] w-[500px] bg-fuchsia-500/[0.025]" />
 
           <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
-            <div className="grid items-center gap-12 lg:grid-cols-[0.8fr_1.2fr]">
-              <Reveal>
-                <SectionLabel icon={Sparkles}>
-                  Lumo Intelligence
+            <Reveal>
+              <div className="mx-auto max-w-3xl text-center">
+                <SectionLabel icon={Gauge}>
+                  Creator intelligence dashboard
                 </SectionLabel>
-
                 <h2
-                  id="intelligence-title"
-                  className="mt-7 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                  id="premium-preview-title"
+                  className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
                 >
-                  Not just
+                  See the signal.
                   <br />
-
                   <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
-                    automatic.
-                  </span>
-
-                  <br />
-
-                  <span className="text-zinc-700">
-                    Intelligent.
+                    Not just the clip.
                   </span>
                 </h2>
-
-                <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">
-                  LumoClip is designed to find
-                  content worth publishing instead
-                  of creating random clips.
+                <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-700">
+                  Give creators a clear reason to trust the output: what was detected, why it matters and which asset should be published first.
                 </p>
+              </div>
+            </Reveal>
 
-                <div className="mt-7 space-y-3">
-                  {[
-                    "Semantic content understanding",
-                    "Context-aware moment detection",
-                    "AI-generated hooks and captions",
-                    "Organized project workflow",
-                  ].map((item) => (
-                    <div
-                      key={item}
-                      className="flex items-center gap-3"
-                    >
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-400/10">
-                        <Check className="h-3 w-3 text-emerald-300" />
-                      </div>
-
-                      <span className="text-xs text-zinc-500">
-                        {item}
-                      </span>
+            <Reveal delay={90} className="mt-12">
+              <div className="relative overflow-hidden rounded-[34px] border border-white/[0.08] bg-[#080b10]/90 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:p-6">
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/50 to-transparent" />
+                <div className="flex flex-col gap-4 border-b border-white/[0.05] pb-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
+                      <Activity className="h-4 w-4 text-violet-300" />
                     </div>
+                    <div>
+                      <p className="text-xs font-bold text-white">AI Content Intelligence</p>
+                      <p className="mt-0.5 text-[9px] text-zinc-700">Example analysis · 18:42 source video</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-emerald-300/10 bg-emerald-300/[0.05] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-300">Analysis complete</span>
+                    <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2.5 py-1 font-mono text-[8px] text-zinc-600">AI v1</span>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    [Target, "Viral potential", "98%", "Strong hook + payoff"],
+                    [Clock3, "Best moment", "00:42", "High-value story beat"],
+                    [Subtitles, "Caption ready", "100%", "Speech detected"],
+                    [TrendingUp, "Publish score", "94/100", "Top output candidate"],
+                  ].map(([Icon, title, value, detail], index) => (
+                    <button
+                      key={String(title)}
+                      type="button"
+                      onClick={() => setActivePremiumMetric(index)}
+                      className={`text-left ${activePremiumMetric === index ? "ring-1 ring-violet-300/20" : ""}`}
+                    >
+                      <PremiumSignalCard
+                        icon={Icon as React.ElementType}
+                        title={String(title)}
+                        value={String(value)}
+                        detail={String(detail)}
+                      />
+                    </button>
                   ))}
                 </div>
-              </Reveal>
 
-              <Reveal delay={120}>
-                <ProcessingVisual />
-              </Reveal>
-            </div>
+                <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
+                  <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-300">Moment map</p>
+                        <p className="mt-1 text-xs font-semibold text-zinc-300">Where the strongest content lives</p>
+                      </div>
+                      <MousePointer2 className="h-4 w-4 text-zinc-700" />
+                    </div>
+                    <div className="mt-5 flex h-24 items-end gap-1.5 overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.015] px-3 pb-3 pt-4">
+                      {Array.from({ length: 52 }).map((_, i) => {
+                        const height = 15 + ((i * 37 + 23) % 75);
+                        const hot = [6,7,8,9,10,22,23,24,25,38,39,40,41].includes(i);
+                        return (
+                          <div
+                            key={i}
+                            className={`w-full rounded-full transition-all duration-500 ${hot ? "bg-gradient-to-t from-violet-500 to-violet-100 shadow-[0_0_12px_rgba(139,92,246,0.25)]" : "bg-white/[0.07]"}`}
+                            style={{ height: `${height}%`, opacity: hot ? 1 : 0.45 }}
+                          />
+                        );
+                      })}
+                    </div>
+                    <div className="mt-3 flex justify-between font-mono text-[7px] text-zinc-800">
+                      <span>00:00</span><span>06:00</span><span>12:00</span><span>18:42</span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-300">Recommended output</p>
+                    <div className="mt-4 rounded-2xl border border-violet-300/10 bg-violet-300/[0.025] p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 font-mono text-[7px] text-violet-300">#01</span>
+                        <span className="font-mono text-[8px] text-emerald-300">98%</span>
+                      </div>
+                      <p className="mt-5 text-sm font-black text-white">The strongest idea</p>
+                      <p className="mt-1 text-[9px] leading-4 text-zinc-700">Hook → insight → payoff. Ideal for a short-form cut.</p>
+                      <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full w-[98%] rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500" /></div>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-[8px] text-zinc-700"><CheckCheck className="h-3 w-3 text-emerald-300/70" /> Ready for review</div>
+                  </div>
+                </div>
+              </div>
+            </Reveal>
           </div>
-        </section>
-
-        {/* ==================================================================
-            BIG STATEMENT
-        ================================================================== */}
-
-        <section
-          className="relative overflow-hidden py-28 sm:py-40"
-          style={lazySectionStyle}
-        >
-          <Glow className="left-1/2 top-1/2 h-[500px] w-[800px] -translate-x-1/2 -translate-y-1/2 bg-violet-400/[0.045]" />
-
-          <Reveal className="relative mx-auto max-w-5xl px-5 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-300/10 bg-violet-400/[0.045] shadow-[0_0_60px_rgba(139,92,246,0.08)]">
-              <WandSparkles className="h-6 w-6 text-violet-300" />
-            </div>
-
-            <h2 className="mt-8 text-4xl font-black leading-[0.98] tracking-[-0.065em] sm:text-6xl lg:text-7xl">
-              Stop searching.
-              <br />
-
-              <span className="bg-gradient-to-r from-violet-200 via-violet-300 to-fuchsia-400 bg-clip-text text-transparent">
-                Start creating.
-              </span>
-            </h2>
-
-            <p className="mx-auto mt-7 max-w-2xl text-sm leading-7 text-zinc-700 sm:text-base">
-              Your time should go into ideas,
-              storytelling and creativity — not
-              endless timeline scrubbing.
-            </p>
-
-            <div className="mt-9">
-              <PremiumButton
-                onClick={() => onGetStarted()}
-              >
-                Build your content engine
-              </PremiumButton>
-            </div>
-          </Reveal>
         </section>
 
         {/* ==================================================================
@@ -3003,7 +2572,7 @@ export function LandingPage({
         <section
           id="workflow"
           aria-labelledby="workflow-title"
-          className="scroll-mt-20 border-y border-white/[0.045] py-24 sm:py-32"
+          className="scroll-mt-20 py-24 sm:py-32"
           style={lazySectionStyle}
         >
           <div className="mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
@@ -3221,128 +2790,6 @@ export function LandingPage({
         </section>
 
         {/* ==================================================================
-            PREMIUM AI DASHBOARD PREVIEW
-        ================================================================== */}
-
-        <section
-          aria-labelledby="premium-preview-title"
-          className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
-          style={lazySectionStyle}
-        >
-          <Glow className="left-[8%] top-[10%] h-[420px] w-[420px] bg-violet-400/[0.025]" />
-          <Glow className="right-[4%] bottom-[4%] h-[500px] w-[500px] bg-fuchsia-500/[0.025]" />
-
-          <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
-            <Reveal>
-              <div className="mx-auto max-w-3xl text-center">
-                <SectionLabel icon={Gauge}>
-                  Creator intelligence dashboard
-                </SectionLabel>
-                <h2
-                  id="premium-preview-title"
-                  className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
-                >
-                  See the signal.
-                  <br />
-                  <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
-                    Not just the clip.
-                  </span>
-                </h2>
-                <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-700">
-                  Give creators a clear reason to trust the output: what was detected, why it matters and which asset should be published first.
-                </p>
-              </div>
-            </Reveal>
-
-            <Reveal delay={90} className="mt-12">
-              <div className="relative overflow-hidden rounded-[34px] border border-white/[0.08] bg-[#080b10]/90 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:p-6">
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/50 to-transparent" />
-                <div className="flex flex-col gap-4 border-b border-white/[0.05] pb-5 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
-                      <Activity className="h-4 w-4 text-violet-300" />
-                    </div>
-                    <div>
-                      <p className="text-xs font-bold text-white">AI Content Intelligence</p>
-                      <p className="mt-0.5 text-[9px] text-zinc-700">Example analysis · 18:42 source video</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-emerald-300/10 bg-emerald-300/[0.05] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.14em] text-emerald-300">Analysis complete</span>
-                    <span className="rounded-full border border-white/[0.07] bg-white/[0.025] px-2.5 py-1 font-mono text-[8px] text-zinc-600">AI v1</span>
-                  </div>
-                </div>
-
-                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  {[
-                    [Target, "Viral potential", "98%", "Strong hook + payoff"],
-                    [Clock3, "Best moment", "00:42", "High-value story beat"],
-                    [Subtitles, "Caption ready", "100%", "Speech detected"],
-                    [TrendingUp, "Publish score", "94/100", "Top output candidate"],
-                  ].map(([Icon, title, value, detail], index) => (
-                    <button
-                      key={String(title)}
-                      type="button"
-                      onClick={() => setActivePremiumMetric(index)}
-                      className={`text-left ${activePremiumMetric === index ? "ring-1 ring-violet-300/20" : ""}`}
-                    >
-                      <PremiumSignalCard
-                        icon={Icon as React.ElementType}
-                        title={String(title)}
-                        value={String(value)}
-                        detail={String(detail)}
-                      />
-                    </button>
-                  ))}
-                </div>
-
-                <div className="mt-4 grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
-                  <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-300">Moment map</p>
-                        <p className="mt-1 text-xs font-semibold text-zinc-300">Where the strongest content lives</p>
-                      </div>
-                      <MousePointer2 className="h-4 w-4 text-zinc-700" />
-                    </div>
-                    <div className="mt-5 flex h-24 items-end gap-1.5 overflow-hidden rounded-2xl border border-white/[0.05] bg-white/[0.015] px-3 pb-3 pt-4">
-                      {Array.from({ length: 52 }).map((_, i) => {
-                        const height = 15 + ((i * 37 + 23) % 75);
-                        const hot = [6,7,8,9,10,22,23,24,25,38,39,40,41].includes(i);
-                        return (
-                          <div
-                            key={i}
-                            className={`w-full rounded-full transition-all duration-500 ${hot ? "bg-gradient-to-t from-violet-500 to-violet-100 shadow-[0_0_12px_rgba(139,92,246,0.25)]" : "bg-white/[0.07]"}`}
-                            style={{ height: `${height}%`, opacity: hot ? 1 : 0.45 }}
-                          />
-                        );
-                      })}
-                    </div>
-                    <div className="mt-3 flex justify-between font-mono text-[7px] text-zinc-800">
-                      <span>00:00</span><span>06:00</span><span>12:00</span><span>18:42</span>
-                    </div>
-                  </div>
-
-                  <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-300">Recommended output</p>
-                    <div className="mt-4 rounded-2xl border border-violet-300/10 bg-violet-300/[0.025] p-4">
-                      <div className="flex items-center justify-between">
-                        <span className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 font-mono text-[7px] text-violet-300">#01</span>
-                        <span className="font-mono text-[8px] text-emerald-300">98%</span>
-                      </div>
-                      <p className="mt-5 text-sm font-black text-white">The strongest idea</p>
-                      <p className="mt-1 text-[9px] leading-4 text-zinc-700">Hook → insight → payoff. Ideal for a short-form cut.</p>
-                      <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full w-[98%] rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500" /></div>
-                    </div>
-                    <div className="mt-3 flex items-center gap-2 text-[8px] text-zinc-700"><CheckCheck className="h-3 w-3 text-emerald-300/70" /> Ready for review</div>
-                  </div>
-                </div>
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
-        {/* ==================================================================
             PLATFORM READY
         ================================================================== */}
 
@@ -3421,49 +2868,6 @@ export function LandingPage({
                   </article>
                 </Reveal>
               ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ==================================================================
-            PREMIUM WORKFLOW TIMELINE
-        ================================================================== */}
-
-        <section
-          aria-labelledby="premium-workflow-title"
-          className="py-24 sm:py-32"
-          style={lazySectionStyle}
-        >
-          <div className="mx-auto max-w-[1000px] px-5 sm:px-6">
-            <Reveal>
-              <div className="text-center">
-                <SectionLabel icon={Command}>
-                  From raw video to content engine
-                </SectionLabel>
-                <h2 id="premium-workflow-title" className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
-                  A workflow that
-                  <br />
-                  <span className="text-zinc-700">gets out of your way.</span>
-                </h2>
-              </div>
-            </Reveal>
-
-            <div className="relative mt-14">
-              <div className="absolute bottom-7 left-[18px] top-7 hidden w-px bg-gradient-to-b from-violet-300/30 via-violet-300/10 to-transparent sm:block" />
-              <div className="space-y-4">
-                {premiumWorkflow.map(([no, title, text], index) => (
-                  <Reveal key={no} delay={index * 60}>
-                    <article className="group relative flex gap-4 rounded-[25px] border border-white/[0.06] bg-white/[0.012] p-5 transition-all duration-300 hover:border-violet-300/15 hover:bg-white/[0.022] sm:items-center sm:p-6">
-                      <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-[#070a0e] font-mono text-[8px] font-bold text-violet-300">{no}</div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="text-sm font-bold text-white">{title}</h3>
-                        <p className="mt-1 text-xs leading-5 text-zinc-700">{text}</p>
-                      </div>
-                      <Check className="hidden h-4 w-4 text-emerald-300/70 sm:block" />
-                    </article>
-                  </Reveal>
-                ))}
-              </div>
             </div>
           </div>
         </section>
