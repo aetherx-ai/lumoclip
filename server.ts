@@ -6801,6 +6801,65 @@ function buildSpeechEnhanceFilterChain(
   return filters.join(",");
 }
 
+/**
+ * Quick decode-only loudness probe (no encoding, audio-only) using
+ * FFmpeg's stock `volumedetect` filter. Used to report concrete
+ * before/after numbers for speech enhancement instead of asking the
+ * user to trust that "it worked" — e.g. mean volume rising from
+ * -32dB to -16dB is something they can actually see.
+ *
+ * This is much cheaper than a real encode: no video decoding, no
+ * output file written, just a single audio pass.
+ */
+async function measureAudioVolume(
+  filePath: string,
+): Promise<{ meanVolumeDb: number | null; maxVolumeDb: number | null }> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const finish = (result: { meanVolumeDb: number | null; maxVolumeDb: number | null }) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+
+    const command = ffmpeg(filePath)
+      .noVideo()
+      .audioFilters("volumedetect")
+      .outputOptions(["-f", "null"])
+      .output(os.platform() === "win32" ? "NUL" : "/dev/null")
+      .on("end", (_stdout: string, stderr: string) => {
+        const meanMatch = /mean_volume:\s*(-?[\d.]+)\s*dB/i.exec(stderr || "");
+        const maxMatch = /max_volume:\s*(-?[\d.]+)\s*dB/i.exec(stderr || "");
+        finish({
+          meanVolumeDb: meanMatch ? Number(meanMatch[1]) : null,
+          maxVolumeDb: maxMatch ? Number(maxMatch[1]) : null,
+        });
+      })
+      // Loudness stats are a nice-to-have, not a hard requirement:
+      // if the probe fails for any reason, don't fail the whole
+      // speech enhancement job over it.
+      .on("error", () => finish({ meanVolumeDb: null, maxVolumeDb: null }));
+
+    // Cap the probe itself so a bad file can't hang alongside the
+    // main enhancement timeout.
+    timer = setTimeout(
+      () => {
+        try {
+          command.kill("SIGKILL");
+        } catch {}
+        finish({ meanVolumeDb: null, maxVolumeDb: null });
+      },
+      Math.min(60000, Math.max(5000, SPEECH_ENHANCE_TIMEOUT_MS / 10)),
+    );
+    timer.unref?.();
+
+    command.run();
+  });
+}
+
 async function runSpeechEnhancement(
   inputPath: string,
   outputPath: string,
@@ -6808,6 +6867,7 @@ async function runSpeechEnhancement(
     copyVideo: boolean;
     intensity?: SpeechEnhanceIntensity;
     removeHum?: boolean;
+    onProgressPercent?: (percent: number) => void;
   },
 ): Promise<void> {
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
@@ -6820,6 +6880,7 @@ async function runSpeechEnhancement(
   await new Promise<void>((resolve, reject) => {
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let lastReportedPercent = -1;
 
     const cleanupPartialOutput = () => {
       try {
@@ -6867,13 +6928,22 @@ async function runSpeechEnhancement(
       })
       .on("progress", (progress) => {
         if (
-          typeof progress.percent === "number" &&
-          Number.isFinite(progress.percent)
+          typeof progress.percent !== "number" ||
+          !Number.isFinite(progress.percent)
         ) {
-          console.log(
-            `Speech enhancement progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`,
-          );
+          return;
         }
+
+        const percent = Math.min(100, Math.max(0, Math.round(progress.percent)));
+
+        // Only act on real, forward-moving updates, and only once per
+        // whole percentage point, so a fast "copy" job doesn't spam
+        // the database with dozens of writes for the same second.
+        if (percent <= lastReportedPercent) return;
+        lastReportedPercent = percent;
+
+        console.log(`Speech enhancement progress: ${percent}%`);
+        options.onProgressPercent?.(percent);
       })
       .on("end", () => {
         if (
@@ -8536,6 +8606,15 @@ app.get(
      de-essing and adaptive noise tracking for noisy recordings.
    - removeHum: also notch out 50Hz/60Hz mains hum and its harmonic.
 
+   While processing, `projects.current_step` is updated with a live
+   percentage ("Enhancing speech (42%)") so the frontend can show real
+   progress instead of a static string for the whole job.
+
+   Response includes `processingTimeMs` and a `loudness.before`/`after`
+   pair (mean/max volume in dB, from a quick decode-only probe) so the
+   caller can show concrete proof the enhancement worked, not just a
+   success message.
+
    Cost: 0 credits. Speech enhancement is free for all authenticated users.
 ========================================================= */
 
@@ -8641,15 +8720,52 @@ app.post(
 
       await supabase
         .from("projects")
-        .update({ current_step: "Enhancing speech" })
+        .update({ current_step: "Enhancing speech (0%)" })
         .eq("id", projectId)
         .eq("user_id", user.id);
+
+      // Cheap before-measurement so the response can show a concrete
+      // number, not just "done" — e.g. "-31dB -> -16dB".
+      const beforeStats = await measureAudioVolume(inputPath);
+
+      const startedAt = Date.now();
+
+      // Throttle DB writes to at most one every 3s (or every 10 whole
+      // percentage points), so a fast "copy" job doesn't hammer
+      // Supabase while a slow full re-encode still gives the frontend
+      // something to show ("Enhancing speech (42%)") instead of a
+      // static string for several minutes.
+      let lastProgressWriteAt = 0;
+      let lastWrittenPercent = -1;
 
       await runSpeechEnhancement(inputPath, outputPath, {
         copyVideo,
         intensity,
         removeHum,
+        onProgressPercent: (percent) => {
+          const now = Date.now();
+          const dueByTime = now - lastProgressWriteAt >= 3000;
+          const dueByJump = percent - lastWrittenPercent >= 10;
+          if (!dueByTime && !dueByJump && percent < 100) return;
+
+          lastProgressWriteAt = now;
+          lastWrittenPercent = percent;
+
+          supabase
+            .from("projects")
+            .update({ current_step: `Enhancing speech (${percent}%)` })
+            .eq("id", projectId)
+            .eq("user_id", user.id)
+            .then(undefined, (updateError: any) => {
+              console.error("Speech enhancement progress update failed:", updateError);
+            });
+        },
       });
+
+      const processingTimeMs = Date.now() - startedAt;
+
+      // After-measurement on the finished file. Non-fatal if it fails.
+      const afterStats = await measureAudioVolume(outputPath);
 
       const outputUrl = publicMediaUrl(projectId, `enhanced/${outputName}`);
 
@@ -8672,6 +8788,7 @@ app.post(
             videoMode: copyVideo ? "copy" : "reencode",
             intensity,
             removeHum,
+            processingTimeMs,
           },
         });
       } catch (notificationError) {
@@ -8684,6 +8801,12 @@ app.post(
         .eq("id", projectId)
         .eq("user_id", user.id);
 
+      console.log(
+        `Speech enhancement done in ${(processingTimeMs / 1000).toFixed(1)}s ` +
+          `(mode=${copyVideo ? "copy" : "reencode"}). ` +
+          `Loudness: before mean=${beforeStats.meanVolumeDb ?? "n/a"}dB -> after mean=${afterStats.meanVolumeDb ?? "n/a"}dB`,
+      );
+
       return res.json({
         success: true,
         projectId,
@@ -8693,6 +8816,17 @@ app.post(
         outputUrl,
         filename: outputName,
         creditsUsed: 0,
+        processingTimeMs,
+        // Concrete before/after numbers so the caller can show the
+        // user proof the enhancement actually did something, rather
+        // than just a success message. Values are in dB (relative to
+        // 0dB full scale); closer to 0 = louder/more audible.
+        // meanVolumeDb moving up (e.g. -31 -> -16) means the voice got
+        // audibly louder/clearer; null means the probe couldn't run.
+        loudness: {
+          before: beforeStats,
+          after: afterStats,
+        },
         message: "Speech enhanced successfully.",
       });
     } catch (error: any) {
