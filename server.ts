@@ -74,7 +74,7 @@ const MAX_UPLOAD_MB = Number(
    Tuned for the current LumoClip MVP / Windows + modest CPU.
 ========================================================= */
 const YOUTUBE_MAX_HEIGHT = Number(
-  process.env.YOUTUBE_MAX_HEIGHT || 480,
+  process.env.YOUTUBE_MAX_HEIGHT || 720,
 );
 
 const YOUTUBE_CONCURRENT_FRAGMENTS = Number(

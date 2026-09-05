@@ -47,7 +47,7 @@ const MAX_HEIGHT = Math.max(
   144,
   Math.min(
     1080,
-    Number(process.env.WORKER_MAX_HEIGHT || 480)
+    Number(process.env.WORKER_MAX_HEIGHT || 720)
   )
 );
 
