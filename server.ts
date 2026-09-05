@@ -832,27 +832,52 @@ async function getProcessingConfig(
 ): Promise<ProcessingConfig> {
   const inMemory = processingConfigs.get(projectId);
 
-  const { data, error } = await supabase
+  // `current_step` is part of the existing project schema and provides a
+  // durable fallback for speech-only projects even when the optional
+  // processing_mode/caption_style columns have not been migrated yet.
+  const { data: baseProject, error: baseError } = await supabase
+    .from("projects")
+    .select("current_step")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  if (baseError) {
+    console.warn("Project processing state lookup failed:", baseError.message);
+  }
+
+  const isSpeechOnlyFallback = String(baseProject?.current_step || "").includes(
+    "speech enhancement source",
+  );
+
+  // Optional metadata columns are intentionally best-effort for backward
+  // compatibility with existing LumoClip databases.
+  const { data: metadata, error: metadataError } = await supabase
     .from("projects")
     .select("processing_mode, caption_style")
     .eq("id", projectId)
     .maybeSingle();
 
-  if (!error && data?.processing_mode) {
+  if (!metadataError && metadata?.processing_mode) {
     return {
-      mode: normalizeProcessingMode(data.processing_mode),
-      captionStyle: normalizeCaptionStyle(data.caption_style),
+      mode: normalizeProcessingMode(metadata.processing_mode),
+      captionStyle: normalizeCaptionStyle(metadata.caption_style),
     };
   }
 
-  return (
-    inMemory || {
-      mode: "clips",
-      captionStyle: normalizeCaptionStyle(undefined),
-    }
-  );
-}
+  if (isSpeechOnlyFallback) {
+    return {
+      mode: "speech_only",
+      captionStyle: normalizeCaptionStyle(metadata?.caption_style),
+    };
+  }
 
+  if (inMemory) return inMemory;
+
+  return {
+    mode: "clips",
+    captionStyle: normalizeCaptionStyle(undefined),
+  };
+}
 /* =========================================================
    DIRECTORIES
 ========================================================= */
@@ -1004,7 +1029,7 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
-type ProcessingMode = "clips" | "full_video_caption";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only";
 
 interface SubtitleStyle {
   enabled: boolean;
@@ -1078,9 +1103,9 @@ function normalizeCaptionStyle(value: unknown): SubtitleStyle {
 }
 
 function normalizeProcessingMode(value: unknown): ProcessingMode {
-  return value === "full_video_caption"
-    ? "full_video_caption"
-    : "clips";
+  if (value === "speech_only") return "speech_only";
+  if (value === "full_video_caption") return "full_video_caption";
+  return "clips";
 }
 
 function getProcessingConfigFromRequest(
@@ -3249,9 +3274,7 @@ function publicMediaUrl(
   projectId: string,
   filename: string,
 ) {
-  const encodedProject =
-    encodeURIComponent(projectId);
-
+  const encodedProject = encodeURIComponent(projectId);
   const parts = filename
     .split("/")
     .map(encodeURIComponent);
@@ -3262,9 +3285,13 @@ function publicMediaUrl(
       .join("/")}`;
   }
 
-  return `/api/media/${encodedProject}/source/${parts.join(
-    "/",
-  )}`;
+  if (parts[0] === "enhanced") {
+    return `/api/media/${encodedProject}/enhanced/${parts
+      .slice(1)
+      .join("/")}`;
+  }
+
+  return `/api/media/${encodedProject}/source/${parts.join("/")}`;
 }
 
 /* =========================================================
@@ -5311,6 +5338,31 @@ async function processVideo(
       originalSourceUrl,
     );
 
+    // Speech-only projects are source-preparation jobs. They MUST NOT run
+    // Gemini clip analysis and MUST NOT enter the clips table/folder.
+    // Enhanced Speech is a separate action performed after the source exists.
+    if (mode === "speech_only") {
+      await updateProject(
+        projectId,
+        100,
+        "Source ready for Enhanced Speech",
+        "completed",
+        0,
+      );
+
+      await createNotification({
+        userId,
+        type: "project_ready_for_speech",
+        title: "Video ready for Enhanced Speech",
+        message: "Your source video is ready. Enhance its speech whenever you want.",
+        projectId,
+        metadata: { mode: "speech_only", generated: 0 },
+      });
+
+      console.log(`Project ${projectId} prepared for Enhanced Speech without generating clips.`);
+      return;
+    }
+
     await updateProject(
       projectId,
       35,
@@ -7032,9 +7084,13 @@ app.post(
         requestedConfig,
       );
 
-      const waitingMessage = WORKER_ENABLED
-        ? "Waiting for LumoClip worker"
-        : "Worker is not configured. Please start/configure the LumoClip PC worker.";
+      const waitingMessage = requestedConfig.mode === "speech_only"
+        ? (WORKER_ENABLED
+          ? "Waiting for LumoClip worker (speech enhancement source)"
+          : "Worker is not configured. Please start/configure the LumoClip PC worker.")
+        : (WORKER_ENABLED
+          ? "Waiting for LumoClip worker"
+          : "Worker is not configured. Please start/configure the LumoClip PC worker.");
 
       await updateProject(projectId, 5, waitingMessage, "processing");
 
@@ -7141,10 +7197,13 @@ app.post("/api/worker/claim", async (req, res) => {
     const { data: queuedProject, error: selectError } =
       await supabase
         .from("projects")
-        .select("id, user_id, name, source_type, source_url, status")
+        .select("id, user_id, name, source_type, source_url, status, current_step")
         .eq("source_type", "youtube")
         .eq("status", "processing")
-        .eq("current_step", "Waiting for LumoClip worker")
+        .in("current_step", [
+          "Waiting for LumoClip worker",
+          "Waiting for LumoClip worker (speech enhancement source)",
+        ])
         .not("source_url", "is", null)
         .order("created_at", { ascending: true })
         .limit(1)
@@ -7162,11 +7221,16 @@ app.post("/api/worker/claim", async (req, res) => {
         .update({
           status: "worker_downloading",
           progress: 8,
-          current_step: "Worker is downloading YouTube video",
+          current_step: String(queuedProject.current_step || "").includes("speech enhancement source")
+            ? "Worker is downloading YouTube video (speech enhancement source)"
+            : "Worker is downloading YouTube video",
         })
         .eq("id", queuedProject.id)
         .eq("status", "processing")
-        .eq("current_step", "Waiting for LumoClip worker")
+        .in("current_step", [
+          "Waiting for LumoClip worker",
+          "Waiting for LumoClip worker (speech enhancement source)",
+        ])
         .select("id, user_id, name, source_type, source_url, status")
         .maybeSingle();
 
@@ -7214,7 +7278,10 @@ app.post(
           .eq("id", projectId)
           .eq("source_type", "youtube")
           .eq("status", "worker_downloading")
-          .eq("current_step", "Worker is downloading YouTube video")
+          .in("current_step", [
+          "Worker is downloading YouTube video",
+          "Worker is downloading YouTube video (speech enhancement source)",
+        ])
           .maybeSingle();
 
       if (projectError) throw projectError;
@@ -8136,11 +8203,15 @@ app.get(
 app.get(
   "/api/media/:projectId/clips/:filename",
   (req, res) =>
-    sendProjectMedia(
-      req,
-      res,
-      "clips",
-    ),
+    sendProjectMedia(req, res, "clips"),
+);
+
+// Enhanced Speech outputs live outside `/clips` by design, so they can
+// never be mistaken for AI-generated clips by the frontend or API clients.
+app.get(
+  "/api/media/:projectId/enhanced/:filename",
+  (req, res) =>
+    sendProjectMedia(req, res, "enhanced"),
 );
 
 /* =========================================================
@@ -8473,7 +8544,7 @@ app.post(
       outputPath = path.join(
         mediaDir,
         safeSegment(projectId),
-        "clips",
+        "enhanced",
         outputName,
       );
 
@@ -8485,7 +8556,7 @@ app.post(
 
       await runSpeechEnhancement(inputPath, outputPath);
 
-      const outputUrl = publicMediaUrl(projectId, `clips/${outputName}`);
+      const outputUrl = publicMediaUrl(projectId, `enhanced/${outputName}`);
 
       await supabase.from("usage_logs").insert({
         user_id: user.id,

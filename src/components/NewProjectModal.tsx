@@ -94,7 +94,7 @@ interface CaptionStyle {
 }
 
 // Must match ProcessingMode on the server (server.ts).
-type ProcessingMode = "clips" | "full_video_caption";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only";
 
 /* =========================================================
    CONSTANTS
@@ -1360,6 +1360,7 @@ export const NewProjectModal: React.FC<
 
   const isFullVideoMode =
     processingMode === "full_video_caption";
+  const isSpeechEnhanceMode = intent === "enhance-speech";
 
   // Full-video mode has no purpose without captions, so force them on
   // (and keep the toggle locked) whenever this mode is selected.
@@ -1443,7 +1444,11 @@ export const NewProjectModal: React.FC<
     setDragActive(false);
     setIsFocused(false);
     setCaptionStyle(DEFAULT_CAPTION_STYLE);
-    setProcessingMode(DEFAULT_PROCESSING_MODE);
+    setProcessingMode(
+      intent === "enhance-speech"
+        ? "speech_only"
+        : DEFAULT_PROCESSING_MODE,
+    );
 
     setUploadState({
       progress: 0,
@@ -1454,7 +1459,7 @@ export const NewProjectModal: React.FC<
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, []);
+  }, [intent]);
 
   /* =======================================================
      OPEN / SYNC
@@ -1482,6 +1487,12 @@ export const NewProjectModal: React.FC<
       setYoutubeUrl("");
     }
 
+    setProcessingMode(
+      intent === "enhance-speech"
+        ? "speech_only"
+        : DEFAULT_PROCESSING_MODE,
+    );
+
     setProjectTitle(
       initialTitle?.trim() || "",
     );
@@ -1497,6 +1508,7 @@ export const NewProjectModal: React.FC<
     isOpen,
     dashboardUrl,
     initialTitle,
+    intent,
   ]);
 
   /* =======================================================
@@ -1744,7 +1756,9 @@ export const NewProjectModal: React.FC<
 
       if (credits < MIN_CREDITS) {
         setError(
-          `You need at least ${MIN_CREDITS} credits to create a project.`,
+          isSpeechEnhanceMode
+            ? `You need at least ${MIN_CREDITS} credits to prepare this video.`
+            : `You need at least ${MIN_CREDITS} credits to create a project.`,
         );
         return;
       }
@@ -1912,7 +1926,7 @@ export const NewProjectModal: React.FC<
 
                   sourceUrl: finalUrl,
 
-                  mode: processingMode,
+                  mode: isSpeechEnhanceMode ? "speech_only" : processingMode,
 
                   captionStyle,
                 }),
