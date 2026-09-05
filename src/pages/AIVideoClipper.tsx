@@ -24,6 +24,62 @@ const FAQS: FAQItem[] = [
   },
 ];
 
+const STEPS = [
+  {
+    name: "Add Your Video",
+    text: "Upload a supported video or provide a supported video URL containing the long-form content you want to repurpose.",
+  },
+  {
+    name: "AI Analyzes the Content",
+    text: "LumoClip analyzes the video to understand its content and identify sections that may work well as short-form clips.",
+  },
+  {
+    name: "Discover Potential Highlights",
+    text: "Review the potential highlights identified from your long-form video and choose the moments you want to use.",
+  },
+  {
+    name: "Create Short Clips",
+    text: "Turn selected moments into short-form video clips ready for your content workflow.",
+  },
+];
+
+const PAGE_URL = "https://lumo-clip.com/ai-video-clipper";
+
+// BreadcrumbList schema — helps Google show a breadcrumb trail in search results
+const BREADCRUMB_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Home",
+      item: "https://lumo-clip.com/",
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: "AI Video Clipper",
+      item: PAGE_URL,
+    },
+  ],
+};
+
+// HowTo schema — describes the 4-step workflow for potential rich results
+const HOWTO_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How LumoClip's AI Video Clipper Works",
+  description:
+    "Steps to find potential highlights in a long-form video and turn them into short-form clips using LumoClip.",
+  step: STEPS.map((step, index) => ({
+    "@type": "HowToStep",
+    position: index + 1,
+    name: step.name,
+    text: step.text,
+  })),
+};
+
 export default function AIVideoClipper() {
   useSEO({
     title: "AI Video Clipper | Find Your Best Video Moments with AI | LumoClip",
@@ -36,14 +92,39 @@ export default function AIVideoClipper() {
 
   return (
     <main className="min-h-screen bg-black px-6 py-20 text-white">
+      {/* Structured data not already covered by useSEO */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(BREADCRUMB_SCHEMA) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(HOWTO_SCHEMA) }}
+      />
+
       <div className="mx-auto max-w-5xl">
+        {/* Breadcrumb (visual) */}
+        <nav aria-label="Breadcrumb" className="mb-10 text-sm text-gray-500">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link to="/" className="hover:text-green-400">
+                Home
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="text-gray-300">
+              AI Video Clipper
+            </li>
+          </ol>
+        </nav>
+
         {/* Hero */}
-        <section>
+        <section aria-labelledby="hero-heading">
           <p className="mb-4 text-sm uppercase tracking-[0.25em] text-green-400">
             LumoClip AI Video Clipper
           </p>
 
-          <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
+          <h1 id="hero-heading" className="text-4xl font-bold tracking-tight md:text-6xl">
             AI Video Clipper That Finds Your Best Moments
           </h1>
 
@@ -57,6 +138,7 @@ export default function AIVideoClipper() {
           <div className="mt-8 flex flex-wrap gap-4">
             <Link
               to="/"
+              aria-label="Try LumoClip"
               className="rounded-xl bg-white px-6 py-3 font-semibold text-black transition hover:bg-gray-200"
             >
               Try LumoClip
@@ -64,6 +146,7 @@ export default function AIVideoClipper() {
 
             <Link
               to="/long-video-to-shorts"
+              aria-label="Learn about Long Video to Shorts"
               className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:border-green-400/50"
             >
               Long Video to Shorts
@@ -72,8 +155,8 @@ export default function AIVideoClipper() {
         </section>
 
         {/* What is an AI video clipper */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section className="mt-24" aria-labelledby="what-is-heading">
+          <h2 id="what-is-heading" className="text-3xl font-bold md:text-4xl">
             What Is an AI Video Clipper?
           </h2>
 
@@ -93,67 +176,30 @@ export default function AIVideoClipper() {
         </section>
 
         {/* How it works */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="how-it-works" className="mt-24 scroll-mt-24" aria-labelledby="how-it-works-heading">
+          <h2 id="how-it-works-heading" className="text-3xl font-bold md:text-4xl">
             How LumoClip's AI Video Clipper Works
           </h2>
 
-          <div className="mt-10 grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <div className="text-sm font-semibold text-green-400">
-                STEP 01
-              </div>
-              <h3 className="mt-3 text-xl font-semibold">Add Your Video</h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                Upload a supported video or provide a supported video URL
-                containing the long-form content you want to repurpose.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <div className="text-sm font-semibold text-green-400">
-                STEP 02
-              </div>
-              <h3 className="mt-3 text-xl font-semibold">
-                AI Analyzes the Content
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                LumoClip analyzes the video to understand its content and
-                identify sections that may work well as short-form clips.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <div className="text-sm font-semibold text-green-400">
-                STEP 03
-              </div>
-              <h3 className="mt-3 text-xl font-semibold">
-                Discover Potential Highlights
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                Review the potential highlights identified from your
-                long-form video and choose the moments you want to use.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <div className="text-sm font-semibold text-green-400">
-                STEP 04
-              </div>
-              <h3 className="mt-3 text-xl font-semibold">
-                Create Short Clips
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                Turn selected moments into short-form video clips ready for
-                your content workflow.
-              </p>
-            </div>
-          </div>
+          <ol className="mt-10 grid gap-6 md:grid-cols-2">
+            {STEPS.map((step, index) => (
+              <li
+                key={step.name}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"
+              >
+                <div className="text-sm font-semibold text-green-400">
+                  STEP {String(index + 1).padStart(2, "0")}
+                </div>
+                <h3 className="mt-3 text-xl font-semibold">{step.name}</h3>
+                <p className="mt-3 leading-7 text-gray-400">{step.text}</p>
+              </li>
+            ))}
+          </ol>
         </section>
 
         {/* Features */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="features" className="mt-24 scroll-mt-24" aria-labelledby="features-heading">
+          <h2 id="features-heading" className="text-3xl font-bold md:text-4xl">
             AI Video Clipper Features
           </h2>
 
@@ -199,8 +245,8 @@ export default function AIVideoClipper() {
         </section>
 
         {/* Long form content */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section className="mt-24" aria-labelledby="long-form-heading">
+          <h2 id="long-form-heading" className="text-3xl font-bold md:text-4xl">
             Turn Long Videos Into Short Clips
           </h2>
 
@@ -219,8 +265,8 @@ export default function AIVideoClipper() {
         </section>
 
         {/* Who is it for */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="who-its-for" className="mt-24 scroll-mt-24" aria-labelledby="who-its-for-heading">
+          <h2 id="who-its-for-heading" className="text-3xl font-bold md:text-4xl">
             Who Is LumoClip For?
           </h2>
 
@@ -242,8 +288,10 @@ export default function AIVideoClipper() {
         </section>
 
         {/* Internal links */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">Explore LumoClip</h2>
+        <section className="mt-24" aria-labelledby="explore-heading">
+          <h2 id="explore-heading" className="text-3xl font-bold md:text-4xl">
+            Explore LumoClip
+          </h2>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             <Link
@@ -279,8 +327,8 @@ export default function AIVideoClipper() {
         </section>
 
         {/* FAQ (rendered from the same FAQS array used by useSEO) */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="faq" className="mt-24 scroll-mt-24" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" className="text-3xl font-bold md:text-4xl">
             AI Video Clipper FAQ
           </h2>
 
@@ -308,6 +356,7 @@ export default function AIVideoClipper() {
 
           <Link
             to="/"
+            aria-label="Try LumoClip for free"
             className="mt-8 inline-block rounded-xl bg-white px-7 py-3 font-semibold text-black transition hover:bg-gray-200"
           >
             Try LumoClip Free

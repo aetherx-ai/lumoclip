@@ -24,6 +24,71 @@ const FAQS: FAQItem[] = [
   },
 ];
 
+const STEPS = [
+  {
+    name: "Add your video",
+    text: "Start with a long-form video that you want to repurpose into short-form content.",
+  },
+  {
+    name: "Let AI analyze the content",
+    text: "LumoClip analyzes the video and identifies potential moments that could work as short clips.",
+  },
+  {
+    name: "Review your clips",
+    text: "Review the generated clip opportunities and select the ones you want to use.",
+  },
+  {
+    name: "Export and publish",
+    text: "Download your clips and use them across your preferred short-form platforms.",
+  },
+];
+
+const USE_CASES = [
+  "Podcasters",
+  "YouTubers",
+  "Content creators",
+  "Educators",
+  "Businesses",
+  "Social media teams",
+];
+
+const PAGE_URL = "https://lumo-clip.com/ai-shorts-generator";
+
+// BreadcrumbList schema — helps Google show a breadcrumb trail in search results
+const BREADCRUMB_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Home",
+      item: "https://lumo-clip.com/",
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: "AI Shorts Generator",
+      item: PAGE_URL,
+    },
+  ],
+};
+
+// HowTo schema — describes the 4-step workflow for potential rich results
+const HOWTO_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How LumoClip's AI Shorts Generator Works",
+  description:
+    "Steps to generate short-form clips from a long-form video using LumoClip's AI-assisted workflow.",
+  step: STEPS.map((step, index) => ({
+    "@type": "HowToStep",
+    position: index + 1,
+    name: step.name,
+    text: step.text,
+  })),
+};
+
 export default function AIShortsGenerator() {
   useSEO({
     title: "AI Shorts Generator | Turn Long Videos Into Shorts | LumoClip",
@@ -36,14 +101,39 @@ export default function AIShortsGenerator() {
 
   return (
     <main className="min-h-screen bg-black text-white px-6 py-20">
+      {/* Structured data not already covered by useSEO */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(BREADCRUMB_SCHEMA) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(HOWTO_SCHEMA) }}
+      />
+
       <div className="mx-auto max-w-5xl">
+        {/* Breadcrumb (visual) */}
+        <nav aria-label="Breadcrumb" className="mb-10 text-sm text-gray-500">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link to="/" className="hover:text-green-400">
+                Home
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="text-gray-300">
+              AI Shorts Generator
+            </li>
+          </ol>
+        </nav>
+
         {/* Hero */}
-        <section>
+        <section aria-labelledby="hero-heading">
           <p className="mb-4 text-sm uppercase tracking-[0.25em] text-green-400">
             LumoClip AI
           </p>
 
-          <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
+          <h1 id="hero-heading" className="text-4xl font-bold tracking-tight md:text-6xl">
             AI Shorts Generator
           </h1>
 
@@ -56,6 +146,7 @@ export default function AIShortsGenerator() {
 
           <Link
             to="/"
+            aria-label="Try LumoClip"
             className="mt-8 inline-block rounded-xl bg-white px-6 py-3 font-semibold text-black transition hover:bg-gray-200"
           >
             Try LumoClip
@@ -63,8 +154,8 @@ export default function AIShortsGenerator() {
         </section>
 
         {/* What it does */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section className="mt-24" aria-labelledby="what-it-does-heading">
+          <h2 id="what-it-does-heading" className="text-3xl font-bold md:text-4xl">
             Create Shorts From Long Videos
           </h2>
 
@@ -82,8 +173,8 @@ export default function AIShortsGenerator() {
         </section>
 
         {/* Features */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="features" className="mt-24 scroll-mt-24" aria-labelledby="features-heading">
+          <h2 id="features-heading" className="text-3xl font-bold md:text-4xl">
             AI Shorts Generator Features
           </h2>
 
@@ -136,83 +227,44 @@ export default function AIShortsGenerator() {
         </section>
 
         {/* How it works */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="how-it-works" className="mt-24 scroll-mt-24" aria-labelledby="how-it-works-heading">
+          <h2 id="how-it-works-heading" className="text-3xl font-bold md:text-4xl">
             How LumoClip's AI Shorts Generator Works
           </h2>
 
-          <div className="mt-10 space-y-6">
-            <div>
-              <h3 className="text-xl font-semibold">1. Add your video</h3>
+          <ol className="mt-10 space-y-6">
+            {STEPS.map((step, index) => (
+              <li key={step.name}>
+                <h3 className="text-xl font-semibold">
+                  {index + 1}. {step.name}
+                </h3>
 
-              <p className="mt-2 text-gray-400">
-                Start with a long-form video that you want to repurpose into
-                short-form content.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="text-xl font-semibold">
-                2. Let AI analyze the content
-              </h3>
-
-              <p className="mt-2 text-gray-400">
-                LumoClip analyzes the video and identifies potential moments
-                that could work as short clips.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="text-xl font-semibold">3. Review your clips</h3>
-
-              <p className="mt-2 text-gray-400">
-                Review the generated clip opportunities and select the ones
-                you want to use.
-              </p>
-            </div>
-
-            <div>
-              <h3 className="text-xl font-semibold">4. Export and publish</h3>
-
-              <p className="mt-2 text-gray-400">
-                Download your clips and use them across your preferred
-                short-form platforms.
-              </p>
-            </div>
-          </div>
+                <p className="mt-2 text-gray-400">{step.text}</p>
+              </li>
+            ))}
+          </ol>
         </section>
 
         {/* Use cases */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="use-cases" className="mt-24 scroll-mt-24" aria-labelledby="use-cases-heading">
+          <h2 id="use-cases-heading" className="text-3xl font-bold md:text-4xl">
             Who Can Use an AI Shorts Generator?
           </h2>
 
-          <div className="mt-8 grid gap-4 text-gray-300 md:grid-cols-2">
-            <div className="rounded-xl border border-white/10 p-5">
-              Podcasters
-            </div>
-            <div className="rounded-xl border border-white/10 p-5">
-              YouTubers
-            </div>
-            <div className="rounded-xl border border-white/10 p-5">
-              Content creators
-            </div>
-            <div className="rounded-xl border border-white/10 p-5">
-              Educators
-            </div>
-            <div className="rounded-xl border border-white/10 p-5">
-              Businesses
-            </div>
-            <div className="rounded-xl border border-white/10 p-5">
-              Social media teams
-            </div>
-          </div>
+          <ul className="mt-8 grid gap-4 text-gray-300 md:grid-cols-2">
+            {USE_CASES.map((useCase) => (
+              <li key={useCase} className="rounded-xl border border-white/10 p-5">
+                {useCase}
+              </li>
+            ))}
+          </ul>
         </section>
 
         {/* Internal links */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold">Explore More LumoClip Tools</h2>
+        <section className="mt-24" aria-labelledby="explore-tools-heading">
+          <h2 id="explore-tools-heading" className="text-3xl font-bold">
+            Explore More LumoClip Tools
+          </h2>
 
           <div className="mt-8 grid gap-4 md:grid-cols-3">
             <Link
@@ -248,8 +300,8 @@ export default function AIShortsGenerator() {
         </section>
 
         {/* FAQ (rendered from the same FAQS array used by useSEO) */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="faq" className="mt-24 scroll-mt-24" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" className="text-3xl font-bold md:text-4xl">
             AI Shorts Generator FAQ
           </h2>
 
@@ -276,6 +328,7 @@ export default function AIShortsGenerator() {
 
           <Link
             to="/"
+            aria-label="Start creating Shorts with LumoClip"
             className="mt-8 inline-block rounded-xl bg-white px-7 py-3 font-semibold text-black transition hover:bg-gray-200"
           >
             Start Creating with LumoClip
