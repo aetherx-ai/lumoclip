@@ -6646,6 +6646,115 @@ app.patch(
   },
 );
 
+function resolveClipPathFromUrl(projectId: string, videoUrl: string): string {
+  const marker = "/clips/";
+  const markerIndex = videoUrl.indexOf(marker);
+  if (markerIndex < 0) {
+    throw new Error("Clip video file path is invalid.");
+  }
+
+  const filename = path.basename(
+    decodeURIComponent(videoUrl.slice(markerIndex + marker.length).split(/[?#]/)[0]),
+  );
+  const clipDir = path.resolve(mediaDir, safeSegment(projectId), "clips");
+  const clipPath = path.resolve(clipDir, filename);
+
+  if (
+    !clipPath.startsWith(clipDir + path.sep) ||
+    !fs.existsSync(clipPath) ||
+    !fs.statSync(clipPath).isFile()
+  ) {
+    throw new Error("Clip video file is not available on the server.");
+  }
+
+  return clipPath;
+}
+
+function resolveProjectSourcePath(projectId: string): string {
+  const projectDir = path.resolve(mediaDir, safeSegment(projectId));
+  if (!fs.existsSync(projectDir)) {
+    throw new Error("Project source video is not available on the server.");
+  }
+
+  const sourcePath = fs.readdirSync(projectDir, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isFile() && /\.(mp4|mov|m4v|webm|mkv)$/i.test(entry.name),
+    )
+    .map((entry) => path.join(projectDir, entry.name))
+    .find((candidate) => path.basename(candidate).toLowerCase() !== "full-captioned.mp4");
+
+  if (!sourcePath) {
+    throw new Error("Project source video is not available on the server.");
+  }
+
+  return sourcePath;
+}
+
+async function probeSpeechEnhancementInput(inputPath: string): Promise<{
+  duration: number;
+  hasVideo: boolean;
+  hasAudio: boolean;
+  videoCodec: string;
+}> {
+  if (!fs.existsSync(inputPath)) {
+    throw new Error("Selected video is not available on the server.");
+  }
+
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (error, metadata) => {
+      if (error) {
+        return reject(new Error("Unable to inspect the selected video."));
+      }
+
+      const streams = metadata.streams || [];
+      const video = streams.find((stream) => stream.codec_type === "video");
+      const audio = streams.find((stream) => stream.codec_type === "audio");
+
+      resolve({
+        duration: Number(metadata.format?.duration || 0),
+        hasVideo: Boolean(video),
+        hasAudio: Boolean(audio),
+        videoCodec: String(video?.codec_name || "").toLowerCase(),
+      });
+    });
+  });
+}
+
+async function runSpeechEnhancement(
+  inputPath: string,
+  outputPath: string,
+  options: { copyVideo: boolean },
+): Promise<void> {
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(inputPath)
+      .audioFilters(
+        "highpass=f=80,lowpass=f=12000,afftdn=nf=-25,acompressor=threshold=-18dB:ratio=3:attack=20:release=250,loudnorm=I=-16:TP=-1.5:LRA=11",
+      )
+      .audioCodec("aac")
+      .audioBitrate(SPEECH_ENHANCE_AUDIO_BITRATE)
+      .videoCodec(options.copyVideo ? "copy" : "libx264")
+      .outputOptions(
+        options.copyVideo
+          ? ["-movflags", "+faststart"]
+          : [
+              "-preset",
+              FFMPEG_PRESET,
+              "-crf",
+              SPEECH_ENHANCE_VIDEO_CRF,
+              "-movflags",
+              "+faststart",
+            ],
+      )
+      .format("mp4")
+      .on("end", () => resolve())
+      .on("error", reject)
+      .save(outputPath);
+  });
+}
+
 app.patch(
   "/api/notifications/read-all",
   async (req, res) => {
