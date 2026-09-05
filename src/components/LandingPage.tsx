@@ -1636,6 +1636,200 @@ function CaptionStylePicker({
 }
 
 /* ============================================================================
+   LUMOCLIP ASSISTANT — PREMIUM SUPPORT WIDGET
+   UI-first assistant inspired by modern creator-tool support docks.
+============================================================================ */
+
+type AssistantMessage = {
+  id: number;
+  role: "assistant" | "user";
+  text: string;
+};
+
+function LumoAssistant({ onGetStarted }: { onGetStarted: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<AssistantMessage[]>([
+    {
+      id: 1,
+      role: "assistant",
+      text: "Hi! I'm LumoClip Assistant. I can help you choose a tool, start a project, or understand how LumoClip works.",
+    },
+  ]);
+
+  const quickReplies = [
+    "How do I create clips?",
+    "Which tool should I use?",
+    "Help me start a project",
+  ];
+
+  const getReply = (text: string) => {
+    const value = text.toLowerCase();
+
+    if (value.includes("start") || value.includes("project")) {
+      return "Absolutely. Upload a video or paste a supported YouTube URL, then LumoClip can take you into the project workflow.";
+    }
+
+    if (value.includes("caption")) {
+      return "Use AI Captions to create styled captions, or choose a caption preset from the source workflow before processing.";
+    }
+
+    if (value.includes("speech") || value.includes("audio") || value.includes("noise")) {
+      return "Enhance Speech is designed to clean background noise, improve voice clarity, and normalize loudness.";
+    }
+
+    if (value.includes("tool") || value.includes("which")) {
+      return "For long videos, start with Long to shorts. For voice quality, use Enhance Speech. For vertical framing, use AI Reframe.";
+    }
+
+    return "I can help with clips, captions, Enhance Speech, AI Reframe, uploads, URLs, and getting started. What would you like to create?";
+  };
+
+  const sendMessage = (raw?: string) => {
+    const text = (raw ?? input).trim();
+    if (!text) return;
+
+    const userId = Date.now();
+    setMessages((current) => [
+      ...current,
+      { id: userId, role: "user", text },
+      { id: userId + 1, role: "assistant", text: getReply(text) },
+    ]);
+    setInput("");
+  };
+
+  return (
+    <>
+      {open && (
+        <div className="fixed bottom-20 right-4 z-[80] w-[min(390px,calc(100vw-32px))] overflow-hidden rounded-[28px] border border-white/[0.12] bg-[#090b10]/95 shadow-[0_30px_100px_rgba(0,0,0,.65),0_0_70px_rgba(139,92,246,.12)] backdrop-blur-2xl sm:bottom-24 sm:right-6">
+          <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/70 to-transparent" />
+
+          <div className="flex items-center justify-between border-b border-white/[0.07] px-4 py-3.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px] border border-white/[0.10] bg-gradient-to-br from-violet-300 to-fuchsia-600 shadow-[0_0_30px_rgba(139,92,246,.25)]">
+                <span className="text-sm font-black text-white">L</span>
+                <span className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#090b10] bg-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-xs font-bold text-white">LumoClip Assistant</p>
+                  <span className="rounded-full border border-emerald-300/15 bg-emerald-300/[0.07] px-1.5 py-0.5 text-[7px] font-bold uppercase tracking-[0.15em] text-emerald-300">Online</span>
+                </div>
+                <p className="mt-0.5 text-[9px] text-zinc-600">Your AI video workflow guide</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                aria-label="Close assistant"
+                onClick={() => setOpen(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-xl text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="max-h-[390px] overflow-y-auto px-4 py-4 [scrollbar-width:thin]">
+            <div className="mb-4 rounded-2xl border border-violet-300/[0.08] bg-violet-400/[0.035] p-3">
+              <div className="flex items-start gap-2.5">
+                <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-violet-300" />
+                <p className="text-[10px] leading-5 text-zinc-500">Ask about a LumoClip feature, your workflow, or what to use next.</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {messages.map((message) => (
+                <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[88%] rounded-[18px] px-3.5 py-3 text-[10px] leading-5 ${
+                      message.role === "user"
+                        ? "rounded-br-md bg-white text-black shadow-[0_8px_25px_rgba(0,0,0,.22)]"
+                        : "rounded-bl-md border border-white/[0.06] bg-white/[0.045] text-zinc-300"
+                    }`}
+                  >
+                    {message.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {messages.length === 1 && (
+              <div className="mt-4 space-y-2">
+                {quickReplies.map((reply) => (
+                  <button
+                    key={reply}
+                    type="button"
+                    onClick={() => sendMessage(reply)}
+                    className="flex w-full items-center justify-between rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5 text-left text-[9px] font-semibold text-zinc-400 transition hover:border-violet-300/15 hover:bg-violet-300/[0.04] hover:text-white"
+                  >
+                    <span>{reply}</span>
+                    <ArrowRight className="h-3 w-3 text-zinc-700" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-white/[0.07] p-3">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                sendMessage();
+              }}
+              className="flex items-center gap-2 rounded-2xl border border-white/[0.08] bg-black/30 p-1.5 transition focus-within:border-violet-300/20"
+            >
+              <input
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                placeholder="Ask LumoClip anything..."
+                aria-label="Message LumoClip Assistant"
+                className="min-w-0 flex-1 bg-transparent px-2 text-[10px] text-white outline-none placeholder:text-zinc-700"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim()}
+                aria-label="Send message"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-black transition hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </form>
+            <div className="mt-2 flex items-center justify-between px-1">
+              <span className="text-[7px] font-bold uppercase tracking-[0.16em] text-zinc-800">Lumo AI Assistant</span>
+              <button
+                type="button"
+                onClick={onGetStarted}
+                className="text-[8px] font-bold text-violet-300 transition hover:text-white"
+              >
+                Start a project →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <button
+        type="button"
+        onClick={() => setOpen((value) => !value)}
+        aria-label={open ? "Close LumoClip Assistant" : "Open LumoClip Assistant"}
+        className={`group fixed bottom-5 right-5 z-[81] flex items-center gap-2.5 rounded-2xl border border-white/[0.11] bg-[#0b0e14]/95 px-3 py-2.5 text-white shadow-[0_16px_50px_rgba(0,0,0,.5),0_0_40px_rgba(139,92,246,.10)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-0.5 hover:border-violet-300/25 hover:shadow-[0_20px_60px_rgba(0,0,0,.58),0_0_50px_rgba(139,92,246,.18)] ${open ? "opacity-0 pointer-events-none translate-y-2" : ""}`}
+      >
+        <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-300 to-fuchsia-600 shadow-[0_0_25px_rgba(139,92,246,.25)]">
+          <MessageSquareText className="h-4 w-4 text-white" />
+          <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full border-2 border-[#0b0e14] bg-emerald-400" />
+        </span>
+        <span className="hidden text-left sm:block">
+          <span className="block text-[10px] font-bold">Lumo Assistant</span>
+          <span className="block text-[8px] text-zinc-600">Need help?</span>
+        </span>
+      </button>
+    </>
+  );
+}
+
+/* ============================================================================
    LANDING PAGE
 ============================================================================ */
 
@@ -2184,7 +2378,7 @@ export function LandingPage({
               <Reveal immediate delay={80}>
                 <h1
                   id="hero-title"
-                  className="mt-7 text-[52px] font-black leading-[0.88] tracking-[-0.07em] sm:text-[78px] lg:text-[104px]"
+                  className="mt-7 text-[52px] font-black leading-[0.9] tracking-[-0.07em] drop-shadow-[0_8px_35px_rgba(0,0,0,.35)] sm:text-[78px] lg:text-[104px]"
                 >
                   <span className="sr-only">
                     LumoClip: AI Video Clipper.{" "}
@@ -2234,7 +2428,7 @@ export function LandingPage({
                 <div className="relative">
                   <div className="absolute -inset-4 rounded-[38px] bg-gradient-to-r from-violet-400/[0.09] via-fuchsia-500/[0.07] to-violet-400/[0.09] blur-2xl" />
 
-                  <div className="relative rounded-[30px] border border-white/[0.09] bg-[#080b10]/90 p-2 shadow-[0_40px_140px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
+                  <div className="relative rounded-[30px] border border-white/[0.11] bg-[#080b10]/95 p-2 shadow-[0_45px_160px_rgba(0,0,0,0.62),0_0_80px_rgba(139,92,246,0.07)] backdrop-blur-2xl">
                     <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
                       <div className="flex min-w-0 items-center gap-3 rounded-[21px] border border-white/[0.055] bg-white/[0.018] px-3 transition focus-within:border-violet-300/20">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
@@ -3392,6 +3586,11 @@ export function LandingPage({
           </div>
         </div>
       </footer>
+
+      {/* ====================================================================
+          LUMOCLIP ASSISTANT
+      ==================================================================== */}
+      <LumoAssistant onGetStarted={() => onGetStarted()} />
 
       {/* ====================================================================
           BACK TO TOP
