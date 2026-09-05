@@ -214,33 +214,73 @@ const StatusBadge: React.FC<{
 };
 
 const PublishToYouTubeButton: React.FC<{
+  isPremium: boolean;
   onPublish: () => void;
+  onUpgrade?: () => void;
   variant?: "solid" | "outline";
   className?: string;
 }> = ({
+  isPremium,
   onPublish,
+  onUpgrade,
   variant = "solid",
   className = "",
 }) => {
+  const handleClick = () => {
+    if (isPremium) {
+      onPublish();
+      return;
+    }
+
+    if (onUpgrade) {
+      onUpgrade();
+      return;
+    }
+
+    if (typeof window !== "undefined") {
+      window.location.href = "/pricing";
+    }
+  };
+
   const solidClasses =
     "bg-red-500 text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] hover:bg-red-400";
 
   const outlineClasses =
     "border border-red-500/15 bg-red-500/[0.06] text-red-300 hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200";
 
+  const lockedClasses =
+    "border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.14] to-fuchsia-500/[0.09] text-violet-200 hover:border-violet-300/35 hover:from-violet-500/[0.2] hover:to-fuchsia-500/[0.14] hover:text-white";
+
   return (
     <button
       type="button"
-      onClick={onPublish}
-      aria-label="Publish to YouTube"
+      onClick={handleClick}
+      aria-label={
+        isPremium
+          ? "Publish to YouTube"
+          : "Publish to YouTube — Premium feature, tap to upgrade"
+      }
       className={[
         "inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[9px] font-bold uppercase tracking-[0.08em] transition active:scale-[0.98] sm:text-[10px]",
-        variant === "solid" ? solidClasses : outlineClasses,
+        isPremium
+          ? variant === "solid"
+            ? solidClasses
+            : outlineClasses
+          : lockedClasses,
         className,
       ].join(" ")}
     >
-      <Youtube className="h-3.5 w-3.5 shrink-0" />
-      <span className="truncate">Publish to YouTube</span>
+      {isPremium ? (
+        <Youtube className="h-3.5 w-3.5 shrink-0" />
+      ) : (
+        <Lock className="h-3.5 w-3.5 shrink-0 text-violet-300" />
+      )}
+
+      <span className="truncate">
+        {isPremium
+          ? "Publish to YouTube"
+          : "Publish to YouTube · Premium"}
+      </span>
     </button>
   );
 };
@@ -1146,7 +1186,9 @@ const FullCaptionedVideoResult: React.FC<{
           {fullVideoUrl && (
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <PublishToYouTubeButton
+                isPremium={isPremium}
                 onPublish={onPublish}
+                onUpgrade={onUpgrade}
                 className="sm:w-auto"
               />
 
@@ -1958,7 +2000,11 @@ const ClipCard: React.FC<{
         {videoUrl && onPublish && (
           <div className="mt-1.5">
             <PublishToYouTubeButton
-              onPublish={() => onPublish(clip)}
+              isPremium={isPremium}
+              onPublish={() =>
+                onPublish(clip)
+              }
+              onUpgrade={onUpgrade}
               variant="outline"
             />
           </div>
@@ -2087,6 +2133,8 @@ const ClipsSection: React.FC<{
                 clip={clip}
                 index={index}
                 onPublish={onPublish}
+                isPremium={isPremium}
+                onUpgrade={onUpgrade}
               />
             ),
           )}
@@ -2633,6 +2681,8 @@ export const ProjectDetailView: React.FC<
                       clip,
                     })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               </>
             )}
@@ -2707,6 +2757,8 @@ export const ProjectDetailView: React.FC<
                       clip,
                     })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               )}
           </>
@@ -2796,6 +2848,8 @@ export const ProjectDetailView: React.FC<
                           kind: "project",
                         })
                       }
+                      isPremium={isPremium}
+                      onUpgrade={onUpgrade}
                     />
                   </div>
 
@@ -2815,6 +2869,8 @@ export const ProjectDetailView: React.FC<
 
                 <EnhanceSpeechPanel
                   project={project}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
                 />
@@ -2868,6 +2924,8 @@ export const ProjectDetailView: React.FC<
 
                 <EnhanceSpeechPanel
                   project={project}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
                 />
@@ -2880,6 +2938,8 @@ export const ProjectDetailView: React.FC<
                       clip,
                     })
                   }
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               </>
             )}
