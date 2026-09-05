@@ -24,6 +24,62 @@ const FAQS: FAQItem[] = [
   },
 ];
 
+const STEPS = [
+  {
+    name: "Add a YouTube Video",
+    text: "Start by providing a supported YouTube video URL containing the long-form content you want to repurpose.",
+  },
+  {
+    name: "AI Analyzes the Video",
+    text: "LumoClip analyzes the content and searches for potential moments that may work well as short-form clips.",
+  },
+  {
+    name: "Review Potential Clips",
+    text: "Review the moments identified by the AI-assisted workflow and choose the clips that fit your content strategy.",
+  },
+  {
+    name: "Export Your Shorts",
+    text: "Create short-form clips from your selected moments and continue with your editing and publishing workflow.",
+  },
+];
+
+const PAGE_URL = "https://lumo-clip.com/youtube-to-shorts";
+
+// BreadcrumbList schema — helps Google show a breadcrumb trail in search results
+const BREADCRUMB_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "BreadcrumbList",
+  itemListElement: [
+    {
+      "@type": "ListItem",
+      position: 1,
+      name: "Home",
+      item: "https://lumo-clip.com/",
+    },
+    {
+      "@type": "ListItem",
+      position: 2,
+      name: "YouTube to Shorts",
+      item: PAGE_URL,
+    },
+  ],
+};
+
+// HowTo schema — describes the 4-step workflow for potential rich results
+const HOWTO_SCHEMA = {
+  "@context": "https://schema.org",
+  "@type": "HowTo",
+  name: "How to Turn a YouTube Video Into Shorts With LumoClip",
+  description:
+    "Steps to repurpose a supported YouTube video into short-form clips using LumoClip's AI-assisted workflow.",
+  step: STEPS.map((step, index) => ({
+    "@type": "HowToStep",
+    position: index + 1,
+    name: step.name,
+    text: step.text,
+  })),
+};
+
 export default function YouTubeToShorts() {
   useSEO({
     title: "YouTube to Shorts AI | Turn YouTube Videos Into Shorts | LumoClip",
@@ -36,14 +92,39 @@ export default function YouTubeToShorts() {
 
   return (
     <main className="min-h-screen bg-black px-6 py-20 text-white">
+      {/* Structured data not already covered by useSEO */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(BREADCRUMB_SCHEMA) }}
+      />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(HOWTO_SCHEMA) }}
+      />
+
       <div className="mx-auto max-w-5xl">
+        {/* Breadcrumb (visual) */}
+        <nav aria-label="Breadcrumb" className="mb-10 text-sm text-gray-500">
+          <ol className="flex items-center gap-2">
+            <li>
+              <Link to="/" className="hover:text-green-400">
+                Home
+              </Link>
+            </li>
+            <li aria-hidden="true">/</li>
+            <li aria-current="page" className="text-gray-300">
+              YouTube to Shorts
+            </li>
+          </ol>
+        </nav>
+
         {/* Hero */}
-        <section>
+        <section aria-labelledby="hero-heading">
           <p className="mb-4 text-sm uppercase tracking-[0.25em] text-green-400">
             LumoClip AI
           </p>
 
-          <h1 className="text-4xl font-bold tracking-tight md:text-6xl">
+          <h1 id="hero-heading" className="text-4xl font-bold tracking-tight md:text-6xl">
             Turn YouTube Videos Into Shorts With AI
           </h1>
 
@@ -57,6 +138,7 @@ export default function YouTubeToShorts() {
           <div className="mt-8 flex flex-wrap gap-4">
             <Link
               to="/"
+              aria-label="Create Shorts with LumoClip"
               className="rounded-xl bg-white px-6 py-3 font-semibold text-black transition hover:bg-gray-200"
             >
               Create Shorts
@@ -64,6 +146,7 @@ export default function YouTubeToShorts() {
 
             <Link
               to="/ai-video-clipper"
+              aria-label="Explore the AI Video Clipper tool"
               className="rounded-xl border border-white/15 px-6 py-3 font-semibold text-white transition hover:border-green-400/50"
             >
               AI Video Clipper
@@ -72,8 +155,8 @@ export default function YouTubeToShorts() {
         </section>
 
         {/* What It Does */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section className="mt-24" aria-labelledby="what-it-does-heading">
+          <h2 id="what-it-does-heading" className="text-3xl font-bold md:text-4xl">
             Turn YouTube Content Into Short-Form Videos
           </h2>
 
@@ -92,69 +175,30 @@ export default function YouTubeToShorts() {
         </section>
 
         {/* How It Works */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="how-it-works" className="mt-24 scroll-mt-24" aria-labelledby="how-it-works-heading">
+          <h2 id="how-it-works-heading" className="text-3xl font-bold md:text-4xl">
             How YouTube to Shorts Works
           </h2>
 
-          <div className="mt-10 grid gap-6 md:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <span className="text-sm font-semibold text-green-400">
-                STEP 01
-              </span>
-              <h3 className="mt-3 text-xl font-semibold">
-                Add a YouTube Video
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                Start by providing a supported YouTube video URL containing
-                the long-form content you want to repurpose.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <span className="text-sm font-semibold text-green-400">
-                STEP 02
-              </span>
-              <h3 className="mt-3 text-xl font-semibold">
-                AI Analyzes the Video
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                LumoClip analyzes the content and searches for potential
-                moments that may work well as short-form clips.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <span className="text-sm font-semibold text-green-400">
-                STEP 03
-              </span>
-              <h3 className="mt-3 text-xl font-semibold">
-                Review Potential Clips
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                Review the moments identified by the AI-assisted workflow
-                and choose the clips that fit your content strategy.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
-              <span className="text-sm font-semibold text-green-400">
-                STEP 04
-              </span>
-              <h3 className="mt-3 text-xl font-semibold">
-                Export Your Shorts
-              </h3>
-              <p className="mt-3 leading-7 text-gray-400">
-                Create short-form clips from your selected moments and
-                continue with your editing and publishing workflow.
-              </p>
-            </div>
-          </div>
+          <ol className="mt-10 grid gap-6 md:grid-cols-2">
+            {STEPS.map((step, index) => (
+              <li
+                key={step.name}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-6"
+              >
+                <span className="text-sm font-semibold text-green-400">
+                  STEP {String(index + 1).padStart(2, "0")}
+                </span>
+                <h3 className="mt-3 text-xl font-semibold">{step.name}</h3>
+                <p className="mt-3 leading-7 text-gray-400">{step.text}</p>
+              </li>
+            ))}
+          </ol>
         </section>
 
         {/* Use Cases */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="use-cases" className="mt-24 scroll-mt-24" aria-labelledby="use-cases-heading">
+          <h2 id="use-cases-heading" className="text-3xl font-bold md:text-4xl">
             What YouTube Videos Can You Repurpose?
           </h2>
 
@@ -182,8 +226,8 @@ export default function YouTubeToShorts() {
         </section>
 
         {/* Benefits */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="benefits" className="mt-24 scroll-mt-24" aria-labelledby="benefits-heading">
+          <h2 id="benefits-heading" className="text-3xl font-bold md:text-4xl">
             Why Convert YouTube Videos Into Shorts?
           </h2>
 
@@ -215,8 +259,8 @@ export default function YouTubeToShorts() {
         </section>
 
         {/* Internal Links */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section className="mt-24" aria-labelledby="explore-tools-heading">
+          <h2 id="explore-tools-heading" className="text-3xl font-bold md:text-4xl">
             Explore More LumoClip Tools
           </h2>
 
@@ -254,8 +298,8 @@ export default function YouTubeToShorts() {
         </section>
 
         {/* FAQ (rendered from the same FAQS array used by useSEO) */}
-        <section className="mt-24">
-          <h2 className="text-3xl font-bold md:text-4xl">
+        <section id="faq" className="mt-24 scroll-mt-24" aria-labelledby="faq-heading">
+          <h2 id="faq-heading" className="text-3xl font-bold md:text-4xl">
             YouTube to Shorts FAQ
           </h2>
 
@@ -282,6 +326,7 @@ export default function YouTubeToShorts() {
 
           <Link
             to="/"
+            aria-label="Start creating Shorts with LumoClip"
             className="mt-8 inline-block rounded-xl bg-white px-7 py-3 font-semibold text-black transition hover:bg-gray-200"
           >
             Start Creating With LumoClip
