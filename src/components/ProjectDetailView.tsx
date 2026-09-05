@@ -164,6 +164,21 @@ function getProcessingMode(project: Project): string {
   ).toLowerCase();
 }
 
+function isSpeechOnlyProject(project: Project): boolean {
+  const mode = getProcessingMode(project);
+  const currentStep = String(
+    (project as any).current_step ||
+      (project as any).currentStep ||
+      "",
+  ).toLowerCase();
+
+  return (
+    mode === "speech_only" ||
+    currentStep.includes("speech enhancement source") ||
+    currentStep.includes("ready for enhanced speech")
+  );
+}
+
 /* =========================================================
    SHARED UI
 ========================================================= */
@@ -1326,7 +1341,33 @@ const Pipeline: React.FC<{
     getProcessingMode(project) ===
     "full_video_caption";
 
-  const steps = fullVideoMode
+  const speechOnlyMode =
+    isSpeechOnlyProject(project);
+
+  const steps = speechOnlyMode
+    ? [
+        {
+          label: "Video received",
+          description: "Source video successfully received",
+          threshold: 5,
+        },
+        {
+          label: "Preparing source",
+          description: "Keeping the original video ready for audio enhancement",
+          threshold: 20,
+        },
+        {
+          label: "Audio ready",
+          description: "Checking the source audio track",
+          threshold: 60,
+        },
+        {
+          label: "Ready for Enhanced Speech",
+          description: "No clips or AI content analysis are generated in this mode",
+          threshold: 96,
+        },
+      ]
+    : fullVideoMode
     ? [
         {
           label: "Video received",
@@ -1396,7 +1437,9 @@ const Pipeline: React.FC<{
           </p>
 
           <h3 className="mt-1 text-base font-semibold text-white">
-            Processing
+            {speechOnlyMode
+              ? "Preparing Enhanced Speech"
+              : "Processing"}
           </h3>
         </div>
 
@@ -2339,6 +2382,9 @@ export const ProjectDetailView: React.FC<
     getProcessingMode(project) ===
     "full_video_caption";
 
+  const isSpeechOnlyMode =
+    isSpeechOnlyProject(project);
+
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
@@ -2423,7 +2469,14 @@ export const ProjectDetailView: React.FC<
                     />
                   )}
 
-                  {isFullVideoMode && (
+                  {isSpeechOnlyMode && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-cyan-400/10 bg-cyan-500/[0.07] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.12em] text-cyan-300">
+                      <AudioWaveform className="h-3 w-3" />
+                      Speech enhancement
+                    </span>
+                  )}
+
+                  {isFullVideoMode && !isSpeechOnlyMode && (
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/10 bg-indigo-500/[0.07] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.12em] text-indigo-300">
                       <Captions className="h-3 w-3" />
                       Captions only
@@ -2541,14 +2594,18 @@ export const ProjectDetailView: React.FC<
               </div>
 
               <div className="xl:col-span-5">
-                <Pipeline
-                  project={project}
-                  progress={progress}
-                />
+                {isEnhancingSpeech ? (
+                  <SpeechPipeline />
+                ) : (
+                  <Pipeline
+                    project={project}
+                    progress={progress}
+                  />
+                )}
               </div>
             </div>
 
-            {!isFullVideoMode && (
+            {!isFullVideoMode && !isSpeechOnlyMode && (
               <>
                 <div className="mt-4">
                   <PremiumStats
@@ -2699,6 +2756,8 @@ export const ProjectDetailView: React.FC<
                   <p className="mt-1 text-sm font-semibold text-white">
                     {isEnhancingSpeech
                       ? "Cleaning up your audio..."
+                      : isSpeechOnlyMode
+                      ? "Your source is ready for speech enhancement"
                       : isFullVideoMode
                       ? "Your captioned video is ready"
                       : "Your content is ready to publish"}
@@ -2777,6 +2836,37 @@ export const ProjectDetailView: React.FC<
                   <div className="xl:col-span-5">
                     {isEnhancingSpeech ? (
                       <SpeechPipeline />
+                    ) : isSpeechOnlyMode ? (
+                      <Surface className="h-full border-cyan-400/10 bg-gradient-to-b from-cyan-500/[0.045] to-[#09090d] p-6">
+                        <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/10 bg-cyan-500/[0.07]">
+                          <AudioWaveform className="h-5 w-5 text-cyan-400" />
+                        </div>
+                        <p className="mt-6 text-[8px] font-bold uppercase tracking-[0.18em] text-cyan-400">
+                          Speech enhancement source
+                        </p>
+                        <h2 className="mt-2 text-xl font-semibold tracking-tight text-white">
+                          Your audio is ready
+                        </h2>
+                        <p className="mt-3 text-[11px] leading-6 text-zinc-500">
+                          The original video has been prepared without generating clips. Use Enhance Speech below to clean the voice while keeping the video intact.
+                        </p>
+                        <div className="mt-6 grid grid-cols-2 gap-2">
+                          {[
+                            ["Noise reduction", VolumeX],
+                            ["Voice clarity", Volume2],
+                            ["Dynamic compression", AudioWaveform],
+                            ["Loudness normalize", Wand2],
+                          ].map(([label, Icon]) => {
+                            const FeatureIcon = Icon as React.ElementType;
+                            return (
+                              <div key={label as string} className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.015] px-3 py-2.5">
+                                <FeatureIcon className="h-3 w-3 text-cyan-400/70" />
+                                <span className="text-[8px] font-medium text-zinc-500">{label as string}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </Surface>
                     ) : (
                       <CompletedOverview
                         project={project}
@@ -2786,19 +2876,23 @@ export const ProjectDetailView: React.FC<
                   </div>
                 </div>
 
-                <div className="mt-4">
-                  <PremiumStats
-                    project={project}
-                    clips={safeClips}
-                  />
-                </div>
+                {!isSpeechOnlyMode && (
+                  <div className="mt-4">
+                    <PremiumStats
+                      project={project}
+                      clips={safeClips}
+                    />
+                  </div>
+                )}
 
-                <div className="mt-4">
-                  <AIInsightPanel
-                    project={project}
-                    clips={safeClips}
-                  />
-                </div>
+                {!isSpeechOnlyMode && (
+                  <div className="mt-4">
+                    <AIInsightPanel
+                      project={project}
+                      clips={safeClips}
+                    />
+                  </div>
+                )}
 
                 {/* =================================================
                     ENHANCE SPEECH
@@ -2812,15 +2906,17 @@ export const ProjectDetailView: React.FC<
                   onStatusChange={setSpeechStatus}
                 />
 
-                <ClipsSection
-                  clips={safeClips}
-                  onPublish={(clip) =>
-                    setPublishTarget({
-                      kind: "clip",
-                      clip,
-                    })
-                  }
-                />
+                {!isSpeechOnlyMode && (
+                  <ClipsSection
+                    clips={safeClips}
+                    onPublish={(clip) =>
+                      setPublishTarget({
+                        kind: "clip",
+                        clip,
+                      })
+                    }
+                  />
+                )}
               </>
             )}
           </>
@@ -2852,7 +2948,7 @@ export const ProjectDetailView: React.FC<
                 </div>
               </div>
 
-              {!isFullVideoMode && (
+              {!isFullVideoMode && !isSpeechOnlyMode && (
                 <>
                   <div className="mt-4">
                     <PremiumStats
