@@ -2128,9 +2128,7 @@ export function LandingPage({
                         onClick={submit}
                         icon
                       >
-                        {captionMode === "full_video_caption"
-                          ? "Create full captioned video"
-                          : "Start creating"}
+                        Start creating
                       </PremiumButton>
                     </div>
 
