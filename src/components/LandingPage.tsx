@@ -365,7 +365,7 @@ function Glow({
   return (
     <div
       aria-hidden="true"
-      className={`pointer-events-none absolute rounded-full blur-[70px] ${className}`}
+      className={`pointer-events-none absolute rounded-full blur-[70px] before:absolute before:inset-[22%] before:rounded-full before:bg-white/[0.05] before:blur-2xl ${className}`}
     />
   );
 }
@@ -378,18 +378,20 @@ function SectionLabel({
   icon?: React.ElementType;
 }) {
   return (
-    <div className="inline-flex items-center gap-2 rounded-full border border-cyan-300/10 bg-cyan-300/[0.045] px-3.5 py-1.5 shadow-[0_0_30px_rgba(34,211,238,0.035)]">
-      <span className="relative flex h-1.5 w-1.5">
-        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-300 opacity-60" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-300" />
+    <div className="inline-flex items-center gap-2.5 rounded-full border border-violet-300/10 bg-violet-300/[0.045] py-1.5 pl-1.5 pr-3.5 shadow-[0_0_30px_rgba(139,92,246,0.035)]">
+      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-400/[0.12]">
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-300 opacity-60" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-300" />
+        </span>
       </span>
 
       <Icon
         aria-hidden="true"
-        className="h-3 w-3 text-cyan-300"
+        className="h-3 w-3 text-violet-300"
       />
 
-      <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-cyan-200">
+      <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-violet-200">
         {children}
       </span>
     </div>
@@ -474,18 +476,22 @@ function PremiumButton({
     <button
       type="button"
       onClick={onClick}
-      className={`group inline-flex h-12 items-center justify-center gap-2 rounded-xl px-6 text-sm font-semibold transition-all duration-200 ${
+      className={`group relative inline-flex h-12 items-center justify-center gap-2 overflow-hidden rounded-xl px-6 text-sm font-semibold transition-all duration-200 active:scale-[0.98] ${
         variant === "primary"
-          ? "bg-white text-black hover:bg-zinc-200 active:scale-[0.98]"
-          : "border border-white/15 bg-transparent text-white hover:bg-white/5 active:scale-[0.98]"
+          ? "bg-gradient-to-b from-white to-zinc-100 text-black shadow-[0_1px_0_rgba(255,255,255,0.6)_inset,0_14px_38px_rgba(139,92,246,0.28)] hover:shadow-[0_1px_0_rgba(255,255,255,0.6)_inset,0_16px_44px_rgba(139,92,246,0.4)]"
+          : "border border-white/15 bg-transparent text-white hover:bg-white/5"
       }`}
     >
-      <span>{children}</span>
+      {variant === "primary" && (
+        <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 transition duration-700 group-hover:translate-x-[280%] group-hover:opacity-100" />
+      )}
+
+      <span className="relative">{children}</span>
 
       {icon && (
         <ArrowRight
           aria-hidden="true"
-          className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5"
+          className="relative h-4 w-4 transition-transform duration-200 group-hover:translate-x-0.5"
         />
       )}
     </button>
@@ -826,12 +832,12 @@ function FloatingSignal({
     <div
       className={`flex min-w-[175px] items-center gap-3 rounded-2xl border border-white/[0.08] bg-[#080b10]/80 px-3 py-2.5 shadow-[0_25px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl ${className}`}
     >
-      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.07]">
-        <div className="absolute inset-0 rounded-xl bg-cyan-400/[0.08] blur-lg" />
+      <div className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.07]">
+        <div className="absolute inset-0 rounded-xl bg-violet-400/[0.08] blur-lg" />
 
         <Icon
           aria-hidden="true"
-          className="relative h-4 w-4 text-cyan-300"
+          className="relative h-4 w-4 text-violet-300"
         />
       </div>
 
@@ -864,13 +870,13 @@ function PremiumSignalCard({
   detail: string;
 }) {
   return (
-    <div className="group relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-white/[0.018] p-4 transition-all duration-300 hover:-translate-y-1 hover:border-cyan-300/15 hover:bg-white/[0.03]">
-      <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-cyan-400/[0.06] blur-2xl transition group-hover:bg-cyan-400/[0.12]" />
+    <div className="group relative overflow-hidden rounded-[24px] border border-white/[0.07] bg-white/[0.018] p-4 transition-all duration-300 hover:-translate-y-1 hover:border-violet-300/15 hover:bg-white/[0.03]">
+      <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-violet-400/[0.06] blur-2xl transition group-hover:bg-violet-400/[0.12]" />
       <div className="relative flex items-start justify-between gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
-          <Icon className="h-4 w-4 text-cyan-300" />
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
+          <Icon className="h-4 w-4 text-violet-300" />
         </div>
-        <span className="font-mono text-[8px] text-cyan-300/80">LIVE</span>
+        <span className="font-mono text-[8px] text-violet-300/80">LIVE</span>
       </div>
       <p className="mt-5 text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600">{title}</p>
       <p className="mt-1 text-2xl font-black tracking-tight text-white">{value}</p>
@@ -889,9 +895,9 @@ function PlatformCard({
   format: string;
 }) {
   return (
-    <div className="group flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.012] p-3 transition-all duration-300 hover:-translate-y-0.5 hover:border-cyan-300/15 hover:bg-cyan-300/[0.025]">
+    <div className="group flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.012] p-3 transition-all duration-300 hover:-translate-y-0.5 hover:border-violet-300/15 hover:bg-violet-300/[0.025]">
       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.06] bg-black/20">
-        <Icon className="h-4 w-4 text-zinc-500 transition group-hover:text-cyan-300" />
+        <Icon className="h-4 w-4 text-zinc-500 transition group-hover:text-violet-300" />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-[10px] font-bold text-zinc-300">{name}</p>
@@ -912,47 +918,47 @@ const AIOrb = React.memo(function AIOrb() {
       className="relative mx-auto h-[330px] w-[330px] sm:h-[460px] sm:w-[460px]"
       aria-hidden="true"
     >
-      <div className="absolute inset-[18%] rounded-full bg-cyan-400/[0.10] blur-[70px]" />
+      <div className="absolute inset-[18%] rounded-full bg-violet-400/[0.10] blur-[70px]" />
 
-      <div className="absolute inset-[25%] rounded-full bg-blue-500/[0.07] blur-[70px]" />
+      <div className="absolute inset-[25%] rounded-full bg-fuchsia-500/[0.07] blur-[70px]" />
 
       <div className="absolute inset-[4%] rounded-full border border-white/[0.035]" />
 
-      <div className="absolute inset-[10%] rounded-full border border-cyan-300/[0.08] animate-[spinCW_18s_linear_infinite] [will-change:transform]" />
+      <div className="absolute inset-[10%] rounded-full border border-violet-300/[0.08] animate-[spinCW_18s_linear_infinite] [will-change:transform]" />
 
-      <div className="absolute inset-[17%] rounded-full border border-dashed border-blue-400/[0.10] animate-[spinCCW_12s_linear_infinite] [will-change:transform]" />
+      <div className="absolute inset-[17%] rounded-full border border-dashed border-fuchsia-400/[0.10] animate-[spinCCW_12s_linear_infinite] [will-change:transform]" />
 
-      <div className="absolute inset-[25%] rounded-full border border-cyan-300/[0.08] animate-[spinCW_9s_linear_infinite] [will-change:transform]" />
+      <div className="absolute inset-[25%] rounded-full border border-violet-300/[0.08] animate-[spinCW_9s_linear_infinite] [will-change:transform]" />
 
-      <div className="absolute left-[5%] top-[42%] h-2 w-2 rounded-full bg-cyan-300 shadow-[0_0_30px_rgba(34,211,238,1)]" />
+      <div className="absolute left-[5%] top-[42%] h-2 w-2 rounded-full bg-violet-300 shadow-[0_0_30px_rgba(139,92,246,1)]" />
 
-      <div className="absolute right-[11%] top-[25%] h-1.5 w-1.5 rounded-full bg-blue-300 shadow-[0_0_25px_rgba(96,165,250,1)]" />
+      <div className="absolute right-[11%] top-[25%] h-1.5 w-1.5 rounded-full bg-fuchsia-300 shadow-[0_0_25px_rgba(232,121,249,1)]" />
 
-      <div className="absolute bottom-[16%] left-[22%] h-1.5 w-1.5 rounded-full bg-cyan-200 shadow-[0_0_25px_rgba(103,232,249,1)]" />
+      <div className="absolute bottom-[16%] left-[22%] h-1.5 w-1.5 rounded-full bg-amber-200 shadow-[0_0_25px_rgba(252,211,77,1)]" />
 
-      <div className="absolute inset-[24%] rounded-full bg-gradient-to-br from-cyan-300/20 via-blue-500/10 to-transparent p-px shadow-[0_0_100px_rgba(34,211,238,0.18)]">
-        <div className="relative h-full w-full overflow-hidden rounded-full border border-white/[0.09] bg-[#06090e] shadow-[inset_0_0_70px_rgba(34,211,238,0.04)]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(34,211,238,0.22),transparent_38%),radial-gradient(circle_at_75%_75%,rgba(59,130,246,0.19),transparent_44%)]" />
+      <div className="absolute inset-[24%] rounded-full bg-gradient-to-br from-violet-300/20 via-fuchsia-500/10 to-transparent p-px shadow-[0_0_100px_rgba(139,92,246,0.18)]">
+        <div className="relative h-full w-full overflow-hidden rounded-full border border-white/[0.09] bg-[#06090e] shadow-[inset_0_0_70px_rgba(139,92,246,0.04)]">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_25%,rgba(139,92,246,0.22),transparent_38%),radial-gradient(circle_at_75%_75%,rgba(217,70,239,0.19),transparent_44%)]" />
 
-          <div className="absolute left-[20%] top-[25%] h-24 w-24 rounded-full bg-cyan-400/[0.09] blur-2xl animate-[orbFloat_5s_ease-in-out_infinite]" />
+          <div className="absolute left-[20%] top-[25%] h-24 w-24 rounded-full bg-violet-400/[0.09] blur-2xl animate-[orbFloat_5s_ease-in-out_infinite]" />
 
-          <div className="absolute bottom-[18%] right-[18%] h-20 w-20 rounded-full bg-blue-500/[0.10] blur-2xl animate-[orbFloat2_6s_ease-in-out_infinite]" />
+          <div className="absolute bottom-[18%] right-[18%] h-20 w-20 rounded-full bg-fuchsia-500/[0.10] blur-2xl animate-[orbFloat2_6s_ease-in-out_infinite]" />
 
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="relative">
-              <div className="absolute -inset-10 rounded-full bg-cyan-400/[0.08] blur-3xl" />
+              <div className="absolute -inset-10 rounded-full bg-violet-400/[0.08] blur-3xl" />
 
-              <div className="relative flex h-24 w-24 items-center justify-center rounded-[30px] border border-cyan-300/10 bg-gradient-to-br from-cyan-400/[0.10] to-blue-500/[0.08] shadow-[0_0_70px_rgba(34,211,238,0.12)] backdrop-blur-xl">
+              <div className="relative flex h-24 w-24 items-center justify-center rounded-[30px] border border-violet-300/10 bg-gradient-to-br from-violet-400/[0.10] to-fuchsia-500/[0.08] shadow-[0_0_70px_rgba(139,92,246,0.12)] backdrop-blur-xl">
                 <div className="absolute inset-2 rounded-[24px] border border-white/[0.04]" />
 
-                <Sparkles className="relative h-10 w-10 text-cyan-200" />
+                <Sparkles className="relative h-10 w-10 text-violet-200" />
               </div>
             </div>
           </div>
 
-          <div className="absolute left-0 right-0 top-[28%] h-px bg-gradient-to-r from-transparent via-cyan-300/30 to-transparent animate-pulse" />
+          <div className="absolute left-0 right-0 top-[28%] h-px bg-gradient-to-r from-transparent via-violet-300/30 to-transparent animate-pulse" />
 
-          <div className="absolute bottom-[30%] left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-300/20 to-transparent" />
+          <div className="absolute bottom-[30%] left-0 right-0 h-px bg-gradient-to-r from-transparent via-fuchsia-300/20 to-transparent" />
         </div>
       </div>
 
@@ -1024,12 +1030,12 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
       className="relative overflow-hidden rounded-[32px] border border-white/[0.08] bg-[#080b10]/90 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
       aria-label="LumoClip AI video analysis preview"
     >
-      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/50 to-transparent" />
 
       <div className="flex items-center justify-between border-b border-white/[0.05] px-5 py-4 sm:px-6">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
-            <WandSparkles className="h-4 w-4 text-cyan-300" />
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
+            <WandSparkles className="h-4 w-4 text-violet-300" />
           </div>
 
           <div>
@@ -1054,12 +1060,12 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
 
       <div className="p-5 sm:p-6">
         <div className="relative aspect-[16/8] overflow-hidden rounded-[22px] border border-white/[0.06] bg-gradient-to-br from-[#0e1820] via-[#090c12] to-[#06080d]">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_35%,rgba(34,211,238,0.12),transparent_30%),radial-gradient(circle_at_80%_65%,rgba(59,130,246,0.10),transparent_34%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_35%,rgba(139,92,246,0.12),transparent_30%),radial-gradient(circle_at_80%_65%,rgba(217,70,239,0.10),transparent_34%)]" />
 
           <div className="absolute inset-0 opacity-30">
-            <div className="absolute left-[10%] top-[25%] h-24 w-24 rounded-full border border-cyan-300/10" />
+            <div className="absolute left-[10%] top-[25%] h-24 w-24 rounded-full border border-violet-300/10" />
 
-            <div className="absolute bottom-[18%] right-[14%] h-28 w-28 rounded-full border border-blue-300/10" />
+            <div className="absolute bottom-[18%] right-[14%] h-28 w-28 rounded-full border border-fuchsia-300/10" />
           </div>
 
           <div className="absolute inset-0 flex items-center justify-center">
@@ -1077,13 +1083,13 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
                 07:24 / 18:42
               </span>
 
-              <span className="font-mono text-[8px] text-cyan-300">
+              <span className="font-mono text-[8px] text-violet-300">
                 ANALYZING
               </span>
             </div>
 
             <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
-              <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 animate-[progressLoop_6.5s_ease-in-out_infinite]" />
+              <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 animate-[progressLoop_6.5s_ease-in-out_infinite]" />
             </div>
           </div>
         </div>
@@ -1101,7 +1107,7 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
                 key={i}
                 className={`w-1 shrink-0 rounded-full transition-all duration-700 ${
                   highlight
-                    ? "bg-gradient-to-t from-cyan-500 to-cyan-100"
+                    ? "bg-gradient-to-t from-violet-500 to-violet-100"
                     : "bg-white/[0.07]"
                 }`}
                 style={{
@@ -1112,7 +1118,7 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
             );
           })}
 
-          <div className="absolute bottom-0 left-[38%] top-0 w-px bg-cyan-300/30 shadow-[0_0_20px_rgba(34,211,238,0.4)]" />
+          <div className="absolute bottom-0 left-[38%] top-0 w-px bg-violet-300/30 shadow-[0_0_20px_rgba(139,92,246,0.4)]" />
         </div>
 
         <div className="mt-5 space-y-2">
@@ -1121,19 +1127,19 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
               key={title}
               className={`flex items-center gap-3 rounded-2xl border p-3 transition-all duration-500 ${
                 active === index
-                  ? "translate-x-1 border-cyan-300/15 bg-cyan-300/[0.035]"
+                  ? "translate-x-1 border-violet-300/15 bg-violet-300/[0.035]"
                   : "border-white/[0.045] bg-white/[0.01]"
               }`}
             >
               <div
                 className={`flex h-8 w-8 items-center justify-center rounded-xl ${
                   active === index
-                    ? "bg-cyan-400/10"
+                    ? "bg-violet-400/10"
                     : "bg-white/[0.025]"
                 }`}
               >
                 {active === index ? (
-                  <CheckCircle2 className="h-4 w-4 text-cyan-300" />
+                  <CheckCircle2 className="h-4 w-4 text-violet-300" />
                 ) : (
                   <Sparkles className="h-3.5 w-3.5 text-zinc-700" />
                 )}
@@ -1146,7 +1152,7 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
 
                 <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-white/[0.04]">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-700"
+                    className="h-full rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500 transition-all duration-700"
                     style={{
                       width:
                         active === index ? score : "20%",
@@ -1155,7 +1161,7 @@ const ProcessingVisual = React.memo(function ProcessingVisual() {
                 </div>
               </div>
 
-              <span className="font-mono text-[9px] text-cyan-300">
+              <span className="font-mono text-[9px] text-violet-300">
                 {score}
               </span>
             </div>
@@ -1214,15 +1220,15 @@ const OutputPreview = React.memo(function OutputPreview() {
             key={output.title}
             className={`group relative overflow-hidden rounded-[24px] border p-3 transition-all duration-500 ${
               selected
-                ? "border-cyan-300/20 bg-cyan-300/[0.035] -translate-y-1"
+                ? "border-violet-300/20 bg-violet-300/[0.035] -translate-y-1"
                 : "border-white/[0.06] bg-white/[0.012]"
             }`}
           >
             <div className="relative aspect-[9/12] overflow-hidden rounded-[18px] border border-white/[0.05] bg-gradient-to-br from-[#0d1c23] via-[#0b0e14] to-[#090a0f]">
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(34,211,238,0.16),transparent_32%),radial-gradient(circle_at_75%_75%,rgba(59,130,246,0.13),transparent_38%)]" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_25%_20%,rgba(139,92,246,0.16),transparent_32%),radial-gradient(circle_at_75%_75%,rgba(217,70,239,0.13),transparent_38%)]" />
 
               <div className="absolute inset-x-4 top-5">
-                <div className="h-1 w-14 rounded-full bg-cyan-300/50" />
+                <div className="h-1 w-14 rounded-full bg-violet-300/50" />
                 <div className="mt-2 h-1 w-24 rounded-full bg-white/10" />
               </div>
 
@@ -1232,7 +1238,7 @@ const OutputPreview = React.memo(function OutputPreview() {
                     {Array.from({ length: 20 }).map((_, i) => (
                       <div
                         key={i}
-                        className="h-5 w-1 rounded-full bg-cyan-300/40"
+                        className="h-5 w-1 rounded-full bg-violet-300/40"
                         style={{
                           height: `${8 + ((i * 11) % 20)}px`,
                         }}
@@ -1243,7 +1249,7 @@ const OutputPreview = React.memo(function OutputPreview() {
               </div>
 
               <div className="absolute left-3 top-3 rounded-lg border border-white/10 bg-black/30 px-2 py-1 backdrop-blur-xl">
-                <span className="font-mono text-[7px] font-bold text-cyan-300">
+                <span className="font-mono text-[7px] font-bold text-violet-300">
                   {output.type}
                 </span>
               </div>
@@ -1261,7 +1267,7 @@ const OutputPreview = React.memo(function OutputPreview() {
                   {output.title}
                 </p>
 
-                <span className="font-mono text-[8px] text-cyan-300">
+                <span className="font-mono text-[8px] text-violet-300">
                   {output.score}%
                 </span>
               </div>
@@ -1288,15 +1294,15 @@ const FeatureCard = React.memo(function FeatureCard({
 
   return (
     <Reveal delay={index * 60}>
-      <article className="group relative h-full overflow-hidden rounded-[28px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-cyan-300/15 hover:bg-white/[0.025] hover:shadow-[0_25px_80px_rgba(0,0,0,0.22)]">
-        <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-cyan-400/[0.035] blur-3xl transition duration-500 group-hover:bg-cyan-400/[0.09]" />
+      <article className="group relative h-full overflow-hidden rounded-[28px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-violet-300/15 hover:bg-white/[0.025] hover:shadow-[0_25px_80px_rgba(0,0,0,0.22)]">
+        <div className="absolute -right-24 -top-24 h-56 w-56 rounded-full bg-violet-400/[0.035] blur-3xl transition duration-500 group-hover:bg-violet-400/[0.09]" />
 
-        <div className="absolute bottom-0 left-0 h-px w-0 bg-gradient-to-r from-cyan-400 to-blue-500 transition-all duration-500 group-hover:w-full" />
+        <div className="absolute bottom-0 left-0 h-px w-0 bg-gradient-to-r from-violet-400 to-fuchsia-500 transition-all duration-500 group-hover:w-full" />
 
         <div className="relative">
           <div className="flex items-center justify-between">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.07] bg-gradient-to-br from-cyan-400/[0.10] to-blue-500/[0.035] transition duration-500 group-hover:scale-105 group-hover:border-cyan-300/15">
-              <Icon className="h-5 w-5 text-cyan-300" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.07] bg-gradient-to-br from-violet-400/[0.10] to-fuchsia-500/[0.035] transition duration-500 group-hover:scale-105 group-hover:border-violet-300/15">
+              <Icon className="h-5 w-5 text-violet-300" />
             </div>
 
             <span className="font-mono text-[8px] text-zinc-800">
@@ -1304,7 +1310,7 @@ const FeatureCard = React.memo(function FeatureCard({
             </span>
           </div>
 
-          <p className="mt-7 text-[8px] font-bold uppercase tracking-[0.2em] text-cyan-300/70">
+          <p className="mt-7 text-[8px] font-bold uppercase tracking-[0.2em] text-violet-300/70">
             {item.eyebrow}
           </p>
 
@@ -1316,7 +1322,7 @@ const FeatureCard = React.memo(function FeatureCard({
             {item.text}
           </p>
 
-          <div className="mt-6 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.17em] text-zinc-800 transition group-hover:text-cyan-300">
+          <div className="mt-6 flex items-center gap-2 text-[9px] font-bold uppercase tracking-[0.17em] text-zinc-800 transition group-hover:text-violet-300">
             Explore capability
 
             <ArrowRight className="h-3 w-3 transition group-hover:translate-x-1" />
@@ -1361,22 +1367,22 @@ const Workflow = React.memo(function Workflow() {
 
   return (
     <div className="relative grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-      <div className="absolute left-[12%] right-[12%] top-[43px] hidden h-px bg-gradient-to-r from-transparent via-cyan-300/15 to-transparent lg:block" />
+      <div className="absolute left-[12%] right-[12%] top-[43px] hidden h-px bg-gradient-to-r from-transparent via-violet-300/15 to-transparent lg:block" />
 
       {items.map((item, index) => {
         const Icon = item.icon;
 
         return (
           <Reveal key={item.no} delay={index * 80}>
-            <article className="group relative h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/15 hover:bg-white/[0.025]">
+            <article className="group relative h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-violet-300/15 hover:bg-white/[0.025]">
               <div className="relative z-10">
                 <div className="flex items-center justify-between">
-                  <span className="font-mono text-[10px] text-cyan-300">
+                  <span className="font-mono text-[10px] text-violet-300">
                     {item.no}
                   </span>
 
                   <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-black/20">
-                    <Icon className="h-4 w-4 text-zinc-600 transition group-hover:text-cyan-300" />
+                    <Icon className="h-4 w-4 text-zinc-600 transition group-hover:text-violet-300" />
                   </div>
                 </div>
 
@@ -1448,7 +1454,7 @@ function CaptionStylePicker({
   };
 
   return (
-    <div className="mt-3 rounded-[24px] border border-cyan-300/10 bg-cyan-400/[0.025] p-3 text-left">
+    <div className="mt-3 rounded-[24px] border border-violet-300/10 bg-violet-400/[0.025] p-3 text-left">
       <button
         type="button"
         onClick={onToggle}
@@ -1457,8 +1463,8 @@ function CaptionStylePicker({
         className="flex w-full items-center justify-between gap-3 rounded-2xl px-2 py-1 text-left transition hover:bg-white/[0.03]"
       >
         <span className="flex min-w-0 items-center gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.08]">
-            <Subtitles className="h-4 w-4 text-cyan-200" />
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.08]">
+            <Subtitles className="h-4 w-4 text-violet-200" />
           </span>
           <span className="min-w-0">
             <span className="flex items-center gap-2 text-xs font-bold text-white">
@@ -1474,7 +1480,7 @@ function CaptionStylePicker({
         </span>
 
         <ChevronDown
-          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${open ? "rotate-180 text-cyan-300" : ""}`}
+          className={`h-4 w-4 shrink-0 text-zinc-500 transition-transform ${open ? "rotate-180 text-violet-300" : ""}`}
         />
       </button>
 
@@ -1482,7 +1488,7 @@ function CaptionStylePicker({
         <div id="caption-style-panel" className="mt-4 border-t border-white/[0.06] pt-4">
           <div className="mb-3 flex items-end justify-between gap-3">
             <div>
-              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-200">
+              <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-200">
                 Choose a caption style
               </p>
               <p className="mt-1 text-[10px] leading-5 text-zinc-600">
@@ -1507,8 +1513,8 @@ function CaptionStylePicker({
                   aria-pressed={selected}
                   className={`group relative overflow-hidden rounded-2xl border p-2 text-left transition-all ${
                     selected
-                      ? "border-cyan-300/50 bg-cyan-300/[0.09] shadow-[0_0_28px_rgba(34,211,238,0.09)]"
-                      : "border-white/[0.07] bg-black/20 hover:border-cyan-300/20 hover:bg-white/[0.035]"
+                      ? "border-violet-300/50 bg-violet-300/[0.09] shadow-[0_0_28px_rgba(139,92,246,0.09)]"
+                      : "border-white/[0.07] bg-black/20 hover:border-violet-300/20 hover:bg-white/[0.035]"
                   }`}
                 >
                   <span className="relative flex h-20 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#111827] via-[#090d14] to-black px-2">
@@ -1542,7 +1548,7 @@ function CaptionStylePicker({
                     {CAPTION_STYLE_DESCRIPTIONS[preset.preset]}
                   </span>
                   {selected && (
-                    <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-cyan-200" />
+                    <CheckCircle2 className="absolute right-2 top-2 h-4 w-4 text-violet-200" />
                   )}
                 </button>
               );
@@ -1557,7 +1563,7 @@ function CaptionStylePicker({
               <select
                 value={style.font}
                 onChange={(event) => update({ font: event.target.value, preset: "custom" })}
-                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-cyan-300/30"
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-violet-300/30"
               >
                 {["Arial", "Inter", "Poppins", "Montserrat", "Impact", "Liberation Sans"].map((font) => (
                   <option key={font} value={font}>{font}</option>
@@ -1572,7 +1578,7 @@ function CaptionStylePicker({
               <select
                 value={style.position}
                 onChange={(event) => update({ position: event.target.value as CaptionPosition, preset: "custom" })}
-                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-cyan-300/30"
+                className="h-10 w-full rounded-xl border border-white/[0.08] bg-[#080b10] px-3 text-xs text-zinc-200 outline-none transition focus:border-violet-300/30"
               >
                 <option value="top">Top</option>
                 <option value="center">Center</option>
@@ -1589,12 +1595,12 @@ function CaptionStylePicker({
                 onClick={() => update({ uppercase: !style.uppercase, preset: "custom" })}
                 className={`flex h-10 w-full items-center justify-between rounded-xl border px-3 text-xs transition ${
                   style.uppercase
-                    ? "border-cyan-300/25 bg-cyan-300/[0.08] text-cyan-100"
+                    ? "border-violet-300/25 bg-violet-300/[0.08] text-violet-100"
                     : "border-white/[0.08] bg-[#080b10] text-zinc-400"
                 }`}
               >
                 <span>{style.uppercase ? "UPPERCASE" : "Sentence case"}</span>
-                <span className={`h-4 w-7 rounded-full p-0.5 transition ${style.uppercase ? "bg-cyan-300/40" : "bg-white/10"}`}>
+                <span className={`h-4 w-7 rounded-full p-0.5 transition ${style.uppercase ? "bg-violet-300/40" : "bg-white/10"}`}>
                   <span className={`block h-3 w-3 rounded-full bg-white transition-transform ${style.uppercase ? "translate-x-3" : ""}`} />
                 </span>
               </button>
@@ -2110,19 +2116,19 @@ export function LandingPage({
       ==================================================================== */}
 
       <div className="pointer-events-none fixed inset-0 -z-20 overflow-hidden">
-        <Glow className="left-[-18%] top-[-15%] h-[650px] w-[650px] bg-cyan-500/[0.075]" />
+        <Glow className="left-[-18%] top-[-15%] h-[650px] w-[650px] bg-violet-500/[0.075]" />
 
-        <Glow className="right-[-20%] top-[5%] h-[720px] w-[720px] bg-blue-600/[0.07]" />
+        <Glow className="right-[-20%] top-[5%] h-[720px] w-[720px] bg-fuchsia-600/[0.07]" />
 
-        <Glow className="left-[25%] top-[40%] h-[600px] w-[600px] bg-cyan-400/[0.025]" />
+        <Glow className="left-[25%] top-[40%] h-[600px] w-[600px] bg-violet-400/[0.025]" />
 
-        <Glow className="right-[10%] top-[70%] h-[500px] w-[500px] bg-blue-500/[0.025]" />
+        <Glow className="right-[10%] top-[70%] h-[500px] w-[500px] bg-fuchsia-500/[0.025]" />
 
         <div
           className="absolute inset-0 opacity-[0.14]"
           style={{
             backgroundImage:
-              "linear-gradient(rgba(34,211,238,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(34,211,238,.045) 1px, transparent 1px)",
+              "linear-gradient(rgba(139,92,246,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,.045) 1px, transparent 1px)",
             backgroundSize: "72px 72px",
             maskImage:
               "radial-gradient(circle at 50% 4%, black, transparent 72%)",
@@ -2132,6 +2138,14 @@ export function LandingPage({
         />
 
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,transparent_0%,#040608_72%)]" />
+
+        <div
+          className="absolute inset-0 opacity-[0.035] mix-blend-overlay"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+          }}
+        />
       </div>
 
       {/* ====================================================================
@@ -2150,14 +2164,14 @@ export function LandingPage({
           <div
             ref={spotlightRef}
             aria-hidden="true"
-            className="pointer-events-none absolute h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-300/[0.035] blur-[70px] transition-all duration-1000"
+            className="pointer-events-none absolute h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-300/[0.035] blur-[70px] transition-all duration-1000"
             style={{
               left: "50%",
               top: "15%",
             }}
           />
 
-          <Glow className="left-1/2 top-[-320px] h-[700px] w-[1100px] -translate-x-1/2 bg-cyan-400/[0.065]" />
+          <Glow className="left-1/2 top-[-320px] h-[700px] w-[1100px] -translate-x-1/2 bg-violet-400/[0.065]" />
 
           <div className="relative mx-auto max-w-[1280px] px-5 pb-20 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pt-28">
             <div className="mx-auto max-w-5xl text-center">
@@ -2179,8 +2193,22 @@ export function LandingPage({
                   Turn Long Videos Into
                   <br />
 
-                  <span className="relative bg-gradient-to-r from-cyan-100 via-cyan-300 to-blue-400 bg-clip-text text-transparent">
+                  <span className="relative inline-block bg-gradient-to-r from-violet-100 via-violet-300 to-fuchsia-400 bg-clip-text text-transparent">
                     Shorts With AI.
+                    <svg
+                      aria-hidden="true"
+                      viewBox="0 0 320 24"
+                      preserveAspectRatio="none"
+                      className="absolute -bottom-2 left-0 h-4 w-full text-violet-400/70 sm:-bottom-3 sm:h-5"
+                    >
+                      <path
+                        d="M4 14C60 6 120 4 160 8C210 13 270 16 316 9"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                      />
+                    </svg>
                   </span>
                 </h1>
               </Reveal>
@@ -2204,15 +2232,15 @@ export function LandingPage({
                 className="mx-auto mt-10 max-w-[800px]"
               >
                 <div className="relative">
-                  <div className="absolute -inset-4 rounded-[38px] bg-gradient-to-r from-cyan-400/[0.09] via-blue-500/[0.07] to-cyan-400/[0.09] blur-2xl" />
+                  <div className="absolute -inset-4 rounded-[38px] bg-gradient-to-r from-violet-400/[0.09] via-fuchsia-500/[0.07] to-violet-400/[0.09] blur-2xl" />
 
                   <div className="relative rounded-[30px] border border-white/[0.09] bg-[#080b10]/90 p-2 shadow-[0_40px_140px_rgba(0,0,0,0.6)] backdrop-blur-2xl">
                     <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                      <div className="flex min-w-0 items-center gap-3 rounded-[21px] border border-white/[0.055] bg-white/[0.018] px-3 transition focus-within:border-cyan-300/20">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
+                      <div className="flex min-w-0 items-center gap-3 rounded-[21px] border border-white/[0.055] bg-white/[0.018] px-3 transition focus-within:border-violet-300/20">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
                           <Link2
                             aria-hidden="true"
-                            className="h-4 w-4 text-cyan-300"
+                            className="h-4 w-4 text-violet-300"
                           />
                         </div>
 
@@ -2290,8 +2318,8 @@ export function LandingPage({
                     <label
                       className={`group flex cursor-pointer items-center justify-between gap-4 rounded-[21px] border border-dashed px-4 py-3.5 transition-all duration-300 ${
                         isDragging
-                          ? "border-cyan-300/50 bg-cyan-400/[0.08] shadow-[0_0_45px_rgba(34,211,238,0.08)]"
-                          : "border-cyan-300/10 bg-cyan-400/[0.018] hover:border-cyan-300/25 hover:bg-cyan-400/[0.04]"
+                          ? "border-violet-300/50 bg-violet-400/[0.08] shadow-[0_0_45px_rgba(139,92,246,0.08)]"
+                          : "border-violet-300/10 bg-violet-400/[0.018] hover:border-violet-300/25 hover:bg-violet-400/[0.04]"
                       }`}
                       onDragOver={(e) => {
                         e.preventDefault();
@@ -2323,8 +2351,8 @@ export function LandingPage({
                       />
 
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06] transition group-hover:scale-105">
-                          <Upload className="relative h-4 w-4 text-cyan-300" />
+                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06] transition group-hover:scale-105">
+                          <Upload className="relative h-4 w-4 text-violet-300" />
                         </div>
 
                         <div className="min-w-0 text-left">
@@ -2348,7 +2376,7 @@ export function LandingPage({
                         </div>
                       </div>
 
-                      <span className="shrink-0 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-zinc-400 transition group-hover:border-cyan-300/15 group-hover:text-cyan-200">
+                      <span className="shrink-0 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-zinc-400 transition group-hover:border-violet-300/15 group-hover:text-violet-200">
                         {selectedFile
                           ? "Change"
                           : "Choose file"}
@@ -2437,10 +2465,10 @@ export function LandingPage({
                       return (
                         <div
                           key={String(text)}
-                          className="group flex items-center gap-3 rounded-2xl border border-white/[0.05] bg-white/[0.012] px-3 py-3 transition hover:border-cyan-300/10 hover:bg-white/[0.025]"
+                          className="group flex items-center gap-3 rounded-2xl border border-white/[0.05] bg-white/[0.012] px-3 py-3 transition hover:border-violet-300/10 hover:bg-white/[0.025]"
                         >
-                          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-cyan-400/[0.05]">
-                            <I className="h-3.5 w-3.5 text-cyan-300 transition group-hover:scale-110" />
+                          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-400/[0.05]">
+                            <I className="h-3.5 w-3.5 text-violet-300 transition group-hover:scale-110" />
                           </div>
 
                           <span className="text-[10px] font-semibold text-zinc-500">
@@ -2477,7 +2505,7 @@ export function LandingPage({
           className="relative border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
-          <Glow className="left-1/2 top-1/2 h-[550px] w-[900px] -translate-x-1/2 -translate-y-1/2 bg-cyan-400/[0.025]" />
+          <Glow className="left-1/2 top-1/2 h-[550px] w-[900px] -translate-x-1/2 -translate-y-1/2 bg-violet-400/[0.025]" />
 
           <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
             <div className="grid items-center gap-12 lg:grid-cols-[0.75fr_1.25fr]">
@@ -2493,7 +2521,7 @@ export function LandingPage({
                   One source.
                   <br />
 
-                  <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">
+                  <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
                     Multiple assets.
                   </span>
                 </h2>
@@ -2595,7 +2623,7 @@ export function LandingPage({
           className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
-          <Glow className="left-1/2 top-1/2 h-[600px] w-[900px] -translate-x-1/2 -translate-y-1/2 bg-cyan-400/[0.035]" />
+          <Glow className="left-1/2 top-1/2 h-[600px] w-[900px] -translate-x-1/2 -translate-y-1/2 bg-violet-400/[0.035]" />
 
           <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
             <div className="grid items-center gap-12 lg:grid-cols-[0.8fr_1.2fr]">
@@ -2611,7 +2639,7 @@ export function LandingPage({
                   Not just
                   <br />
 
-                  <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">
+                  <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
                     automatic.
                   </span>
 
@@ -2666,18 +2694,18 @@ export function LandingPage({
           className="relative overflow-hidden py-28 sm:py-40"
           style={lazySectionStyle}
         >
-          <Glow className="left-1/2 top-1/2 h-[500px] w-[800px] -translate-x-1/2 -translate-y-1/2 bg-cyan-400/[0.045]" />
+          <Glow className="left-1/2 top-1/2 h-[500px] w-[800px] -translate-x-1/2 -translate-y-1/2 bg-violet-400/[0.045]" />
 
           <Reveal className="relative mx-auto max-w-5xl px-5 text-center">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-cyan-300/10 bg-cyan-400/[0.045] shadow-[0_0_60px_rgba(34,211,238,0.08)]">
-              <WandSparkles className="h-6 w-6 text-cyan-300" />
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-300/10 bg-violet-400/[0.045] shadow-[0_0_60px_rgba(139,92,246,0.08)]">
+              <WandSparkles className="h-6 w-6 text-violet-300" />
             </div>
 
             <h2 className="mt-8 text-4xl font-black leading-[0.98] tracking-[-0.065em] sm:text-6xl lg:text-7xl">
               Stop searching.
               <br />
 
-              <span className="bg-gradient-to-r from-cyan-200 via-cyan-300 to-blue-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-violet-200 via-violet-300 to-fuchsia-400 bg-clip-text text-transparent">
                 Start creating.
               </span>
             </h2>
@@ -2758,12 +2786,12 @@ export function LandingPage({
           <div className="mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
             <div className="grid gap-4 lg:grid-cols-2">
               <Reveal>
-                <article className="group relative h-full overflow-hidden rounded-[32px] border border-white/[0.07] bg-gradient-to-br from-cyan-400/[0.055] via-white/[0.012] to-transparent p-8 sm:p-10">
-                  <Glow className="right-[-130px] top-[-130px] h-80 w-80 bg-cyan-400/[0.07]" />
+                <article className="group relative h-full overflow-hidden rounded-[32px] border border-white/[0.07] bg-gradient-to-br from-violet-400/[0.055] via-white/[0.012] to-transparent p-8 sm:p-10">
+                  <Glow className="right-[-130px] top-[-130px] h-80 w-80 bg-violet-400/[0.07]" />
 
                   <div className="relative">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-300/10 bg-cyan-400/[0.055]">
-                      <Sparkles className="h-5 w-5 text-cyan-300" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-300/10 bg-violet-400/[0.055]">
+                      <Sparkles className="h-5 w-5 text-violet-300" />
                     </div>
 
                     <h2
@@ -2793,7 +2821,7 @@ export function LandingPage({
                       ].map((item) => (
                         <span
                           key={item}
-                          className="rounded-full border border-white/[0.06] bg-white/[0.025] px-3 py-1.5 text-[9px] font-semibold text-zinc-500 transition hover:border-cyan-300/15 hover:text-cyan-200"
+                          className="rounded-full border border-white/[0.06] bg-white/[0.025] px-3 py-1.5 text-[9px] font-semibold text-zinc-500 transition hover:border-violet-300/15 hover:text-violet-200"
                         >
                           {item}
                         </span>
@@ -2835,9 +2863,9 @@ export function LandingPage({
                         key={String(title)}
                         delay={index * 70}
                       >
-                        <article className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-cyan-300/10 hover:bg-white/[0.022]">
+                        <article className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-violet-300/10 hover:bg-white/[0.022]">
                           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/[0.035]">
-                            <I className="h-4 w-4 text-zinc-600 transition group-hover:text-cyan-300" />
+                            <I className="h-4 w-4 text-zinc-600 transition group-hover:text-violet-300" />
                           </div>
 
                           <h3 className="mt-5 text-sm font-bold text-white">
@@ -2869,17 +2897,17 @@ export function LandingPage({
         >
           <div className="mx-auto max-w-5xl px-5 sm:px-6">
             <Reveal>
-              <div className="relative overflow-hidden rounded-[36px] border border-white/[0.08] bg-gradient-to-br from-cyan-400/[0.06] via-white/[0.015] to-blue-500/[0.045] p-8 text-center shadow-[0_40px_120px_rgba(0,0,0,0.3)] sm:p-14 lg:p-16">
-                <Glow className="left-[-120px] top-[-120px] h-72 w-72 bg-cyan-400/[0.08]" />
+              <div className="relative overflow-hidden rounded-[36px] border border-white/[0.08] bg-gradient-to-br from-violet-400/[0.06] via-white/[0.015] to-fuchsia-500/[0.045] p-8 text-center shadow-[0_40px_120px_rgba(0,0,0,0.3)] sm:p-14 lg:p-16">
+                <Glow className="left-[-120px] top-[-120px] h-72 w-72 bg-violet-400/[0.08]" />
 
-                <Glow className="bottom-[-130px] right-[-120px] h-80 w-80 bg-blue-500/[0.08]" />
+                <Glow className="bottom-[-130px] right-[-120px] h-80 w-80 bg-fuchsia-500/[0.08]" />
 
                 <div className="relative">
                   <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.08] bg-white/[0.035]">
-                    <Sparkles className="h-6 w-6 text-cyan-300" />
+                    <Sparkles className="h-6 w-6 text-violet-300" />
                   </div>
 
-                  <p className="mt-6 text-[9px] font-bold uppercase tracking-[0.22em] text-cyan-300">
+                  <p className="mt-6 text-[9px] font-bold uppercase tracking-[0.22em] text-violet-300">
                     Your AI video content engine
                   </p>
 
@@ -2890,7 +2918,7 @@ export function LandingPage({
                     Make every video
                     <br />
 
-                    <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">
+                    <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
                       work harder.
                     </span>
                   </h2>
@@ -2931,8 +2959,8 @@ export function LandingPage({
           className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
         >
-          <Glow className="left-[8%] top-[10%] h-[420px] w-[420px] bg-cyan-400/[0.025]" />
-          <Glow className="right-[4%] bottom-[4%] h-[500px] w-[500px] bg-blue-500/[0.025]" />
+          <Glow className="left-[8%] top-[10%] h-[420px] w-[420px] bg-violet-400/[0.025]" />
+          <Glow className="right-[4%] bottom-[4%] h-[500px] w-[500px] bg-fuchsia-500/[0.025]" />
 
           <div className="relative mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
             <Reveal>
@@ -2946,7 +2974,7 @@ export function LandingPage({
                 >
                   See the signal.
                   <br />
-                  <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">
+                  <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
                     Not just the clip.
                   </span>
                 </h2>
@@ -2958,11 +2986,11 @@ export function LandingPage({
 
             <Reveal delay={90} className="mt-12">
               <div className="relative overflow-hidden rounded-[34px] border border-white/[0.08] bg-[#080b10]/90 p-4 shadow-[0_40px_120px_rgba(0,0,0,0.45)] backdrop-blur-2xl sm:p-6">
-                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent" />
+                <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/50 to-transparent" />
                 <div className="flex flex-col gap-4 border-b border-white/[0.05] pb-5 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.06]">
-                      <Activity className="h-4 w-4 text-cyan-300" />
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
+                      <Activity className="h-4 w-4 text-violet-300" />
                     </div>
                     <div>
                       <p className="text-xs font-bold text-white">AI Content Intelligence</p>
@@ -2986,7 +3014,7 @@ export function LandingPage({
                       key={String(title)}
                       type="button"
                       onClick={() => setActivePremiumMetric(index)}
-                      className={`text-left ${activePremiumMetric === index ? "ring-1 ring-cyan-300/20" : ""}`}
+                      className={`text-left ${activePremiumMetric === index ? "ring-1 ring-violet-300/20" : ""}`}
                     >
                       <PremiumSignalCard
                         icon={Icon as React.ElementType}
@@ -3002,7 +3030,7 @@ export function LandingPage({
                   <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-300">Moment map</p>
+                        <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-300">Moment map</p>
                         <p className="mt-1 text-xs font-semibold text-zinc-300">Where the strongest content lives</p>
                       </div>
                       <MousePointer2 className="h-4 w-4 text-zinc-700" />
@@ -3014,7 +3042,7 @@ export function LandingPage({
                         return (
                           <div
                             key={i}
-                            className={`w-full rounded-full transition-all duration-500 ${hot ? "bg-gradient-to-t from-cyan-500 to-cyan-100 shadow-[0_0_12px_rgba(34,211,238,0.25)]" : "bg-white/[0.07]"}`}
+                            className={`w-full rounded-full transition-all duration-500 ${hot ? "bg-gradient-to-t from-violet-500 to-violet-100 shadow-[0_0_12px_rgba(139,92,246,0.25)]" : "bg-white/[0.07]"}`}
                             style={{ height: `${height}%`, opacity: hot ? 1 : 0.45 }}
                           />
                         );
@@ -3026,15 +3054,15 @@ export function LandingPage({
                   </div>
 
                   <div className="rounded-[26px] border border-white/[0.06] bg-black/20 p-5">
-                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-300">Recommended output</p>
-                    <div className="mt-4 rounded-2xl border border-cyan-300/10 bg-cyan-300/[0.025] p-4">
+                    <p className="text-[9px] font-bold uppercase tracking-[0.18em] text-violet-300">Recommended output</p>
+                    <div className="mt-4 rounded-2xl border border-violet-300/10 bg-violet-300/[0.025] p-4">
                       <div className="flex items-center justify-between">
-                        <span className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 font-mono text-[7px] text-cyan-300">#01</span>
+                        <span className="rounded-lg border border-white/[0.07] bg-black/20 px-2 py-1 font-mono text-[7px] text-violet-300">#01</span>
                         <span className="font-mono text-[8px] text-emerald-300">98%</span>
                       </div>
                       <p className="mt-5 text-sm font-black text-white">The strongest idea</p>
                       <p className="mt-1 text-[9px] leading-4 text-zinc-700">Hook → insight → payoff. Ideal for a short-form cut.</p>
-                      <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full w-[98%] rounded-full bg-gradient-to-r from-cyan-400 to-blue-500" /></div>
+                      <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.05]"><div className="h-full w-[98%] rounded-full bg-gradient-to-r from-violet-400 to-fuchsia-500" /></div>
                     </div>
                     <div className="mt-3 flex items-center gap-2 text-[8px] text-zinc-700"><CheckCheck className="h-3 w-3 text-emerald-300/70" /> Ready for review</div>
                   </div>
@@ -3105,7 +3133,7 @@ export function LandingPage({
                 <h2 id="use-cases-title" className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl">
                   Less editing.
                   <br />
-                  <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">More publishing.</span>
+                  <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">More publishing.</span>
                 </h2>
               </div>
             </Reveal>
@@ -3113,13 +3141,13 @@ export function LandingPage({
             <div className="mt-12 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               {creatorUseCases.map(([Icon, title, text], index) => (
                 <Reveal key={String(title)} delay={index * 70}>
-                  <article className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-cyan-300/15 hover:bg-white/[0.025]">
+                  <article className="group h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1.5 hover:border-violet-300/15 hover:bg-white/[0.025]">
                     <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/[0.07] bg-white/[0.03]">
-                      <Icon className="h-5 w-5 text-cyan-300 transition group-hover:scale-110" />
+                      <Icon className="h-5 w-5 text-violet-300 transition group-hover:scale-110" />
                     </div>
                     <h3 className="mt-6 text-sm font-bold text-white">{title}</h3>
                     <p className="mt-2 text-xs leading-5 text-zinc-700">{text}</p>
-                    <div className="mt-6 flex items-center gap-2 text-[8px] font-bold uppercase tracking-[0.17em] text-zinc-800 transition group-hover:text-cyan-300">Explore workflow <ArrowRight className="h-3 w-3" /></div>
+                    <div className="mt-6 flex items-center gap-2 text-[8px] font-bold uppercase tracking-[0.17em] text-zinc-800 transition group-hover:text-violet-300">Explore workflow <ArrowRight className="h-3 w-3" /></div>
                   </article>
                 </Reveal>
               ))}
@@ -3151,12 +3179,12 @@ export function LandingPage({
             </Reveal>
 
             <div className="relative mt-14">
-              <div className="absolute bottom-7 left-[18px] top-7 hidden w-px bg-gradient-to-b from-cyan-300/30 via-cyan-300/10 to-transparent sm:block" />
+              <div className="absolute bottom-7 left-[18px] top-7 hidden w-px bg-gradient-to-b from-violet-300/30 via-violet-300/10 to-transparent sm:block" />
               <div className="space-y-4">
                 {premiumWorkflow.map(([no, title, text], index) => (
                   <Reveal key={no} delay={index * 60}>
-                    <article className="group relative flex gap-4 rounded-[25px] border border-white/[0.06] bg-white/[0.012] p-5 transition-all duration-300 hover:border-cyan-300/15 hover:bg-white/[0.022] sm:items-center sm:p-6">
-                      <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-cyan-300/10 bg-[#070a0e] font-mono text-[8px] font-bold text-cyan-300">{no}</div>
+                    <article className="group relative flex gap-4 rounded-[25px] border border-white/[0.06] bg-white/[0.012] p-5 transition-all duration-300 hover:border-violet-300/15 hover:bg-white/[0.022] sm:items-center sm:p-6">
+                      <div className="relative z-10 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-[#070a0e] font-mono text-[8px] font-bold text-violet-300">{no}</div>
                       <div className="min-w-0 flex-1">
                         <h3 className="text-sm font-bold text-white">{title}</h3>
                         <p className="mt-1 text-xs leading-5 text-zinc-700">{text}</p>
@@ -3217,7 +3245,7 @@ export function LandingPage({
                       <article
                         className={`overflow-hidden rounded-2xl border transition-all duration-300 ${
                           open
-                            ? "border-cyan-300/15 bg-cyan-400/[0.025] shadow-[0_15px_50px_rgba(34,211,238,0.035)]"
+                            ? "border-violet-300/15 bg-violet-400/[0.025] shadow-[0_15px_50px_rgba(139,92,246,0.035)]"
                             : "border-white/[0.06] bg-white/[0.012]"
                         }`}
                       >
@@ -3244,7 +3272,7 @@ export function LandingPage({
                             aria-hidden="true"
                             className={`h-4 w-4 shrink-0 transition ${
                               open
-                                ? "rotate-180 text-cyan-300"
+                                ? "rotate-180 text-violet-300"
                                 : "text-zinc-700"
                             }`}
                           />
@@ -3282,11 +3310,13 @@ export function LandingPage({
           className="relative overflow-hidden py-24 sm:py-32"
           style={lazySectionStyle}
         >
-          <Glow className="left-1/2 top-1/2 h-[550px] w-[800px] -translate-x-1/2 -translate-y-1/2 bg-cyan-400/[0.04]" />
+          <Glow className="left-1/2 top-1/2 h-[550px] w-[800px] -translate-x-1/2 -translate-y-1/2 bg-violet-400/[0.04]" />
 
           <Reveal className="relative mx-auto max-w-4xl px-5 text-center">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/[0.08] bg-gradient-to-br from-cyan-400/[0.08] to-blue-500/[0.08]">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-300 to-blue-600 shadow-[0_0_35px_rgba(34,211,238,0.2)]">
+            <div className="relative mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] border border-white/[0.08] bg-gradient-to-br from-violet-400/[0.08] to-fuchsia-500/[0.08]">
+              <span className="absolute inset-0 animate-[toolDockPulse_3s_ease-in-out_infinite] rounded-[22px] border border-violet-300/20" />
+
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-violet-300 to-fuchsia-600 shadow-[0_0_35px_rgba(139,92,246,0.2)]">
                 <span className="text-sm font-black text-white">
                   L
                 </span>
@@ -3300,7 +3330,7 @@ export function LandingPage({
               Your content has
               <br />
 
-              <span className="bg-gradient-to-r from-cyan-200 to-blue-400 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
                 more to say.
               </span>
             </h2>
@@ -3329,15 +3359,15 @@ export function LandingPage({
       <footer className="border-t border-white/[0.05]">
         <div className="mx-auto flex max-w-[1280px] flex-col gap-5 px-5 py-8 sm:flex-row sm:items-center sm:justify-between lg:px-8">
           <div className="flex items-center gap-2.5">
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-cyan-300/10 bg-cyan-400/[0.045]">
-              <span className="text-xs font-black text-cyan-300">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.045]">
+              <span className="text-xs font-black text-violet-300">
                 L
               </span>
             </div>
 
             <span className="text-sm font-bold text-zinc-400">
               Lumo
-              <span className="text-cyan-300">
+              <span className="text-violet-300">
                 Clip
               </span>
             </span>
@@ -3376,7 +3406,7 @@ export function LandingPage({
             behavior: "smooth",
           })
         }
-        className={`fixed bottom-5 right-5 z-40 flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-[#090c10]/85 text-zinc-600 shadow-xl backdrop-blur-xl transition-all duration-300 hover:border-cyan-300/20 hover:text-cyan-300 ${
+        className={`fixed bottom-5 right-5 z-40 flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.08] bg-[#090c10]/85 text-zinc-600 shadow-xl backdrop-blur-xl transition-all duration-300 hover:border-violet-300/20 hover:text-violet-300 ${
           scrolled
             ? "translate-y-0 opacity-100"
             : "pointer-events-none translate-y-3 opacity-0"
@@ -3398,7 +3428,7 @@ export function LandingPage({
         }
 
         ::selection {
-          background: rgba(34, 211, 238, 0.25);
+          background: rgba(139,92,246, 0.25);
           color: white;
         }
 
