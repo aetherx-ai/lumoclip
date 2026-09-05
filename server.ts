@@ -6721,18 +6721,129 @@ async function probeSpeechEnhancementInput(inputPath: string): Promise<{
   });
 }
 
+type SpeechEnhanceIntensity = "light" | "medium" | "strong";
+
+const SPEECH_ENHANCE_INTENSITIES: SpeechEnhanceIntensity[] = [
+  "light",
+  "medium",
+  "strong",
+];
+
+function normalizeSpeechEnhanceIntensity(value: unknown): SpeechEnhanceIntensity {
+  const normalized = String(value || "").trim().toLowerCase();
+  return (SPEECH_ENHANCE_INTENSITIES as string[]).includes(normalized)
+    ? (normalized as SpeechEnhanceIntensity)
+    : "medium";
+}
+
+/**
+ * Builds the audio filter chain for a given intensity level.
+ *
+ *  - light:  gentle cleanup, safest for already-decent audio.
+ *  - medium: previous default behavior, good general-purpose setting.
+ *  - strong: aggressive noise/hum removal + de-essing + extra presence,
+ *            for noisy phone/room recordings where clarity matters more
+ *            than preserving the original tonal balance.
+ *
+ * `deesser` and `equalizer` are stock FFmpeg audio filters (afftdn/
+ * anequalizer family), so no extra binaries or models are required.
+ */
+function buildSpeechEnhanceFilterChain(
+  intensity: SpeechEnhanceIntensity,
+  options: { removeHum: boolean },
+): string {
+  const chains: Record<SpeechEnhanceIntensity, string[]> = {
+    light: [
+      "highpass=f=80",
+      "lowpass=f=13000",
+      "afftdn=nf=-20",
+      "acompressor=threshold=-20dB:ratio=2:attack=25:release=300",
+      "loudnorm=I=-16:TP=-1.5:LRA=11",
+    ],
+    medium: [
+      "highpass=f=80",
+      "lowpass=f=12000",
+      "afftdn=nf=-25",
+      "acompressor=threshold=-18dB:ratio=3:attack=20:release=250",
+      // Gentle presence boost around 3kHz makes speech easier to
+      // understand without sounding harsh.
+      "equalizer=f=3000:width_type=o:width=1.5:g=2.5",
+      "loudnorm=I=-16:TP=-1.5:LRA=11",
+    ],
+    strong: [
+      "highpass=f=90",
+      "lowpass=f=11000",
+      // Two-pass style denoise: a stronger noise floor plus the
+      // afftdn "track noise" mode adapts to changing background noise
+      // (fans, traffic, room hiss) instead of a single static profile.
+      "afftdn=nf=-30:tn=1",
+      "deesser=i=0.15",
+      "acompressor=threshold=-16dB:ratio=4:attack=10:release=200",
+      "equalizer=f=3000:width_type=o:width=1.5:g=4",
+      "loudnorm=I=-16:TP=-1.5:LRA=9",
+    ],
+  };
+
+  const filters = [...chains[intensity]];
+
+  if (options.removeHum) {
+    // Notch out mains hum (50Hz/60Hz) and its first harmonic, which
+    // afftdn alone often can't fully remove from recordings near
+    // power supplies, fluorescent lights, or unbalanced cables.
+    filters.unshift(
+      "bandreject=f=50:width_type=h:w=6",
+      "bandreject=f=60:width_type=h:w=6",
+      "bandreject=f=100:width_type=h:w=6",
+      "bandreject=f=120:width_type=h:w=6",
+    );
+  }
+
+  return filters.join(",");
+}
+
 async function runSpeechEnhancement(
   inputPath: string,
   outputPath: string,
-  options: { copyVideo: boolean },
+  options: {
+    copyVideo: boolean;
+    intensity?: SpeechEnhanceIntensity;
+    removeHum?: boolean;
+  },
 ): Promise<void> {
   await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
 
+  const intensity = options.intensity || "medium";
+  const audioFilterChain = buildSpeechEnhanceFilterChain(intensity, {
+    removeHum: Boolean(options.removeHum),
+  });
+
   await new Promise<void>((resolve, reject) => {
-    ffmpeg(inputPath)
-      .audioFilters(
-        "highpass=f=80,lowpass=f=12000,afftdn=nf=-25,acompressor=threshold=-18dB:ratio=3:attack=20:release=250,loudnorm=I=-16:TP=-1.5:LRA=11",
-      )
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+
+    const cleanupPartialOutput = () => {
+      try {
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      } catch {}
+    };
+
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      cleanupPartialOutput();
+      reject(error);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve();
+    };
+
+    const command = ffmpeg(inputPath)
+      .audioFilters(audioFilterChain)
       .audioCodec("aac")
       .audioBitrate(SPEECH_ENHANCE_AUDIO_BITRATE)
       .videoCodec(options.copyVideo ? "copy" : "libx264")
@@ -6749,9 +6860,53 @@ async function runSpeechEnhancement(
             ],
       )
       .format("mp4")
-      .on("end", () => resolve())
-      .on("error", reject)
+      .on("start", () => {
+        console.log(
+          `Speech enhancement started: intensity=${intensity}, hum-removal=${Boolean(options.removeHum)}, video=${options.copyVideo ? "copy" : "reencode"}`,
+        );
+      })
+      .on("progress", (progress) => {
+        if (
+          typeof progress.percent === "number" &&
+          Number.isFinite(progress.percent)
+        ) {
+          console.log(
+            `Speech enhancement progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`,
+          );
+        }
+      })
+      .on("end", () => {
+        if (
+          !fs.existsSync(outputPath) ||
+          !fs.statSync(outputPath).isFile() ||
+          fs.statSync(outputPath).size <= 0
+        ) {
+          return fail(new Error("Enhanced speech output was not created."));
+        }
+        console.log("Speech enhancement completed.");
+        succeed();
+      })
+      .on("error", (error) => fail(error))
       .save(outputPath);
+
+    // Hard timeout so a stuck/corrupt input can never hang a Render
+    // worker indefinitely. SPEECH_ENHANCE_TIMEOUT_MS was previously
+    // defined but never enforced.
+    timer = setTimeout(
+      () => {
+        try {
+          command.kill("SIGKILL");
+        } catch {}
+        fail(
+          new Error(
+            `Speech enhancement timed out after ${SPEECH_ENHANCE_TIMEOUT_MS}ms.`,
+          ),
+        );
+      },
+      Math.max(1000, SPEECH_ENHANCE_TIMEOUT_MS),
+    );
+
+    timer.unref?.();
   });
 }
 
@@ -8369,11 +8524,17 @@ app.get(
      {
        projectId: string,
        inputType?: "source" | "clip",
-       clipId?: string
+       clipId?: string,
+       intensity?: "light" | "medium" | "strong",
+       removeHum?: boolean
      }
 
    - source: enhances the project's original uploaded/worker video.
    - clip: enhances an existing clip identified by clipId.
+   - intensity: how aggressively to denoise/compress/brighten the voice.
+     Defaults to "medium" (previous default behavior). "strong" adds
+     de-essing and adaptive noise tracking for noisy recordings.
+   - removeHum: also notch out 50Hz/60Hz mains hum and its harmonic.
 
    Cost: 0 credits. Speech enhancement is free for all authenticated users.
 ========================================================= */
@@ -8401,6 +8562,8 @@ app.post(
         typeof req.body?.clipId === "string"
           ? req.body.clipId.trim()
           : "";
+      const intensity = normalizeSpeechEnhanceIntensity(req.body?.intensity);
+      const removeHum = req.body?.removeHum === true;
 
       const { data: project, error: projectError } = await supabase
         .from("projects")
@@ -8484,13 +8647,15 @@ app.post(
 
       await runSpeechEnhancement(inputPath, outputPath, {
         copyVideo,
+        intensity,
+        removeHum,
       });
 
       const outputUrl = publicMediaUrl(projectId, `enhanced/${outputName}`);
 
       await supabase.from("usage_logs").insert({
         user_id: user.id,
-        action: `Enhance Speech: ${project.name || projectId}`,
+        action: `Enhance Speech (${intensity}${removeHum ? ", hum removal" : ""}): ${project.name || projectId}`,
         credits_used: 0,
       });
 
@@ -8505,6 +8670,8 @@ app.post(
             inputType,
             credits: 0,
             videoMode: copyVideo ? "copy" : "reencode",
+            intensity,
+            removeHum,
           },
         });
       } catch (notificationError) {
@@ -8521,6 +8688,8 @@ app.post(
         success: true,
         projectId,
         inputType,
+        intensity,
+        removeHum,
         outputUrl,
         filename: outputName,
         creditsUsed: 0,
