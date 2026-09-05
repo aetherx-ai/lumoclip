@@ -189,7 +189,9 @@ const Surface: React.FC<{
 }> = ({ children, className = "" }) => (
   <div
     className={[
-      "rounded-2xl border border-white/[0.07] bg-[#09090d] shadow-[0_14px_45px_rgba(0,0,0,0.16)]",
+      "relative rounded-2xl border border-white/[0.08] bg-gradient-to-b from-[#0c0c11] to-[#08080b]",
+      "shadow-[0_1px_0_rgba(255,255,255,0.05)_inset,0_18px_50px_rgba(0,0,0,0.35)]",
+      "before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:rounded-t-2xl before:bg-gradient-to-r before:from-transparent before:via-white/[0.14] before:to-transparent",
       className,
     ].join(" ")}
   >
@@ -203,7 +205,7 @@ const StatusBadge: React.FC<{
 }> = ({ status, progress = 0 }) => {
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/15 bg-emerald-400/[0.08] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300">
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/20 bg-emerald-400/[0.09] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-emerald-300 shadow-[0_0_16px_rgba(16,185,129,0.14)]">
         <CheckCircle2 className="h-3 w-3" />
         Ready
       </span>
@@ -237,7 +239,7 @@ const PublishToYouTubeButton: React.FC<{
   className = "",
 }) => {
   const solidClasses =
-    "bg-red-500 text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] hover:bg-red-400";
+    "bg-gradient-to-b from-red-500 to-red-600 text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_10px_28px_rgba(239,68,68,0.22)] hover:from-red-400 hover:to-red-500";
 
   const outlineClasses =
     "border border-red-500/15 bg-red-500/[0.06] text-red-300 hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200";
@@ -315,7 +317,8 @@ const HeroVideo: React.FC<{
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-black/20" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/80 via-black/5 to-black/30" />
+        <div className="pointer-events-none absolute inset-0 shadow-[inset_0_0_90px_rgba(0,0,0,0.55)]" />
 
         <div className="absolute left-4 top-4 flex flex-wrap gap-2">
           <span className="rounded-full border border-white/10 bg-black/50 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-[0.14em] text-white backdrop-blur-xl">
@@ -381,13 +384,13 @@ const HeroVideo: React.FC<{
         </div>
 
         {(speechEnhancing || (!completed && !failed)) && (
-          <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10">
+          <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10">
             <div
               className={[
-                "h-full transition-all duration-700",
+                "h-full rounded-r-full transition-all duration-700",
                 speechEnhancing
-                  ? "w-1/2 animate-pulse bg-cyan-400"
-                  : "bg-violet-500",
+                  ? "w-1/2 animate-pulse bg-gradient-to-r from-cyan-400 to-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.55)]"
+                  : "bg-gradient-to-r from-violet-500 to-fuchsia-400 shadow-[0_0_12px_rgba(139,92,246,0.55)]",
               ].join(" ")}
               style={
                 speechEnhancing
@@ -777,7 +780,7 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
                       href={outputUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-white px-4 py-2 text-[9px] font-bold text-black transition hover:bg-zinc-200 sm:flex-none"
+                      className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-lg bg-gradient-to-b from-white to-zinc-100 px-4 py-2 text-[9px] font-bold text-black shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white sm:flex-none"
                     >
                       <Download className="h-3 w-3" />
                       Download
@@ -998,7 +1001,7 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
                     onClick={runEnhancement}
                     className={[
                       "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[9px] font-bold uppercase tracking-[0.1em] transition active:scale-[0.98]",
-                      "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-[0_10px_30px_rgba(34,211,238,0.12)] hover:from-cyan-400 hover:to-violet-400",
+                      "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_10px_30px_rgba(34,211,238,0.16)] hover:from-cyan-400 hover:to-violet-400",
                     ].join(" ")}
                   >
                     <Volume2 className="h-3.5 w-3.5" />
@@ -1110,7 +1113,7 @@ const FullCaptionedVideoResult: React.FC<{
                   href={fullVideoUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-white px-4 py-2.5 text-[10px] font-bold text-black transition hover:bg-zinc-200 sm:flex-none"
+                  className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-white to-zinc-100 px-4 py-2.5 text-[10px] font-bold text-black shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white sm:flex-none"
                 >
                   <Download className="h-3.5 w-3.5" />
                   Download
@@ -1184,7 +1187,7 @@ const PremiumStats: React.FC<{
         return (
           <div
             key={stat.label}
-            className="group rounded-2xl border border-white/[0.07] bg-[#09090d] p-4 transition hover:border-white/[0.12]"
+            className="group rounded-2xl border border-white/[0.07] bg-gradient-to-b from-[#0c0c11] to-[#08080b] p-4 transition duration-300 hover:-translate-y-0.5 hover:border-white/[0.14] hover:shadow-[0_16px_36px_rgba(0,0,0,0.35)]"
           >
             <div className="flex items-center justify-between">
               <span className="text-[8px] font-bold uppercase tracking-[0.16em] text-zinc-600">
@@ -1743,7 +1746,7 @@ const ClipCard: React.FC<{
   ] as const;
 
   return (
-    <article className="group overflow-hidden rounded-xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:border-violet-400/20 sm:hover:-translate-y-0.5">
+    <article className="group overflow-hidden rounded-xl border border-white/[0.07] bg-[#09090d] transition duration-300 hover:border-violet-400/25 hover:shadow-[0_20px_45px_rgba(0,0,0,0.45)] sm:hover:-translate-y-1">
       <div className="relative aspect-[9/12] overflow-hidden bg-[#050507]">
         {videoUrl ? (
           <video
@@ -1790,7 +1793,7 @@ const ClipCard: React.FC<{
         </div>
 
         {index === 0 && (
-          <div className="absolute left-10 top-2.5 inline-flex items-center gap-1 rounded-md border border-amber-300/15 bg-black/55 px-1.5 py-1 text-[6.5px] font-bold uppercase tracking-wider text-amber-300 backdrop-blur-xl">
+          <div className="absolute left-10 top-2.5 inline-flex items-center gap-1 rounded-md border border-amber-200/30 bg-gradient-to-b from-amber-300/90 to-amber-500/90 px-1.5 py-1 text-[6.5px] font-bold uppercase tracking-wider text-black shadow-[0_2px_10px_rgba(217,164,65,0.35)] backdrop-blur-xl">
             <Flame className="h-2.5 w-2.5" />
             Top pick
           </div>
@@ -1914,7 +1917,7 @@ const ClipCard: React.FC<{
                 href={videoUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="flex min-h-10 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-white px-3 py-2 text-[9px] font-bold text-black transition hover:bg-zinc-200"
+                className="flex min-h-10 flex-1 touch-manipulation items-center justify-center gap-1.5 rounded-lg bg-gradient-to-b from-white to-zinc-100 px-3 py-2 text-[9px] font-bold text-black shadow-[0_6px_16px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white"
               >
                 <Download className="h-3 w-3" />
                 Export
@@ -2430,7 +2433,14 @@ export const ProjectDetailView: React.FC<
 
   return (
     <div className="min-h-full bg-[#030304] text-white">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.055),transparent_35%)]" />
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(124,58,237,0.06),transparent_35%),radial-gradient(circle_at_100%_100%,rgba(217,164,65,0.035),transparent_40%)]" />
+      <div
+        className="pointer-events-none fixed inset-0 opacity-[0.03] mix-blend-overlay"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")",
+        }}
+      />
 
       <div className="relative z-10 mx-auto w-full max-w-[1500px] px-3 py-4 sm:px-6 sm:py-5 lg:px-8 lg:py-7">
 
@@ -2452,7 +2462,7 @@ export const ProjectDetailView: React.FC<
 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h1 className="truncate max-w-[62vw] text-base font-semibold tracking-tight text-white sm:max-w-none sm:text-xl">
+                  <h1 className="truncate max-w-[62vw] text-base font-semibold tracking-[-0.01em] text-white sm:max-w-none sm:text-xl">
                     {project.name ||
                       "Untitled Project"}
                   </h1>
@@ -2532,10 +2542,11 @@ export const ProjectDetailView: React.FC<
                       onUpgrade();
                     }
                   }}
-                  className="group inline-flex min-h-11 touch-manipulation items-center justify-center gap-1.5 rounded-xl border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.16] to-fuchsia-500/[0.10] px-3 text-[9px] font-bold uppercase tracking-[0.12em] text-violet-200 shadow-[0_8px_28px_rgba(139,92,246,0.12)] transition hover:-translate-y-0.5 hover:border-violet-300/35 hover:from-violet-500/[0.24] hover:to-fuchsia-500/[0.16] hover:text-white active:translate-y-0 sm:px-4"
+                  className="group relative inline-flex min-h-11 touch-manipulation items-center justify-center gap-1.5 overflow-hidden rounded-xl border border-amber-300/25 bg-gradient-to-b from-amber-300/[0.16] to-amber-500/[0.08] px-3 text-[9px] font-bold uppercase tracking-[0.12em] text-amber-200 shadow-[0_1px_0_rgba(255,255,255,0.12)_inset,0_8px_28px_rgba(217,164,65,0.16)] transition hover:-translate-y-0.5 hover:border-amber-200/40 hover:from-amber-300/[0.24] hover:to-amber-500/[0.14] hover:text-amber-50 active:translate-y-0 sm:px-4"
                   aria-label="Upgrade to Premium"
                 >
-                  <Crown className="h-3.5 w-3.5 shrink-0 text-violet-300 transition group-hover:scale-110" />
+                  <span className="pointer-events-none absolute inset-y-0 -left-1/3 w-1/3 -skew-x-12 bg-white/10 opacity-0 transition duration-500 group-hover:translate-x-[220%] group-hover:opacity-100" />
+                  <Crown className="h-3.5 w-3.5 shrink-0 text-amber-300 transition group-hover:scale-110" />
 
                   <span className="hidden sm:inline">
                     Premium
@@ -3011,7 +3022,8 @@ export const ProjectDetailView: React.FC<
             FOOTER
         ====================================================== */}
 
-        <footer className="mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/[0.05] pt-5 sm:mt-14 sm:flex-row">
+        <footer className="relative mt-10 flex flex-col items-center justify-between gap-3 border-t border-white/[0.06] pt-5 sm:mt-14 sm:flex-row">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-violet-500/20 to-transparent" />
           <div className="flex items-center gap-2 text-[8px] font-medium uppercase tracking-[0.14em] text-zinc-800">
             <Sparkles className="h-3 w-3 text-violet-500/40" />
             Powered by LumoClip AI
