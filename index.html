@@ -1,7 +1,25 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <!-- =====================================================
+         BASIC
+    ====================================================== -->
     <meta charset="UTF-8" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+
+    <meta
+      name="theme-color"
+      content="#050816"
+    />
+
+    <meta
+      name="color-scheme"
+      content="dark"
+    />
 
     <!-- =====================================================
          GOOGLE SEARCH CONSOLE
@@ -12,18 +30,12 @@
     />
 
     <!-- =====================================================
-         VIEWPORT
-    ====================================================== -->
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
-
-    <!-- =====================================================
          PRIMARY SEO
     ====================================================== -->
 
-    <title>LumoClip - AI Video Clipper & Repurposing Tool</title>
+    <title>
+      LumoClip - AI Video Clipper & Repurposing Tool
+    </title>
 
     <meta
       name="description"
@@ -41,6 +53,11 @@
     />
 
     <meta
+      name="keywords"
+      content="AI video clipper, AI video editor, video repurposing, YouTube Shorts, TikTok clips, Instagram Reels, podcast clips, AI captions, LumoClip"
+    />
+
+    <meta
       name="robots"
       content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
     />
@@ -55,22 +72,23 @@
     />
 
     <!-- =====================================================
-         THEME
-    ====================================================== -->
-
-    <meta
-      name="theme-color"
-      content="#050816"
-    />
-
-    <meta
-      name="color-scheme"
-      content="dark"
-    />
-
-    <!-- =====================================================
          FAVICON
+         Uses the new LumoClip icon
     ====================================================== -->
+
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="512x512"
+      href="/lumoclip-icon.png"
+    />
+
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="192x192"
+      href="/lumoclip-icon.png"
+    />
 
     <link
       rel="icon"
@@ -150,7 +168,12 @@
 
     <meta
       property="og:image:alt"
-      content="LumoClip - AI Video Clipper"
+      content="LumoClip - AI Video Clipper & Repurposing Tool"
+    />
+
+    <meta
+      property="og:image:type"
+      content="image/png"
     />
 
     <meta
@@ -174,7 +197,7 @@
 
     <meta
       name="twitter:description"
-      content="Turn long videos into engaging short-form clips with LumoClip AI."
+      content="Turn long videos, podcasts, and YouTube content into engaging short-form clips with LumoClip AI."
     />
 
     <meta
@@ -188,7 +211,7 @@
     />
 
     <!-- =====================================================
-         ORGANIZATION + WEBSITE GRAPH
+         ORGANIZATION + WEBSITE SCHEMA
     ====================================================== -->
 
     <script type="application/ld+json">
@@ -205,8 +228,10 @@
               "@type": "ImageObject",
               "@id": "https://lumo-clip.com/#logo",
               "url": "https://lumo-clip.com/lumoclip-icon.png",
+              "contentUrl": "https://lumo-clip.com/lumoclip-icon.png",
               "width": 512,
-              "height": 512
+              "height": 512,
+              "caption": "LumoClip Logo"
             },
             "description": "LumoClip is an AI-powered video clipping and repurposing platform.",
             "sameAs": [
@@ -215,6 +240,7 @@
               "https://www.producthunt.com/products/lumoclip"
             ]
           },
+
           {
             "@type": "WebSite",
             "@id": "https://lumo-clip.com/#website",
@@ -235,7 +261,7 @@
     </script>
 
     <!-- =====================================================
-         SOFTWARE APPLICATION
+         SOFTWARE APPLICATION SCHEMA
     ====================================================== -->
 
     <script type="application/ld+json">
@@ -251,9 +277,14 @@
         "applicationSubCategory": "Video Editing Software",
         "operatingSystem": "Web",
         "image": "https://lumo-clip.com/lumoclip-icon.png",
+        "screenshot": "https://lumo-clip.com/lumoclip-icon.png",
         "brand": {
           "@type": "Brand",
-          "name": "LumoClip"
+          "name": "LumoClip",
+          "logo": {
+            "@type": "ImageObject",
+            "url": "https://lumo-clip.com/lumoclip-icon.png"
+          }
         },
         "publisher": {
           "@id": "https://lumo-clip.com/#organization"
@@ -273,6 +304,25 @@
 
     <!-- =====================================================
          APPLICATION
+    ====================================================== -->
+
+    <meta
+      name="mobile-web-app-capable"
+      content="yes"
+    />
+
+    <meta
+      name="apple-mobile-web-app-capable"
+      content="yes"
+    />
+
+    <meta
+      name="apple-mobile-web-app-title"
+      content="LumoClip"
+    />
+
+    <!-- =====================================================
+         VITE / REACT
     ====================================================== -->
 
     <script
