@@ -209,8 +209,17 @@ const FFMPEG_TIMEOUT_MS = Number(
 );
 
 const SPEECH_ENHANCE_TIMEOUT_MS = Number(
-  process.env.SPEECH_ENHANCE_TIMEOUT_MS || 10 * 60 * 1000,
+  process.env.SPEECH_ENHANCE_TIMEOUT_MS || 30 * 60 * 1000,
 );
+
+// Speech enhancement only needs to re-encode the audio when the source video
+// is already H.264. Keeping the video stream untouched makes enhancement
+// dramatically faster and avoids unnecessary quality loss.
+const SPEECH_ENHANCE_AUDIO_BITRATE =
+  process.env.SPEECH_ENHANCE_AUDIO_BITRATE?.trim() || "192k";
+
+const SPEECH_ENHANCE_VIDEO_CRF =
+  process.env.SPEECH_ENHANCE_VIDEO_CRF?.trim() || FFMPEG_CRF;
 
 /* =========================================================
    SELF-HOSTED YOUTUBE WORKER
@@ -8389,9 +8398,69 @@ function resolveClipPathFromUrl(projectId: string, videoUrl: string): string {
   return clipPath;
 }
 
+async function probeSpeechEnhancementInput(inputPath: string): Promise<{
+  hasVideo: boolean;
+  hasAudio: boolean;
+  videoCodec: string;
+  audioCodec: string;
+  duration: number;
+}> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (error, metadata) => {
+      if (error) return reject(error);
+
+      const streams = Array.isArray(metadata.streams)
+        ? metadata.streams
+        : [];
+
+      const videoStream: any = streams.find(
+        (stream: any) => stream?.codec_type === "video",
+      );
+      const audioStream: any = streams.find(
+        (stream: any) => stream?.codec_type === "audio",
+      );
+
+      const duration = Number(
+        metadata.format?.duration ??
+          videoStream?.duration ??
+          audioStream?.duration ??
+          0,
+      );
+
+      resolve({
+        hasVideo: Boolean(videoStream),
+        hasAudio: Boolean(audioStream),
+        videoCodec: String(videoStream?.codec_name || "").toLowerCase(),
+        audioCodec: String(audioStream?.codec_name || "").toLowerCase(),
+        duration: Number.isFinite(duration) ? duration : 0,
+      });
+    });
+  });
+}
+
+function getSpeechEnhancementFilters(): string[] {
+  // Designed for spoken-word recordings: remove rumble, tame hiss/noise,
+  // improve speech presence, compress dynamic range and normalize loudness.
+  // This is intentionally conservative so music/background ambience is not
+  // destroyed.
+  return [
+    "highpass=f=70:p=2",
+    "lowpass=f=15000:p=2",
+    "afftdn=nr=18:nf=-35:tn=1:rf=-38",
+    "equalizer=f=2500:t=q:w=1:g=2",
+    "equalizer=f=5000:t=q:w=1:g=1",
+    "acompressor=threshold=-20dB:ratio=3:attack=15:release=180:makeup=2",
+    "loudnorm=I=-16:TP=-1.5:LRA=11",
+    "alimiter=limit=0.95:attack=5:release=50",
+  ];
+}
+
 function runSpeechEnhancement(
   inputPath: string,
   outputPath: string,
+  options?: {
+    copyVideo?: boolean;
+  },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -8403,79 +8472,119 @@ function runSpeechEnhancement(
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      error ? reject(error) : resolve();
+
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
     };
 
+    const copyVideo = options?.copyVideo === true;
+
+    const outputOptions = [
+      "-y",
+      "-map",
+      "0:v:0?",
+      "-map",
+      "0:a:0",
+      "-map_metadata",
+      "0",
+      "-map_chapters",
+      "0",
+      ...(copyVideo
+        ? [
+            "-c:v",
+            "copy",
+          ]
+        : [
+            "-c:v",
+            "libx264",
+            "-preset",
+            FFMPEG_PRESET,
+            "-crf",
+            SPEECH_ENHANCE_VIDEO_CRF,
+            "-threads",
+            String(Math.max(1, Math.min(CPU_COUNT, 4))),
+            "-pix_fmt",
+            "yuv420p",
+          ]),
+      "-c:a",
+      "aac",
+      "-b:a",
+      SPEECH_ENHANCE_AUDIO_BITRATE,
+      "-ar",
+      "48000",
+      "-ac",
+      "2",
+      "-movflags",
+      "+faststart",
+      "-avoid_negative_ts",
+      "make_zero",
+    ];
+
     const command = ffmpeg(inputPath)
-      .outputOptions([
-        "-y",
-        "-map",
-        "0:v:0",
-        "-map",
-        "0:a:0",
-        "-c:v",
-        "libx264",
-        "-preset",
-        FFMPEG_PRESET,
-        "-crf",
-        "23",
-        "-threads",
-        String(FFMPEG_THREADS_PER_CLIP),
-        "-pix_fmt",
-        "yuv420p",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
-        "-movflags",
-        "+faststart",
-      ])
-      .audioFilters([
-        "highpass=f=70",
-        "lowpass=f=12000",
-        "afftdn=nf=-25",
-        "acompressor=threshold=-18dB:ratio=3:attack=20:release=250:makeup=2",
-        "loudnorm=I=-16:TP=-1.5:LRA=11",
-      ])
+      .outputOptions(outputOptions)
+      .audioFilters(getSpeechEnhancementFilters())
       .on("start", (commandLine) => {
-        console.log("Speech enhancement started:", commandLine);
+        console.log(
+          `Speech enhancement started (${copyVideo ? "video-copy" : "video-reencode"}):`,
+          commandLine,
+        );
       })
       .on("progress", (progress) => {
-        if (typeof progress.percent === "number" && Number.isFinite(progress.percent)) {
+        if (
+          typeof progress.percent === "number" &&
+          Number.isFinite(progress.percent)
+        ) {
           console.log(
             `Speech enhancement progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`,
           );
         }
       })
       .on("end", () => {
-        if (
-          !fs.existsSync(outputPath) ||
-          !fs.statSync(outputPath).isFile() ||
-          fs.statSync(outputPath).size <= 0
-        ) {
-          return finish(new Error("Enhanced speech video was not created."));
-        }
+        try {
+          if (
+            !fs.existsSync(outputPath) ||
+            !fs.statSync(outputPath).isFile() ||
+            fs.statSync(outputPath).size <= 0
+          ) {
+            return finish(
+              new Error("Enhanced speech video was not created."),
+            );
+          }
 
-        console.log("Speech enhancement completed:", outputPath);
-        finish();
+          console.log(
+            "Speech enhancement completed:",
+            outputPath,
+          );
+          finish();
+        } catch (error: any) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+        }
       })
       .on("error", (error) => {
-        console.error("Speech enhancement FFmpeg error:", error);
-        finish(error);
+        console.error(
+          "Speech enhancement FFmpeg error:",
+          error,
+        );
+        finish(error instanceof Error ? error : new Error(String(error)));
       });
 
     timer = setTimeout(() => {
       console.error(
         `Speech enhancement timed out after ${SPEECH_ENHANCE_TIMEOUT_MS}ms.`,
       );
+
       try {
         command.kill("SIGKILL");
       } catch {}
-      finish(new Error("Speech enhancement timed out. Please try a shorter video."));
+
+      finish(
+        new Error(
+          "Speech enhancement timed out. Please try a shorter video.",
+        ),
+      );
     }, Math.max(1000, SPEECH_ENHANCE_TIMEOUT_MS));
 
     command.run();
@@ -8540,10 +8649,25 @@ app.post(
         inputPath = resolveProjectSourcePath(projectId);
       }
 
-      const duration = await getVideoDuration(inputPath);
+      const probe = await probeSpeechEnhancementInput(inputPath);
+      const duration = probe.duration;
+
+      if (!probe.hasVideo) {
+        return res.status(400).json({
+          error: "The selected file does not contain a video track.",
+        });
+      }
+
+      if (!probe.hasAudio) {
+        return res.status(400).json({
+          error: "This video does not contain an audio track.",
+        });
+      }
 
       if (!Number.isFinite(duration) || duration <= 0) {
-        return res.status(400).json({ error: "The selected video has no valid duration." });
+        return res.status(400).json({
+          error: "The selected video has no valid duration.",
+        });
       }
 
       if (duration > MAX_VIDEO_DURATION) {
@@ -8552,16 +8676,9 @@ app.post(
         });
       }
 
-      // Require an actual audio stream before spending credits.
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg.ffprobe(inputPath, (error, metadata) => {
-          if (error) return reject(error);
-          const hasAudio = Array.isArray(metadata.streams) &&
-            metadata.streams.some((stream: any) => stream.codec_type === "audio");
-          if (!hasAudio) return reject(new Error("This video does not contain an audio track."));
-          resolve();
-        });
-      });
+      // H.264 video can be copied directly. Only the audio is re-encoded,
+      // which is much faster and prevents an unnecessary second video encode.
+      const copyVideo = probe.videoCodec === "h264";
 
       const remainingCredits = await chargeSpeechEnhanceCredits(user.id);
       charged = true;
@@ -8580,7 +8697,9 @@ app.post(
         .eq("id", projectId)
         .eq("user_id", user.id);
 
-      await runSpeechEnhancement(inputPath, outputPath);
+      await runSpeechEnhancement(inputPath, outputPath, {
+        copyVideo,
+      });
 
       const outputUrl = publicMediaUrl(projectId, `enhanced/${outputName}`);
 
@@ -8600,6 +8719,7 @@ app.post(
           metadata: {
             inputType,
             credits: SPEECH_ENHANCE_COST,
+            videoMode: copyVideo ? "copy" : "reencode",
           },
         });
       } catch (notificationError) {
