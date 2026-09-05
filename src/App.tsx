@@ -1239,38 +1239,32 @@ function App() {
         );
       }
 
-      // Normal clip creation can safely reuse an already-processing project,
-      // but Enhance Speech must ALWAYS create its own speech-only job.
-      // Otherwise a previously queued clip job for the same YouTube URL can
-      // hijack the Enhance Speech action.
       const duplicateProject =
-        newProjectIntent === "default"
-          ? projects.find(
-              (project) => {
-                const projectData =
-                  project as Project & {
-                    source_url?: string;
-                    youtube_url?: string;
-                    url?: string;
-                  };
+        projects.find(
+          (project) => {
+            const projectData =
+              project as Project & {
+                source_url?: string;
+                youtube_url?: string;
+                url?: string;
+              };
 
-                const projectUrl =
-                  projectData.source_url ??
-                  projectData.youtube_url ??
-                  projectData.url ??
-                  "";
+            const projectUrl =
+              projectData.source_url ??
+              projectData.youtube_url ??
+              projectData.url ??
+              "";
 
-                return (
-                  normalizeYouTubeUrl(
-                    projectUrl,
-                  ) === cleanUrl &&
-                  String(
-                    project.status,
-                  ) === "processing"
-                );
-              },
-            )
-          : undefined;
+            return (
+              normalizeYouTubeUrl(
+                projectUrl,
+              ) === cleanUrl &&
+              String(
+                project.status,
+              ) === "processing"
+            );
+          },
+        );
 
       if (duplicateProject) {
         setSelectedProject(
@@ -1368,32 +1362,32 @@ function App() {
         return;
       }
 
+      // Normal projects may reuse an already-processing YouTube project.
+      // Enhance Speech must ALWAYS create a separate speech-only project.
       const duplicateProject =
-        projects.find(
-          (project) => {
-            const projectData =
-              project as Project & {
-                source_url?: string;
-                youtube_url?: string;
-                url?: string;
-              };
+        intent === "default"
+          ? projects.find(
+              (project) => {
+                const projectData =
+                  project as Project & {
+                    source_url?: string;
+                    youtube_url?: string;
+                    url?: string;
+                  };
 
-            const projectUrl =
-              projectData.source_url ??
-              projectData.youtube_url ??
-              projectData.url ??
-              "";
+                const projectUrl =
+                  projectData.source_url ??
+                  projectData.youtube_url ??
+                  projectData.url ??
+                  "";
 
-            return (
-              normalizeYouTubeUrl(
-                projectUrl,
-              ) === cleanUrl &&
-              String(
-                project.status,
-              ) === "processing"
-            );
-          },
-        );
+                return (
+                  normalizeYouTubeUrl(projectUrl) === cleanUrl &&
+                  String(project.status) === "processing"
+                );
+              },
+            )
+          : undefined;
 
       if (duplicateProject) {
         setSelectedProject(
@@ -1721,6 +1715,7 @@ function App() {
       <ChunkErrorBoundary fallback={null}>
         <Suspense fallback={null}>
           <NewProjectModalWithInitialUrl
+            key={`${newProjectIntent}:${newProjectInitialUrl}`}
             isOpen={
               isNewProjectModalOpen
             }
@@ -1746,9 +1741,6 @@ function App() {
             initialUrl={
               newProjectInitialUrl
             }
-            // Keep the selected tool intent explicit. In particular,
-            // Enhance Speech must reach NewProjectModal as "enhance-speech"
-            // and never fall back to the default clips mode.
             intent={newProjectIntent}
             onSuccess={(data: any) => {
               if (data?.project) {

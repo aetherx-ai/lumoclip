@@ -94,7 +94,7 @@ interface CaptionStyle {
 }
 
 // Must match ProcessingMode on the server (server.ts).
-type ProcessingMode = "clips" | "full_video_caption" | "speech_only";
+type ProcessingMode = "clips" | "full_video_caption";
 
 /* =========================================================
    CONSTANTS
@@ -1360,7 +1360,6 @@ export const NewProjectModal: React.FC<
 
   const isFullVideoMode =
     processingMode === "full_video_caption";
-  const isSpeechEnhanceMode = intent === "enhance-speech";
 
   // Full-video mode has no purpose without captions, so force them on
   // (and keep the toggle locked) whenever this mode is selected.
@@ -1473,6 +1472,14 @@ export const NewProjectModal: React.FC<
     setSelectedFile(null);
     setDragActive(false);
 
+    // Tool intent is authoritative: Enhance Speech can never fall back
+    // to normal clip generation, even if stale modal state exists.
+    setProcessingMode(
+      intent === "enhance-speech"
+        ? "speech_only"
+        : DEFAULT_PROCESSING_MODE,
+    );
+
     setUploadState({
       progress: 0,
       stage: "idle",
@@ -1486,12 +1493,6 @@ export const NewProjectModal: React.FC<
       setSourceType("youtube");
       setYoutubeUrl("");
     }
-
-    setProcessingMode(
-      intent === "enhance-speech"
-        ? "speech_only"
-        : DEFAULT_PROCESSING_MODE,
-    );
 
     setProjectTitle(
       initialTitle?.trim() || "",
@@ -1756,9 +1757,7 @@ export const NewProjectModal: React.FC<
 
       if (credits < MIN_CREDITS) {
         setError(
-          isSpeechEnhanceMode
-            ? `You need at least ${MIN_CREDITS} credits to prepare this video.`
-            : `You need at least ${MIN_CREDITS} credits to create a project.`,
+          `You need at least ${MIN_CREDITS} credits to create a project.`,
         );
         return;
       }
@@ -1816,6 +1815,13 @@ export const NewProjectModal: React.FC<
 
       setLoading(true);
 
+      // Never trust stale React state for Enhance Speech.
+      // This action is always a speech-only source-preparation job.
+      const effectiveProcessingMode: ProcessingMode =
+        intent === "enhance-speech"
+          ? "speech_only"
+          : processingMode;
+
       try {
         const {
           data: { session },
@@ -1866,7 +1872,7 @@ export const NewProjectModal: React.FC<
 
                 captionStyle,
 
-                mode: processingMode,
+                mode: effectiveProcessingMode,
 
                 signal:
                   controller.signal,
@@ -1926,7 +1932,7 @@ export const NewProjectModal: React.FC<
 
                   sourceUrl: finalUrl,
 
-                  mode: isSpeechEnhanceMode ? "speech_only" : processingMode,
+                  mode: effectiveProcessingMode,
 
                   captionStyle,
                 }),

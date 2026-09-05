@@ -857,17 +857,20 @@ async function getProcessingConfig(
     .eq("id", projectId)
     .maybeSingle();
 
-  if (!metadataError && metadata?.processing_mode) {
-    return {
-      mode: normalizeProcessingMode(metadata.processing_mode),
-      captionStyle: normalizeCaptionStyle(metadata.caption_style),
-    };
-  }
-
+  // The worker queue marker is authoritative for speech-only jobs.
+  // This prevents a stale/default processing_mode="clips" from turning
+  // an Enhance Speech job back into a clip-generation job.
   if (isSpeechOnlyFallback) {
     return {
       mode: "speech_only",
       captionStyle: normalizeCaptionStyle(metadata?.caption_style),
+    };
+  }
+
+  if (!metadataError && metadata?.processing_mode) {
+    return {
+      mode: normalizeProcessingMode(metadata.processing_mode),
+      captionStyle: normalizeCaptionStyle(metadata.caption_style),
     };
   }
 
@@ -7274,7 +7277,7 @@ app.post(
       const { data: project, error: projectError } =
         await supabase
           .from("projects")
-          .select("id, user_id, source_type, source_url, status")
+          .select("id, user_id, source_type, source_url, status, current_step")
           .eq("id", projectId)
           .eq("source_type", "youtube")
           .eq("status", "worker_downloading")
@@ -7303,14 +7306,35 @@ app.post(
       } catch {}
 
       const sourceMediaUrl = publicMediaUrl(projectId, "source.mp4");
+
+      // Read the queue marker BEFORE replacing current_step. This is a
+      // durable signal that survives worker/server restarts even if the
+      // optional processing_mode column is stale or unavailable.
+      const isSpeechOnlyJob =
+        String((project as any).current_step || "").includes(
+          "speech enhancement source",
+        );
+
       const processingConfig = await getProcessingConfig(projectId);
+
+      const effectiveProcessingConfig: ProcessingConfig =
+        isSpeechOnlyJob
+          ? {
+              ...processingConfig,
+              mode: "speech_only",
+            }
+          : processingConfig;
+
+      const downloadedStep = isSpeechOnlyJob
+        ? "YouTube video downloaded (speech enhancement source)"
+        : "YouTube video downloaded";
 
       const { error: updateError } = await supabase
         .from("projects")
         .update({
           source_media_url: sourceMediaUrl,
           progress: 10,
-          current_step: "YouTube video downloaded",
+          current_step: downloadedStep,
           status: "processing",
         })
         .eq("id", projectId);
@@ -7323,8 +7347,8 @@ app.post(
         sourcePath,
         "video/mp4",
         project.source_url || undefined,
-        processingConfig.mode,
-        processingConfig.captionStyle,
+        effectiveProcessingConfig.mode,
+        effectiveProcessingConfig.captionStyle,
       ).catch(async (error) => {
         console.error(`Worker-upload processing failed for project ${projectId}:`, error);
         await refundCredits(project.user_id, projectId);
@@ -7333,10 +7357,12 @@ app.post(
       return res.json({
         success: true,
         projectId,
-        mode: processingConfig.mode,
-        message: processingConfig.mode === "full_video_caption"
-          ? "Video received. Full-video AI caption processing started."
-          : "Video received. AI processing started.",
+        mode: effectiveProcessingConfig.mode,
+        message: effectiveProcessingConfig.mode === "speech_only"
+          ? "Video received. Source prepared for Enhanced Speech."
+          : effectiveProcessingConfig.mode === "full_video_caption"
+            ? "Video received. Full-video AI caption processing started."
+            : "Video received. AI processing started.",
       });
     } catch (error: any) {
       console.error(`Worker upload failed for ${projectId}:`, error);
