@@ -165,6 +165,36 @@ function getProcessingMode(project: Project): string {
   ).toLowerCase();
 }
 
+/**
+ * Enhanced Speech projects intentionally finish source preparation with
+ * zero clips. The backend marks that preparation step as completed, so the
+ * UI must not interpret a generic `completed` status as a clip project.
+ *
+ * We check both processing_mode and current_step because processing_mode is
+ * an optional DB column in older LumoClip deployments. `current_step` is
+ * already part of the project schema and is therefore a durable fallback.
+ */
+function isSpeechOnlyProject(project: Project): boolean {
+  const data = project as any;
+  const mode = String(
+    data.processing_mode ||
+      data.processingMode ||
+      "",
+  ).toLowerCase();
+
+  if (mode === "speech_only" || mode === "speech-only") {
+    return true;
+  }
+
+  const step = String(data.current_step || "").toLowerCase();
+
+  return (
+    step.includes("speech enhancement source") ||
+    step.includes("source ready for enhanced speech") ||
+    step.includes("ready for enhanced speech")
+  );
+}
+
 /* =========================================================
    SHARED UI
 ========================================================= */
@@ -214,73 +244,33 @@ const StatusBadge: React.FC<{
 };
 
 const PublishToYouTubeButton: React.FC<{
-  isPremium: boolean;
   onPublish: () => void;
-  onUpgrade?: () => void;
   variant?: "solid" | "outline";
   className?: string;
 }> = ({
-  isPremium,
   onPublish,
-  onUpgrade,
   variant = "solid",
   className = "",
 }) => {
-  const handleClick = () => {
-    if (isPremium) {
-      onPublish();
-      return;
-    }
-
-    if (onUpgrade) {
-      onUpgrade();
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      window.location.href = "/pricing";
-    }
-  };
-
   const solidClasses =
     "bg-red-500 text-white shadow-[0_8px_24px_rgba(239,68,68,0.14)] hover:bg-red-400";
 
   const outlineClasses =
     "border border-red-500/15 bg-red-500/[0.06] text-red-300 hover:border-red-500/30 hover:bg-red-500/[0.1] hover:text-red-200";
 
-  const lockedClasses =
-    "border border-violet-400/20 bg-gradient-to-r from-violet-500/[0.14] to-fuchsia-500/[0.09] text-violet-200 hover:border-violet-300/35 hover:from-violet-500/[0.2] hover:to-fuchsia-500/[0.14] hover:text-white";
-
   return (
     <button
       type="button"
-      onClick={handleClick}
-      aria-label={
-        isPremium
-          ? "Publish to YouTube"
-          : "Publish to YouTube — Premium feature, tap to upgrade"
-      }
+      onClick={onPublish}
+      aria-label="Publish to YouTube"
       className={[
         "inline-flex min-h-11 w-full touch-manipulation items-center justify-center gap-1.5 rounded-xl px-4 py-2.5 text-[9px] font-bold uppercase tracking-[0.08em] transition active:scale-[0.98] sm:text-[10px]",
-        isPremium
-          ? variant === "solid"
-            ? solidClasses
-            : outlineClasses
-          : lockedClasses,
+        variant === "solid" ? solidClasses : outlineClasses,
         className,
       ].join(" ")}
     >
-      {isPremium ? (
-        <Youtube className="h-3.5 w-3.5 shrink-0" />
-      ) : (
-        <Lock className="h-3.5 w-3.5 shrink-0 text-violet-300" />
-      )}
-
-      <span className="truncate">
-        {isPremium
-          ? "Publish to YouTube"
-          : "Publish to YouTube · Premium"}
-      </span>
+      <Youtube className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate">Publish to YouTube</span>
     </button>
   );
 };
@@ -1087,7 +1077,7 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
 
                     {isPremium
                       ? "Enhance Speech · 5 Credits"
-                      : "Enhance Speech · Premium"}
+                      : "Enhance Speech · 5 Credits"}
                   </button>
                 </div>
               </>
@@ -1186,9 +1176,7 @@ const FullCaptionedVideoResult: React.FC<{
           {fullVideoUrl && (
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
               <PublishToYouTubeButton
-                isPremium={isPremium}
                 onPublish={onPublish}
-                onUpgrade={onUpgrade}
                 className="sm:w-auto"
               />
 
@@ -2000,11 +1988,7 @@ const ClipCard: React.FC<{
         {videoUrl && onPublish && (
           <div className="mt-1.5">
             <PublishToYouTubeButton
-              isPremium={isPremium}
-              onPublish={() =>
-                onPublish(clip)
-              }
-              onUpgrade={onUpgrade}
+              onPublish={() => onPublish(clip)}
               variant="outline"
             />
           </div>
@@ -2133,8 +2117,6 @@ const ClipsSection: React.FC<{
                 clip={clip}
                 index={index}
                 onPublish={onPublish}
-                isPremium={isPremium}
-                onUpgrade={onUpgrade}
               />
             ),
           )}
@@ -2443,7 +2425,11 @@ export const ProjectDetailView: React.FC<
     status === "failed" ||
     status === "error";
 
+  const isSpeechOnly =
+    isSpeechOnlyProject(project);
+
   const isFullVideoMode =
+    !isSpeechOnly &&
     getProcessingMode(project) ===
     "full_video_caption";
 
@@ -2681,8 +2667,6 @@ export const ProjectDetailView: React.FC<
                       clip,
                     })
                   }
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                 />
               </>
             )}
@@ -2757,8 +2741,6 @@ export const ProjectDetailView: React.FC<
                       clip,
                     })
                   }
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                 />
               )}
           </>
@@ -2831,7 +2813,87 @@ export const ProjectDetailView: React.FC<
               )}
             </div>
 
-            {isFullVideoMode ? (
+            {isSpeechOnly ? (
+              <>
+                <div className="grid gap-4 xl:grid-cols-12">
+                  <div className="xl:col-span-7">
+                    <SourceVideo project={project} />
+                  </div>
+
+                  <div className="xl:col-span-5">
+                    <Surface className="h-full border-cyan-400/10 bg-gradient-to-b from-cyan-500/[0.045] to-[#09090d] p-6">
+                      <div className="flex h-full flex-col justify-between">
+                        <div>
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/10 bg-cyan-500/[0.07]">
+                              <AudioWaveform className="h-5 w-5 text-cyan-400" />
+                            </div>
+
+                            <div>
+                              <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-cyan-400">
+                                Enhanced Speech
+                              </p>
+                              <h3 className="mt-1 text-base font-semibold text-white">
+                                Source ready
+                              </h3>
+                            </div>
+                          </div>
+
+                          <p className="mt-5 text-[11px] leading-6 text-zinc-500">
+                            Your video is ready. LumoClip has not generated clips for this project.
+                            Use Enhance Speech below to clean background noise and improve voice clarity.
+                          </p>
+
+                          <div className="mt-5 grid grid-cols-2 gap-2">
+                            {[
+                              ["Noise reduction", VolumeX],
+                              ["Voice clarity", Volume2],
+                              ["Dynamic compression", AudioWaveform],
+                              ["Loudness normalize", Wand2],
+                            ].map(([label, Icon]) => {
+                              const FeatureIcon = Icon as React.ElementType;
+                              return (
+                                <div
+                                  key={label as string}
+                                  className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.015] px-3 py-2.5"
+                                >
+                                  <FeatureIcon className="h-3.5 w-3.5 text-cyan-400/75" />
+                                  <span className="text-[8px] font-medium text-zinc-500">
+                                    {label as string}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="mt-6 rounded-xl border border-cyan-400/10 bg-cyan-500/[0.035] px-4 py-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div>
+                              <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-cyan-400">
+                                Next step
+                              </p>
+                              <p className="mt-1 text-[9px] text-zinc-500">
+                                Enhance the source audio when you're ready.
+                              </p>
+                            </div>
+                            <CheckCircle2 className="h-5 w-5 shrink-0 text-cyan-400" />
+                          </div>
+                        </div>
+                      </div>
+                    </Surface>
+                  </div>
+                </div>
+
+                <EnhanceSpeechPanel
+                  project={project}
+                  status={speechStatus}
+                  onStatusChange={setSpeechStatus}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
+                />
+              </>
+            ) : isFullVideoMode ? (
               <>
                 <div className="grid gap-4 xl:grid-cols-12">
                   <div
@@ -2848,8 +2910,6 @@ export const ProjectDetailView: React.FC<
                           kind: "project",
                         })
                       }
-                      isPremium={isPremium}
-                      onUpgrade={onUpgrade}
                     />
                   </div>
 
@@ -2869,10 +2929,10 @@ export const ProjectDetailView: React.FC<
 
                 <EnhanceSpeechPanel
                   project={project}
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
               </>
             ) : (
@@ -2924,10 +2984,10 @@ export const ProjectDetailView: React.FC<
 
                 <EnhanceSpeechPanel
                   project={project}
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
+                  isPremium={isPremium}
+                  onUpgrade={onUpgrade}
                 />
 
                 <ClipsSection
@@ -2938,8 +2998,6 @@ export const ProjectDetailView: React.FC<
                       clip,
                     })
                   }
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                 />
               </>
             )}
