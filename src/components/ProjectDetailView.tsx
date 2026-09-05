@@ -165,36 +165,6 @@ function getProcessingMode(project: Project): string {
   ).toLowerCase();
 }
 
-/**
- * Enhanced Speech projects intentionally finish source preparation with
- * zero clips. The backend marks that preparation step as completed, so the
- * UI must not interpret a generic `completed` status as a clip project.
- *
- * We check both processing_mode and current_step because processing_mode is
- * an optional DB column in older LumoClip deployments. `current_step` is
- * already part of the project schema and is therefore a durable fallback.
- */
-function isSpeechOnlyProject(project: Project): boolean {
-  const data = project as any;
-  const mode = String(
-    data.processing_mode ||
-      data.processingMode ||
-      "",
-  ).toLowerCase();
-
-  if (mode === "speech_only" || mode === "speech-only") {
-    return true;
-  }
-
-  const step = String(data.current_step || "").toLowerCase();
-
-  return (
-    step.includes("speech enhancement source") ||
-    step.includes("source ready for enhanced speech") ||
-    step.includes("ready for enhanced speech")
-  );
-}
-
 /* =========================================================
    SHARED UI
 ========================================================= */
@@ -1077,7 +1047,7 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
 
                     {isPremium
                       ? "Enhance Speech · 5 Credits"
-                      : "Enhance Speech · 5 Credits"}
+                      : "Enhance Speech · Premium"}
                   </button>
                 </div>
               </>
@@ -2425,11 +2395,7 @@ export const ProjectDetailView: React.FC<
     status === "failed" ||
     status === "error";
 
-  const isSpeechOnly =
-    isSpeechOnlyProject(project);
-
   const isFullVideoMode =
-    !isSpeechOnly &&
     getProcessingMode(project) ===
     "full_video_caption";
 
@@ -2813,87 +2779,7 @@ export const ProjectDetailView: React.FC<
               )}
             </div>
 
-            {isSpeechOnly ? (
-              <>
-                <div className="grid gap-4 xl:grid-cols-12">
-                  <div className="xl:col-span-7">
-                    <SourceVideo project={project} />
-                  </div>
-
-                  <div className="xl:col-span-5">
-                    <Surface className="h-full border-cyan-400/10 bg-gradient-to-b from-cyan-500/[0.045] to-[#09090d] p-6">
-                      <div className="flex h-full flex-col justify-between">
-                        <div>
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/10 bg-cyan-500/[0.07]">
-                              <AudioWaveform className="h-5 w-5 text-cyan-400" />
-                            </div>
-
-                            <div>
-                              <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-cyan-400">
-                                Enhanced Speech
-                              </p>
-                              <h3 className="mt-1 text-base font-semibold text-white">
-                                Source ready
-                              </h3>
-                            </div>
-                          </div>
-
-                          <p className="mt-5 text-[11px] leading-6 text-zinc-500">
-                            Your video is ready. LumoClip has not generated clips for this project.
-                            Use Enhance Speech below to clean background noise and improve voice clarity.
-                          </p>
-
-                          <div className="mt-5 grid grid-cols-2 gap-2">
-                            {[
-                              ["Noise reduction", VolumeX],
-                              ["Voice clarity", Volume2],
-                              ["Dynamic compression", AudioWaveform],
-                              ["Loudness normalize", Wand2],
-                            ].map(([label, Icon]) => {
-                              const FeatureIcon = Icon as React.ElementType;
-                              return (
-                                <div
-                                  key={label as string}
-                                  className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.015] px-3 py-2.5"
-                                >
-                                  <FeatureIcon className="h-3.5 w-3.5 text-cyan-400/75" />
-                                  <span className="text-[8px] font-medium text-zinc-500">
-                                    {label as string}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        <div className="mt-6 rounded-xl border border-cyan-400/10 bg-cyan-500/[0.035] px-4 py-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <div>
-                              <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-cyan-400">
-                                Next step
-                              </p>
-                              <p className="mt-1 text-[9px] text-zinc-500">
-                                Enhance the source audio when you're ready.
-                              </p>
-                            </div>
-                            <CheckCircle2 className="h-5 w-5 shrink-0 text-cyan-400" />
-                          </div>
-                        </div>
-                      </div>
-                    </Surface>
-                  </div>
-                </div>
-
-                <EnhanceSpeechPanel
-                  project={project}
-                  status={speechStatus}
-                  onStatusChange={setSpeechStatus}
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
-                />
-              </>
-            ) : isFullVideoMode ? (
+            {isFullVideoMode ? (
               <>
                 <div className="grid gap-4 xl:grid-cols-12">
                   <div
@@ -2931,8 +2817,6 @@ export const ProjectDetailView: React.FC<
                   project={project}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                 />
               </>
             ) : (
@@ -2986,8 +2870,6 @@ export const ProjectDetailView: React.FC<
                   project={project}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
-                  isPremium={isPremium}
-                  onUpgrade={onUpgrade}
                 />
 
                 <ClipsSection

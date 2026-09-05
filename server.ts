@@ -5341,29 +5341,137 @@ async function processVideo(
       originalSourceUrl,
     );
 
-    // Speech-only projects are source-preparation jobs. They MUST NOT run
-    // Gemini clip analysis and MUST NOT enter the clips table/folder.
-    // Enhanced Speech is a separate action performed after the source exists.
+    // Speech-only projects are NEVER sent to Gemini clip analysis.
+    // The source is immediately passed to the real speech-enhancement
+    // FFmpeg pipeline and the enhanced MP4 is written under /enhanced.
+    // No clips table rows or /clips files are created in this branch.
     if (mode === "speech_only") {
-      await updateProject(
-        projectId,
-        100,
-        "Source ready for Enhanced Speech",
-        "completed",
-        0,
-      );
+      let speechCharged = false;
+      let enhancedOutputPath = "";
 
-      await createNotification({
-        userId,
-        type: "project_ready_for_speech",
-        title: "Video ready for Enhanced Speech",
-        message: "Your source video is ready. Enhance its speech whenever you want.",
-        projectId,
-        metadata: { mode: "speech_only", generated: 0 },
-      });
+      try {
+        // Require an actual audio stream before spending the speech credits.
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg.ffprobe(sourcePath, (error, metadata) => {
+            if (error) return reject(error);
 
-      console.log(`Project ${projectId} prepared for Enhanced Speech without generating clips.`);
-      return;
+            const hasAudio =
+              Array.isArray(metadata.streams) &&
+              metadata.streams.some(
+                (stream: any) => stream.codec_type === "audio",
+              );
+
+            if (!hasAudio) {
+              return reject(
+                new Error("This video does not contain an audio track."),
+              );
+            }
+
+            resolve();
+          });
+        });
+
+        await updateProject(
+          projectId,
+          55,
+          "Enhancing speech",
+          "processing",
+          0,
+        );
+
+        const remainingCredits = await chargeSpeechEnhanceCredits(userId);
+        speechCharged = true;
+
+        const enhancedName = `enhanced-speech-${generateId()}.mp4`;
+        enhancedOutputPath = path.join(
+          projectDir,
+          "enhanced",
+          enhancedName,
+        );
+
+        await runSpeechEnhancement(sourcePath, enhancedOutputPath);
+
+        const enhancedUrl = publicMediaUrl(
+          projectId,
+          `enhanced/${enhancedName}`,
+        );
+
+        // Persist the URL when the optional column exists. If it does not,
+        // the GET-project endpoint below derives it directly from /enhanced.
+        const enhancedUpdate = await supabase
+          .from("projects")
+          .update({
+            enhanced_speech_url: enhancedUrl,
+            processing_mode: "speech_only",
+            progress: 100,
+            current_step: "Speech enhancement complete",
+            status: "completed",
+            total_clips: 0,
+          })
+          .eq("id", projectId);
+
+        if (enhancedUpdate.error) {
+          console.warn(
+            "Optional enhanced_speech_url/processing_mode columns unavailable; saving speech completion status only:",
+            enhancedUpdate.error.message,
+          );
+
+          const fallbackUpdate = await supabase
+            .from("projects")
+            .update({
+              progress: 100,
+              current_step: "Speech enhancement complete",
+              status: "completed",
+              total_clips: 0,
+            })
+            .eq("id", projectId);
+
+          if (fallbackUpdate.error) {
+            throw fallbackUpdate.error;
+          }
+        }
+
+        await supabase.from("usage_logs").insert({
+          user_id: userId,
+          action: `Enhance Speech: ${projectId}`,
+          credits_used: SPEECH_ENHANCE_COST,
+        });
+
+        await createNotification({
+          userId,
+          type: "speech_enhanced",
+          title: "Speech enhanced",
+          message: "Your enhanced speech video is ready.",
+          projectId,
+          metadata: {
+            mode: "speech_only",
+            outputUrl: enhancedUrl,
+            creditsUsed: SPEECH_ENHANCE_COST,
+            creditsRemaining: remainingCredits,
+            generated: 0,
+          },
+        });
+
+        console.log(
+          `Project ${projectId} enhanced automatically with no clip generation: ${enhancedUrl}`,
+        );
+
+        return;
+      } catch (speechError) {
+        if (enhancedOutputPath) {
+          try {
+            if (fs.existsSync(enhancedOutputPath)) {
+              fs.unlinkSync(enhancedOutputPath);
+            }
+          } catch {}
+        }
+
+        if (speechCharged) {
+          await refundSpeechEnhanceCredits(userId, projectId);
+        }
+
+        throw speechError;
+      }
     }
 
     await updateProject(
@@ -8116,6 +8224,35 @@ app.get(
         "full-captioned.mp4",
       );
 
+      const enhancedDir = path.join(
+        mediaDir,
+        safeSegment(project.id),
+        "enhanced",
+      );
+
+      let derivedEnhancedSpeechUrl: string | null =
+        (project as any).enhanced_speech_url ||
+        (project as any).enhancedSpeechUrl ||
+        null;
+
+      if (!derivedEnhancedSpeechUrl && fs.existsSync(enhancedDir)) {
+        const enhancedFiles = fs
+          .readdirSync(enhancedDir)
+          .filter((name) => /^enhanced-speech-.+\.mp4$/i.test(name))
+          .map((name) => ({
+            name,
+            mtime: fs.statSync(path.join(enhancedDir, name)).mtimeMs,
+          }))
+          .sort((a, b) => b.mtime - a.mtime);
+
+        if (enhancedFiles[0]) {
+          derivedEnhancedSpeechUrl = publicMediaUrl(
+            project.id,
+            `enhanced/${enhancedFiles[0].name}`,
+          );
+        }
+      }
+
       const projectWithFullVideo = {
         ...project,
         full_video_url:
@@ -8123,6 +8260,7 @@ app.get(
           (fs.existsSync(fullVideoPath)
             ? publicMediaUrl(project.id, "full-captioned.mp4")
             : null),
+        enhanced_speech_url: derivedEnhancedSpeechUrl,
       };
 
       res.json({
