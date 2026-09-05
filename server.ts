@@ -52,9 +52,8 @@ const GEMINI_MODEL =
 
 const VIDEO_COST = 10;
 
-// Speech enhancement is a separate processing action.
-// It uses the same atomic Supabase credit system and daily 150-credit cap.
-const SPEECH_ENHANCE_COST = 5;
+// Speech enhancement is completely free for all authenticated users.
+// No credits are charged, consumed, or refunded for this action.
 
 const DAILY_CREDIT_LIMIT = 150;
 
@@ -8267,336 +8266,16 @@ app.get(
    - source: enhances the project's original uploaded/worker video.
    - clip: enhances an existing clip identified by clipId.
 
-   Cost: SPEECH_ENHANCE_COST credits. Failed processing is refunded.
+   Cost: 0 credits. Speech enhancement is free for all authenticated users.
 ========================================================= */
 
-async function chargeSpeechEnhanceCredits(userId: string) {
-  const {
-    data,
-    error,
-  } = await supabase.rpc(
-    "charge_video_credits",
-    {
-      p_user_id: userId,
-      p_cost: SPEECH_ENHANCE_COST,
-      p_daily_limit: DAILY_CREDIT_LIMIT,
-    },
-  );
-
-  if (error) {
-    console.error("Speech enhancement credit charge failed:", error);
-
-    const message = String(error.message || "");
-
-    if (message.includes("INSUFFICIENT_CREDITS")) {
-      const creditError: any = new Error(
-        `You need ${SPEECH_ENHANCE_COST} credits to enhance speech.`,
-      );
-      creditError.statusCode = 402;
-      creditError.credits = 0;
-      throw creditError;
-    }
-
-    throw new Error("Failed to charge speech enhancement credits.");
-  }
-
-  return Number(data?.credits ?? 0);
-}
-
-async function refundSpeechEnhanceCredits(userId: string, projectId: string) {
-  try {
-    const { data, error } = await supabase.rpc(
-      "refund_video_credits",
-      {
-        p_user_id: userId,
-        p_cost: SPEECH_ENHANCE_COST,
-        p_daily_limit: DAILY_CREDIT_LIMIT,
-      },
-    );
-
-    if (error) throw error;
-
-    const refunded = Number(data?.refunded ?? SPEECH_ENHANCE_COST);
-
-    await supabase.from("usage_logs").insert({
-      user_id: userId,
-      action: `Refund: failed speech enhancement ${projectId}`,
-      credits_used: -refunded,
-    });
-
-    return refunded;
-  } catch (error) {
-    console.error(
-      `Speech enhancement credit refund failed for project ${projectId}:`,
-      error,
-    );
-    return 0;
-  }
-}
-
-function resolveProjectSourcePath(projectId: string): string {
-  const projectDir = path.resolve(
-    mediaDir,
-    safeSegment(projectId),
-  );
-
-  const allowedRoot = projectDir + path.sep;
-
-  if (!fs.existsSync(projectDir) || !fs.statSync(projectDir).isDirectory()) {
-    throw new Error("Project media directory is not available.");
-  }
-
-  const candidates = fs
-    .readdirSync(projectDir)
-    .filter((name) => /^source\.(mp4|mov|webm|avi|mpeg)$/i.test(name));
-
-  const source = candidates[0] || "";
-
-  if (!source) {
-    throw new Error("Original project video is not available on the server.");
-  }
-
-  const resolved = path.resolve(projectDir, source);
-
-  if (!resolved.startsWith(allowedRoot) || !fs.statSync(resolved).isFile()) {
-    throw new Error("Invalid project source path.");
-  }
-
-  return resolved;
-}
-
-function resolveClipPathFromUrl(projectId: string, videoUrl: string): string {
-  const marker = "/clips/";
-  const markerIndex = videoUrl.indexOf(marker);
-
-  if (markerIndex === -1) {
-    throw new Error("Clip video path is invalid.");
-  }
-
-  const filename = videoUrl
-    .slice(markerIndex + marker.length)
-    .split("?")[0]
-    .split("#")[0];
-
-  const cleanFilename = path.basename(decodeURIComponent(filename));
-  const clipsDir = path.resolve(
-    mediaDir,
-    safeSegment(projectId),
-    "clips",
-  );
-  const clipPath = path.resolve(clipsDir, cleanFilename);
-  const allowedRoot = clipsDir + path.sep;
-
-  if (
-    !clipPath.startsWith(allowedRoot) ||
-    !fs.existsSync(clipPath) ||
-    !fs.statSync(clipPath).isFile()
-  ) {
-    throw new Error("Clip video file is not available on the server.");
-  }
-
-  return clipPath;
-}
-
-async function probeSpeechEnhancementInput(inputPath: string): Promise<{
-  hasVideo: boolean;
-  hasAudio: boolean;
-  videoCodec: string;
-  audioCodec: string;
-  duration: number;
-}> {
-  return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(inputPath, (error, metadata) => {
-      if (error) return reject(error);
-
-      const streams = Array.isArray(metadata.streams)
-        ? metadata.streams
-        : [];
-
-      const videoStream: any = streams.find(
-        (stream: any) => stream?.codec_type === "video",
-      );
-      const audioStream: any = streams.find(
-        (stream: any) => stream?.codec_type === "audio",
-      );
-
-      const duration = Number(
-        metadata.format?.duration ??
-          videoStream?.duration ??
-          audioStream?.duration ??
-          0,
-      );
-
-      resolve({
-        hasVideo: Boolean(videoStream),
-        hasAudio: Boolean(audioStream),
-        videoCodec: String(videoStream?.codec_name || "").toLowerCase(),
-        audioCodec: String(audioStream?.codec_name || "").toLowerCase(),
-        duration: Number.isFinite(duration) ? duration : 0,
-      });
-    });
-  });
-}
-
-function getSpeechEnhancementFilters(): string[] {
-  // Designed for spoken-word recordings: remove rumble, tame hiss/noise,
-  // improve speech presence, compress dynamic range and normalize loudness.
-  // This is intentionally conservative so music/background ambience is not
-  // destroyed.
-  return [
-    "highpass=f=70:p=2",
-    "lowpass=f=15000:p=2",
-    "afftdn=nr=18:nf=-35:tn=1:rf=-38",
-    "equalizer=f=2500:t=q:w=1:g=2",
-    "equalizer=f=5000:t=q:w=1:g=1",
-    "acompressor=threshold=-20dB:ratio=3:attack=15:release=180:makeup=2",
-    "loudnorm=I=-16:TP=-1.5:LRA=11",
-    "alimiter=limit=0.95:attack=5:release=50",
-  ];
-}
-
-function runSpeechEnhancement(
-  inputPath: string,
-  outputPath: string,
-  options?: {
-    copyVideo?: boolean;
-  },
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-    let settled = false;
-    let timer: NodeJS.Timeout | undefined;
-
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      if (timer) clearTimeout(timer);
-
-      if (error) {
-        reject(error);
-      } else {
-        resolve();
-      }
-    };
-
-    const copyVideo = options?.copyVideo === true;
-
-    const outputOptions = [
-      "-y",
-      "-map",
-      "0:v:0?",
-      "-map",
-      "0:a:0",
-      "-map_metadata",
-      "0",
-      "-map_chapters",
-      "0",
-      ...(copyVideo
-        ? [
-            "-c:v",
-            "copy",
-          ]
-        : [
-            "-c:v",
-            "libx264",
-            "-preset",
-            FFMPEG_PRESET,
-            "-crf",
-            SPEECH_ENHANCE_VIDEO_CRF,
-            "-threads",
-            String(Math.max(1, Math.min(CPU_COUNT, 4))),
-            "-pix_fmt",
-            "yuv420p",
-          ]),
-      "-c:a",
-      "aac",
-      "-b:a",
-      SPEECH_ENHANCE_AUDIO_BITRATE,
-      "-ar",
-      "48000",
-      "-ac",
-      "2",
-      "-movflags",
-      "+faststart",
-      "-avoid_negative_ts",
-      "make_zero",
-    ];
-
-    const command = ffmpeg(inputPath)
-      .outputOptions(outputOptions)
-      .audioFilters(getSpeechEnhancementFilters())
-      .on("start", (commandLine) => {
-        console.log(
-          `Speech enhancement started (${copyVideo ? "video-copy" : "video-reencode"}):`,
-          commandLine,
-        );
-      })
-      .on("progress", (progress) => {
-        if (
-          typeof progress.percent === "number" &&
-          Number.isFinite(progress.percent)
-        ) {
-          console.log(
-            `Speech enhancement progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`,
-          );
-        }
-      })
-      .on("end", () => {
-        try {
-          if (
-            !fs.existsSync(outputPath) ||
-            !fs.statSync(outputPath).isFile() ||
-            fs.statSync(outputPath).size <= 0
-          ) {
-            return finish(
-              new Error("Enhanced speech video was not created."),
-            );
-          }
-
-          console.log(
-            "Speech enhancement completed:",
-            outputPath,
-          );
-          finish();
-        } catch (error: any) {
-          finish(error instanceof Error ? error : new Error(String(error)));
-        }
-      })
-      .on("error", (error) => {
-        console.error(
-          "Speech enhancement FFmpeg error:",
-          error,
-        );
-        finish(error instanceof Error ? error : new Error(String(error)));
-      });
-
-    timer = setTimeout(() => {
-      console.error(
-        `Speech enhancement timed out after ${SPEECH_ENHANCE_TIMEOUT_MS}ms.`,
-      );
-
-      try {
-        command.kill("SIGKILL");
-      } catch {}
-
-      finish(
-        new Error(
-          "Speech enhancement timed out. Please try a shorter video.",
-        ),
-      );
-    }, Math.max(1000, SPEECH_ENHANCE_TIMEOUT_MS));
-
-    command.run();
-  });
-}
+/* Speech enhancement is free: no credit RPC is used. */
 
 app.post(
   "/api/projects/:projectId/enhance-speech",
   async (req, res) => {
     const projectId = String(req.params.projectId || "").trim();
     let userId = "";
-    let charged = false;
     let outputPath = "";
 
     try {
@@ -8680,9 +8359,6 @@ app.post(
       // which is much faster and prevents an unnecessary second video encode.
       const copyVideo = probe.videoCodec === "h264";
 
-      const remainingCredits = await chargeSpeechEnhanceCredits(user.id);
-      charged = true;
-
       const outputName = `enhanced-speech-${generateId()}.mp4`;
       outputPath = path.join(
         mediaDir,
@@ -8706,7 +8382,7 @@ app.post(
       await supabase.from("usage_logs").insert({
         user_id: user.id,
         action: `Enhance Speech: ${project.name || projectId}`,
-        credits_used: SPEECH_ENHANCE_COST,
+        credits_used: 0,
       });
 
       try {
@@ -8718,7 +8394,7 @@ app.post(
           projectId,
           metadata: {
             inputType,
-            credits: SPEECH_ENHANCE_COST,
+            credits: 0,
             videoMode: copyVideo ? "copy" : "reencode",
           },
         });
@@ -8738,8 +8414,7 @@ app.post(
         inputType,
         outputUrl,
         filename: outputName,
-        creditsUsed: SPEECH_ENHANCE_COST,
-        credits: remainingCredits,
+        creditsUsed: 0,
         message: "Speech enhanced successfully.",
       });
     } catch (error: any) {
@@ -8749,10 +8424,6 @@ app.post(
         try {
           if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
         } catch {}
-      }
-
-      if (charged && userId) {
-        await refundSpeechEnhanceCredits(userId, projectId);
       }
 
       if (error?.message === "UNAUTHORIZED") {
@@ -9173,7 +8844,7 @@ app.listen(
     );
 
     console.log(
-      `Speech enhancement cost: ${SPEECH_ENHANCE_COST} credits`,
+      "Speech enhancement: FREE (0 credits)",
     );
 
     console.log(

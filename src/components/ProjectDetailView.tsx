@@ -19,7 +19,6 @@ import {
   Flame,
   Layers3,
   Loader2,
-  Lock,
   MoreHorizontal,
   RefreshCw,
   Scissors,
@@ -406,8 +405,6 @@ const HeroVideo: React.FC<{
 
 interface EnhanceSpeechPanelProps {
   project: Project;
-  isPremium?: boolean;
-  onUpgrade?: () => void;
   /** Lifted up so the rest of the page can react to this action running. */
   status: SpeechEnhanceStatus;
   onStatusChange: (status: SpeechEnhanceStatus) => void;
@@ -415,8 +412,6 @@ interface EnhanceSpeechPanelProps {
 
 const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
   project,
-  isPremium = false,
-  onUpgrade,
   status,
   onStatusChange: setStatus,
 }) => {
@@ -425,12 +420,6 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
 
   const [error, setError] =
     useState("");
-
-  const [creditsUsed, setCreditsUsed] =
-    useState<number | null>(null);
-
-  const [creditsRemaining, setCreditsRemaining] =
-    useState<number | null>(null);
 
   const [inputType, setInputType] =
     useState<"source" | "clip">("source");
@@ -474,8 +463,6 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
     setStatus("idle");
     setOutputUrl("");
     setError("");
-    setCreditsUsed(null);
-    setCreditsRemaining(null);
     setSelectedClipId("");
     setInputType("source");
     setStartedAt(null);
@@ -522,16 +509,6 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
 
     setError("");
 
-    if (!isPremium) {
-      if (onUpgrade) {
-        onUpgrade();
-      } else if (typeof window !== "undefined") {
-        window.location.href = "/pricing";
-      }
-
-      return;
-    }
-
     if (
       inputType === "clip" &&
       !selectedClipId
@@ -545,8 +522,6 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
     try {
       setStatus("processing");
       setOutputUrl("");
-      setCreditsUsed(null);
-      setCreditsRemaining(null);
       setStartedAt(Date.now());
 
       const {
@@ -638,19 +613,6 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
         String(enhancedUrl),
       );
 
-      setCreditsUsed(
-        Number(data.creditsUsed ?? 5),
-      );
-
-      if (
-        data.credits !== undefined &&
-        data.credits !== null
-      ) {
-        setCreditsRemaining(
-          Number(data.credits),
-        );
-      }
-
       setStatus("completed");
     } catch (err) {
       console.error(
@@ -674,8 +636,6 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
     setStatus("idle");
     setOutputUrl("");
     setError("");
-    setCreditsUsed(null);
-    setCreditsRemaining(null);
     setStartedAt(null);
   };
 
@@ -702,8 +662,8 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
                     Audio enhancement
                   </p>
 
-                  <span className="rounded-full border border-violet-400/15 bg-violet-500/[0.08] px-2 py-0.5 text-[7px] font-bold uppercase tracking-wider text-violet-300">
-                    5 Credits
+                  <span className="rounded-full border border-emerald-400/15 bg-emerald-500/[0.08] px-2 py-0.5 text-[7px] font-bold uppercase tracking-wider text-emerald-300">
+                    Free
                   </span>
                 </div>
 
@@ -792,20 +752,9 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
 
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div className="flex flex-wrap items-center gap-2 text-[8px] text-zinc-600">
-                    {creditsUsed !== null && (
-                      <span>
-                        {creditsUsed} credits used
-                      </span>
-                    )}
-
-                    {creditsRemaining !== null && (
-                      <>
-                        <span>•</span>
-                        <span>
-                          {creditsRemaining} credits remaining
-                        </span>
-                      </>
-                    )}
+                    <span className="text-emerald-400/80">
+                      Free enhancement
+                    </span>
                   </div>
 
                   <div className="flex gap-2">
@@ -1020,8 +969,8 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
                 {/* CTA */}
                 <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <p className="text-[9px] font-medium text-zinc-500">
-                      Uses 5 credits
+                    <p className="text-[9px] font-medium text-emerald-400/80">
+                      Free for all users
                     </p>
 
                     <p className="mt-1 text-[7.5px] text-zinc-700">
@@ -1034,20 +983,11 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
                     onClick={runEnhancement}
                     className={[
                       "inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-[9px] font-bold uppercase tracking-[0.1em] transition active:scale-[0.98]",
-                      isPremium
-                        ? "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-[0_10px_30px_rgba(34,211,238,0.12)] hover:from-cyan-400 hover:to-violet-400"
-                        : "border border-violet-400/20 bg-violet-500/[0.1] text-violet-200 hover:bg-violet-500/[0.16]",
+                      "bg-gradient-to-r from-cyan-500 to-violet-500 text-white shadow-[0_10px_30px_rgba(34,211,238,0.12)] hover:from-cyan-400 hover:to-violet-400",
                     ].join(" ")}
                   >
-                    {isPremium ? (
-                      <Volume2 className="h-3.5 w-3.5" />
-                    ) : (
-                      <Lock className="h-3.5 w-3.5" />
-                    )}
-
-                    {isPremium
-                      ? "Enhance Speech · 5 Credits"
-                      : "Enhance Speech · Premium"}
+                    <Volume2 className="h-3.5 w-3.5" />
+                    Enhance Speech · Free
                   </button>
                 </div>
               </>
