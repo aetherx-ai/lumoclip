@@ -12,6 +12,7 @@ import {
   Captions,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -777,17 +778,17 @@ const uploadVideoWithProgress = ({
       JSON.stringify(reframe),
     );
 
-    if (clipSettings) {
-      formData.append(
-        "clipSettings",
-        JSON.stringify(clipSettings),
-      );
-    }
-
     if (speechSettings) {
       formData.append(
         "speechSettings",
         JSON.stringify(speechSettings),
+      );
+    }
+
+    if (clipSettings) {
+      formData.append(
+        "clipSettings",
+        JSON.stringify(clipSettings),
       );
     }
 
@@ -1821,120 +1822,211 @@ const ClipOpusSettings: React.FC<{
   onChange: (next: ClipSettings) => void;
   disabled: boolean;
 }> = ({ settings, onChange, disabled }) => {
-  const patch = (next: Partial<ClipSettings>) =>
-    onChange({ ...settings, ...next });
+  const patch = (next: Partial<ClipSettings>) => onChange({ ...settings, ...next });
 
-  const selectClass =
-    "rounded-lg bg-transparent px-1.5 py-1 text-[11px] font-bold text-zinc-100 outline-none transition hover:bg-white/[0.04] disabled:opacity-40";
+  const menuClass =
+    "appearance-none bg-transparent text-[11px] font-bold text-white outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-40";
+
+  const Toggle = ({ checked, onClick }: { checked: boolean; onClick: () => void }) => (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onClick}
+      className={`relative h-[20px] w-[36px] shrink-0 rounded-full transition-all ${
+        checked ? "bg-white" : "bg-[#45454a]"
+      }`}
+    >
+      <span
+        className={`absolute top-1/2 h-[14px] w-[14px] -translate-y-1/2 rounded-full transition-all ${
+          checked ? "left-[19px] bg-[#17171a]" : "left-[3px] bg-[#222226]"
+        }`}
+      />
+    </button>
+  );
+
+  if (settings.tab === "dont_clip") {
+    return (
+      <section className="overflow-hidden rounded-[3px] bg-[#1a1a1e]">
+        <div className="flex border-b border-black/30 bg-[#17171b]">
+          <button
+            type="button"
+            onClick={() => patch({ tab: "ai" })}
+            className="relative px-4 py-3 text-[11px] font-bold text-zinc-400 hover:text-white"
+          >
+            AI clipping
+          </button>
+          <button
+            type="button"
+            className="relative px-4 py-3 text-[11px] font-bold text-white"
+          >
+            Don't clip
+            <span className="absolute inset-x-0 bottom-0 h-[2px] bg-white" />
+          </button>
+        </div>
+        <div className="px-5 py-10 text-center">
+          <p className="text-[12px] font-semibold text-zinc-200">Don't clip this video</p>
+          <p className="mx-auto mt-2 max-w-[310px] text-[9px] leading-4 text-zinc-500">
+            Continue with the original video without AI-generated short clips.
+          </p>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <section className="overflow-hidden rounded-[16px] border border-white/[0.07] bg-[#18181c] shadow-[0_18px_55px_rgba(0,0,0,.28)]">
-      <div className="flex items-end border-b border-white/[0.06] bg-[#151519] px-4 pt-1">
+    <section className="overflow-hidden rounded-[3px] bg-[#1a1a1e]">
+      {/* Tabs — intentionally flat like the Opus workflow */}
+      <div className="flex border-b border-black/30 bg-[#17171b]">
         <button
           type="button"
           disabled={disabled}
           onClick={() => patch({ tab: "ai" })}
-          className={`relative px-0 py-3 mr-5 text-[11px] font-bold transition ${settings.tab === "ai" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+          className="relative px-4 py-3 text-[11px] font-bold text-white"
         >
           AI clipping
-          {settings.tab === "ai" && <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-white" />}
+          <span className="absolute inset-x-0 bottom-0 h-[2px] bg-white" />
         </button>
         <button
           type="button"
           disabled={disabled}
           onClick={() => patch({ tab: "dont_clip" })}
-          className={`relative px-0 py-3 text-[11px] font-medium transition ${settings.tab === "dont_clip" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+          className="px-4 py-3 text-[11px] font-medium text-zinc-500 transition hover:text-zinc-300"
         >
           Don't clip
-          {settings.tab === "dont_clip" && <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-white" />}
         </button>
       </div>
 
-      {settings.tab === "dont_clip" ? (
-        <div className="flex min-h-[285px] items-center justify-center px-8 py-12 text-center">
-          <div>
-            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.035]">
-              <Film className="h-5 w-5 text-zinc-500" />
-            </div>
-            <p className="mt-4 text-[12px] font-bold text-zinc-200">Skip AI clipping</p>
-            <p className="mt-1.5 max-w-[300px] text-[9px] leading-4 text-zinc-500">
-              Keep your full source video and continue without generating short clips.
-            </p>
-          </div>
+      <div className="px-4 pb-4 pt-3.5 sm:px-4.5">
+        {/* One-line controls */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[10px] text-zinc-400">
+          <label className="flex items-center gap-1.5">
+            <span>Clip model</span>
+            <select
+              value={settings.clipModel}
+              onChange={(e) => patch({ clipModel: e.target.value as ClipSettings["clipModel"] })}
+              disabled={disabled}
+              className={menuClass}
+            >
+              <option>ClipBasic</option>
+              <option>ClipPro</option>
+            </select>
+            <ChevronDown className="h-3 w-3 text-zinc-600" />
+          </label>
+
+          <label className="flex items-center gap-1.5">
+            <span>Genre</span>
+            <select
+              value={settings.genre}
+              onChange={(e) => patch({ genre: e.target.value as ClipSettings["genre"] })}
+              disabled={disabled}
+              className={menuClass}
+            >
+              <option>Auto</option>
+              <option>Podcast</option>
+              <option>Interview</option>
+              <option>Education</option>
+              <option>Comedy</option>
+            </select>
+            <ChevronDown className="h-3 w-3 text-zinc-600" />
+          </label>
+
+          <label className="flex items-center gap-1.5">
+            <span>Clip Length</span>
+            <select
+              value={settings.clipLength}
+              onChange={(e) => patch({ clipLength: e.target.value as ClipSettings["clipLength"] })}
+              disabled={disabled}
+              className={menuClass}
+            >
+              <option>Auto (0m-3m)</option>
+              <option>Short (0m-1m)</option>
+              <option>Medium (1m-3m)</option>
+              <option>Long (3m-5m)</option>
+            </select>
+            <ChevronDown className="h-3 w-3 text-zinc-600" />
+          </label>
         </div>
-      ) : (
-        <div className="px-4 pb-5 pt-4">
-          <div className="flex flex-wrap items-center gap-x-7 gap-y-3 text-[10px] text-zinc-400">
-            <label className="flex items-center gap-1.5">
-              <span>Clip model</span>
-              <select value={settings.clipModel} onChange={(e) => patch({ clipModel: e.target.value as ClipSettings["clipModel"] })} disabled={disabled} className={selectClass}>
-                <option>ClipBasic</option>
-                <option>ClipPro</option>
-              </select>
-              <ChevronRight className="h-3 w-3 rotate-90 text-zinc-600" />
-            </label>
-            <label className="flex items-center gap-1.5">
-              <span>Genre</span>
-              <select value={settings.genre} onChange={(e) => patch({ genre: e.target.value as ClipSettings["genre"] })} disabled={disabled} className={selectClass}>
-                <option>Auto</option>
-                <option>Podcast</option>
-                <option>Interview</option>
-                <option>Education</option>
-                <option>Comedy</option>
-              </select>
-              <ChevronRight className="h-3 w-3 rotate-90 text-zinc-600" />
-            </label>
-            <label className="flex items-center gap-1.5">
-              <span>Clip Length</span>
-              <select value={settings.clipLength} onChange={(e) => patch({ clipLength: e.target.value as ClipSettings["clipLength"] })} disabled={disabled} className={selectClass}>
-                <option>Auto (0m-3m)</option>
-                <option>Short (0m-1m)</option>
-                <option>Medium (1m-3m)</option>
-                <option>Long (3m-5m)</option>
-              </select>
-              <ChevronRight className="h-3 w-3 rotate-90 text-zinc-600" />
-            </label>
-          </div>
 
-          <div className="mt-8 flex items-center gap-3">
-            <span className="text-[10px] text-zinc-400">Auto headline</span>
-            <button type="button" role="switch" aria-checked={settings.autoHeadline} disabled={disabled} onClick={() => patch({ autoHeadline: !settings.autoHeadline })} className={`relative h-5 w-9 rounded-full transition ${settings.autoHeadline ? "bg-white" : "bg-[#444449]"}`}>
-              <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all ${settings.autoHeadline ? "left-[18px] bg-[#17171b]" : "left-0.5 bg-[#242428]"}`} />
-            </button>
-          </div>
+        {/* Auto headline */}
+        <div className="mt-6 flex items-center gap-3">
+          <span className="text-[10px] text-zinc-400">Auto headline</span>
+          <Toggle checked={settings.autoHeadline} onClick={() => patch({ autoHeadline: !settings.autoHeadline })} />
+        </div>
 
-          <div className="mt-8 flex items-center justify-between gap-4">
+        {/* Prompt */}
+        <div className="mt-6">
+          <div className="flex items-center justify-between gap-4">
             <span className="text-[10px] text-zinc-400">Include specific moments</span>
-            <span className="text-[9px] text-zinc-500">Not sure how to prompt? <button type="button" className="font-bold text-zinc-200 underline underline-offset-2">learn more</button></span>
+            <button
+              type="button"
+              className="text-[9px] text-zinc-400 transition hover:text-white"
+              onClick={() => {
+                if (!settings.specificMoments) {
+                  patch({ specificMoments: "Compile the most engaging moments" });
+                }
+              }}
+            >
+              Not sure how to prompt? <span className="font-bold underline underline-offset-2">learn more</span>
+            </button>
           </div>
           <input
             value={settings.specificMoments}
             onChange={(e) => patch({ specificMoments: e.target.value })}
             disabled={disabled}
             placeholder="Example: Compile all the hilarious moments"
-            className="mt-2.5 h-10 w-full rounded-[9px] border border-white/[0.85] bg-transparent px-4 text-[10px] text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-white disabled:opacity-40"
+            className="mt-2.5 h-[39px] w-full rounded-[8px] border border-zinc-500 bg-transparent px-4 text-[10px] text-white outline-none placeholder:text-zinc-500 transition focus:border-white disabled:opacity-40"
           />
+        </div>
 
-          <div className="mt-7">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] text-zinc-400">Processing timeframe</span>
-              <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[8px] font-bold text-emerald-400">Credit saver</span>
-            </div>
-            <div className="relative mt-5 h-4">
-              <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-300" />
-              <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-300" style={{ width: `${settings.endPercent}%` }} />
-              <input type="range" min="0" max="100" value={settings.startPercent} onChange={(e) => patch({ startPercent: Math.min(Number(e.target.value), settings.endPercent - 1) })} disabled={disabled} className="pointer-events-auto absolute inset-0 h-4 w-full appearance-none bg-transparent accent-zinc-900" />
-              <input type="range" min="0" max="100" value={settings.endPercent} onChange={(e) => patch({ endPercent: Math.max(Number(e.target.value), settings.startPercent + 1) })} disabled={disabled} className="pointer-events-auto absolute inset-0 h-4 w-full appearance-none bg-transparent accent-zinc-900" />
-              <span className="absolute left-0 top-1/2 h-5 w-5 -translate-x-0 -translate-y-1/2 rounded-full border border-zinc-700 bg-[#18181c] shadow" />
-              <span className="absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border border-zinc-700 bg-[#18181c] shadow" />
-            </div>
-            <div className="mt-2 flex justify-between">
-              <span className="rounded-lg bg-black/20 px-3 py-2 text-[10px] tabular-nums text-zinc-600">0:00:00</span>
-              <span className="rounded-lg bg-black/20 px-3 py-2 text-[10px] tabular-nums text-zinc-600">0:03:08</span>
-            </div>
+        {/* Time range */}
+        <div className="mt-6">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-zinc-400">Processing timeframe</span>
+            <span className="rounded-[5px] bg-emerald-500/15 px-2 py-1 text-[8px] font-bold text-emerald-400">
+              Credit saver
+            </span>
+          </div>
+
+          <div className="relative mt-4 h-5">
+            <div className="absolute left-1 right-1 top-1/2 h-[4px] -translate-y-1/2 rounded-full bg-zinc-300" />
+            <div
+              className="absolute top-1/2 h-[4px] -translate-y-1/2 rounded-full bg-zinc-700"
+              style={{ left: `${settings.startPercent}%`, right: `${100 - settings.endPercent}%` }}
+            />
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={settings.startPercent}
+              onChange={(e) =>
+                patch({ startPercent: Math.min(Number(e.target.value), settings.endPercent - 1) })
+              }
+              disabled={disabled}
+              aria-label="Processing start"
+              className="pointer-events-auto absolute inset-0 h-5 w-full appearance-none bg-transparent accent-zinc-900"
+            />
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={settings.endPercent}
+              onChange={(e) =>
+                patch({ endPercent: Math.max(Number(e.target.value), settings.startPercent + 1) })
+              }
+              disabled={disabled}
+              aria-label="Processing end"
+              className="pointer-events-auto absolute inset-0 h-5 w-full appearance-none bg-transparent accent-zinc-900"
+            />
+          </div>
+
+          <div className="mt-1 flex justify-between">
+            <span className="rounded-[7px] bg-black/20 px-3 py-1.5 text-[10px] tabular-nums text-zinc-500">0:00:00</span>
+            <span className="rounded-[7px] bg-black/20 px-3 py-1.5 text-[10px] tabular-nums text-zinc-500">0:03:08</span>
           </div>
         </div>
-      )}
+      </div>
     </section>
   );
 };
@@ -2815,11 +2907,11 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
-          rounded-[32px]
-          border border-white/[0.11]
+          rounded-[10px]
+          border border-white/[0.14]
           bg-[#08080b]/[0.97]
           shadow-[0_50px_180px_rgba(0,0,0,0.85)]
           outline-none
@@ -2840,7 +2932,7 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? "px-6 pb-3.5 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? (
