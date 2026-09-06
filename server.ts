@@ -5838,7 +5838,13 @@ async function processVideo(
 ) {
   const mode = normalizeProcessingMode(processingMode);
   const safeCaptionStyle = normalizeCaptionStyle(captionStyle);
-  const safeReframeConfig = normalizeReframeConfig(reframeConfig);
+  const normalizedReframeConfig = normalizeReframeConfig(reframeConfig);
+  // AI Reframe output must NEVER burn captions into the video. Captions are
+  // handled by the dedicated caption feature, not by the Reframe renderer.
+  // This also protects against stale/incorrect frontend values.
+  const safeReframeConfig: ReframeConfig = mode === "reframe"
+    ? { ...normalizedReframeConfig, addCaptions: false }
+    : normalizedReframeConfig;
   try {
     await updateProject(
       projectId,
@@ -5971,7 +5977,7 @@ async function processVideo(
         mimeType,
         duration,
         mode,
-        mode === "reframe" ? safeReframeConfig.addCaptions : false,
+        false,
       );
 
     // Enforce the server-side clip limit even if Gemini returns more.
@@ -6046,7 +6052,7 @@ async function processVideo(
         duration,
         analysis.reframe,
         safeReframeConfig,
-        safeReframeConfig.addCaptions ? analysis.transcript : [],
+        [],
         safeCaptionStyle,
       );
 
