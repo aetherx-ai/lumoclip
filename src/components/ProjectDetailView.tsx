@@ -164,6 +164,10 @@ function getProcessingMode(project: Project): string {
   ).toLowerCase();
 }
 
+function isReframeProject(project: Project): boolean {
+  return getProcessingMode(project) === "reframe";
+}
+
 function isSpeechOnlyProject(project: Project): boolean {
   const mode = getProcessingMode(project);
   const currentStep = String(
@@ -291,6 +295,9 @@ const HeroVideo: React.FC<{
     getProcessingMode(project) ===
     "full_video_caption";
 
+  const reframeMode =
+    getProcessingMode(project) === "reframe";
+
   return (
     <Surface className="overflow-hidden">
       <div className="relative aspect-video overflow-hidden bg-black">
@@ -329,6 +336,13 @@ const HeroVideo: React.FC<{
             <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/15 bg-indigo-500/15 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-[0.12em] text-indigo-200 backdrop-blur-xl">
               <Captions className="h-3 w-3" />
               Captions
+            </span>
+          )}
+
+          {reframeMode && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/15 bg-violet-500/15 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-[0.12em] text-violet-200 backdrop-blur-xl">
+              <Target className="h-3 w-3" />
+              AI Reframe
             </span>
           )}
 
@@ -1138,6 +1152,150 @@ const FullCaptionedVideoResult: React.FC<{
 };
 
 /* =========================================================
+   AI REFRAME RESULT
+========================================================= */
+
+const AIReframeVideoResult: React.FC<{
+  project: Project;
+  onPublish: () => void;
+}> = ({ project, onPublish }) => {
+  const outputUrl = getFullVideoUrl(project);
+  const thumbnail = project.thumbnail_url || "";
+
+  const config = (project as any).reframe_config || {};
+  const aspectRatio =
+    config.aspectRatio ||
+    config.aspect_ratio ||
+    "9:16";
+  const tracking =
+    config.tracking || "smooth";
+  const framingMode =
+    config.mode || "auto";
+  const addCaptions =
+    config.addCaptions ??
+    config.add_captions ??
+    true;
+
+  return (
+    <section className="mt-8">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-400/10 bg-violet-500/[0.07]">
+              <Target className="h-4 w-4 text-violet-400" />
+            </div>
+            <div>
+              <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">
+                AI reframing
+              </p>
+              <h2 className="mt-1 text-lg font-semibold tracking-tight text-white">
+                Reframed video
+              </h2>
+            </div>
+          </div>
+          <p className="mt-2 text-[10px] text-zinc-600">
+            AI-tracked framing optimized for short-form platforms.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap gap-1.5">
+          <span className="rounded-full border border-violet-400/10 bg-violet-500/[0.06] px-2.5 py-1 text-[7px] font-bold uppercase tracking-wider text-violet-300">
+            {aspectRatio}
+          </span>
+          <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[7px] font-bold uppercase tracking-wider text-zinc-500">
+            {framingMode} framing
+          </span>
+          <span className="rounded-full border border-white/[0.06] bg-white/[0.02] px-2.5 py-1 text-[7px] font-bold uppercase tracking-wider text-zinc-500">
+            {tracking} tracking
+          </span>
+          {addCaptions && (
+            <span className="rounded-full border border-indigo-400/10 bg-indigo-500/[0.06] px-2.5 py-1 text-[7px] font-bold uppercase tracking-wider text-indigo-300">
+              captions
+            </span>
+          )}
+        </div>
+      </div>
+
+      <Surface className="overflow-hidden">
+        <div className="relative bg-black">
+          {outputUrl ? (
+            <video
+              src={outputUrl}
+              controls
+              playsInline
+              preload="metadata"
+              poster={thumbnail || undefined}
+              className="mx-auto max-h-[78vh] w-full object-contain"
+            />
+          ) : (
+            <div className="flex aspect-[9/16] max-h-[680px] min-h-[360px] flex-col items-center justify-center gap-3">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-violet-400/10 bg-violet-500/[0.07]">
+                <Loader2 className="h-5 w-5 animate-spin text-violet-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-semibold text-white">
+                  Preparing your AI reframed video...
+                </p>
+                <p className="mt-1 text-[8px] text-zinc-700">
+                  Tracking the main subject and building the final crop.
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2 text-[9px] text-zinc-600">
+            <Target className="h-3.5 w-3.5 text-violet-400/70" />
+            <span>AI subject tracking</span>
+            <span>•</span>
+            <span>{aspectRatio} output</span>
+            {addCaptions && (
+              <>
+                <span>•</span>
+                <span>AI captions</span>
+              </>
+            )}
+          </div>
+
+          {outputUrl && (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <PublishToYouTubeButton
+                onPublish={onPublish}
+                className="sm:w-auto"
+              />
+
+              <div className="flex gap-2">
+                <a
+                  href={outputUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  download
+                  className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-white to-zinc-100 px-4 py-2.5 text-[10px] font-bold text-black shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white sm:flex-none"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </a>
+
+                <a
+                  href={outputUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </Surface>
+    </section>
+  );
+};
+
+/* =========================================================
    STATS
 ========================================================= */
 
@@ -1344,6 +1502,9 @@ const Pipeline: React.FC<{
     getProcessingMode(project) ===
     "full_video_caption";
 
+  const reframeMode =
+    getProcessingMode(project) === "reframe";
+
   const speechOnlyMode =
     isSpeechOnlyProject(project);
 
@@ -1367,6 +1528,39 @@ const Pipeline: React.FC<{
         {
           label: "Ready for Enhanced Speech",
           description: "No clips or AI content analysis are generated in this mode",
+          threshold: 96,
+        },
+      ]
+    : reframeMode
+    ? [
+        {
+          label: "Video received",
+          description: "Source video successfully uploaded",
+          threshold: 5,
+        },
+        {
+          label: "Understanding content",
+          description: "Analyzing speech and visual context",
+          threshold: 30,
+        },
+        {
+          label: "Tracking subject",
+          description: "Finding the active speaker or visual focus",
+          threshold: 55,
+        },
+        {
+          label: "Building dynamic frame",
+          description: "Generating smooth AI camera movement",
+          threshold: 72,
+        },
+        {
+          label: "Rendering reframed video",
+          description: "Encoding the optimized short-form output",
+          threshold: 88,
+        },
+        {
+          label: "Finalizing",
+          description: "Preparing everything for export",
           threshold: 96,
         },
       ]
@@ -2385,6 +2579,9 @@ export const ProjectDetailView: React.FC<
     getProcessingMode(project) ===
     "full_video_caption";
 
+  const isReframeMode =
+    isReframeProject(project);
+
   const isSpeechOnlyMode =
     isSpeechOnlyProject(project);
 
@@ -2490,6 +2687,13 @@ export const ProjectDetailView: React.FC<
                     <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-400/10 bg-indigo-500/[0.07] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.12em] text-indigo-300">
                       <Captions className="h-3 w-3" />
                       Captions only
+                    </span>
+                  )}
+
+                  {isReframeMode && !isSpeechOnlyMode && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/10 bg-violet-500/[0.07] px-2.5 py-1 text-[8px] font-bold uppercase tracking-[0.12em] text-violet-300">
+                      <Target className="h-3 w-3" />
+                      AI Reframe
                     </span>
                   )}
                 </div>
@@ -2616,7 +2820,9 @@ export const ProjectDetailView: React.FC<
               </div>
             </div>
 
-            {!isFullVideoMode && !isSpeechOnlyMode && (
+            {!isFullVideoMode &&
+              !isReframeMode &&
+              !isSpeechOnlyMode && (
               <>
                 <div className="mt-4">
                   <PremiumStats
@@ -2789,7 +2995,47 @@ export const ProjectDetailView: React.FC<
               )}
             </div>
 
-            {isFullVideoMode ? (
+            {isReframeMode ? (
+              <>
+                <div className="grid gap-4 xl:grid-cols-12">
+                  <div
+                    className={
+                      isEnhancingSpeech
+                        ? "xl:col-span-7"
+                        : "xl:col-span-12"
+                    }
+                  >
+                    <AIReframeVideoResult
+                      project={project}
+                      onPublish={() =>
+                        setPublishTarget({
+                          kind: "project",
+                        })
+                      }
+                    />
+                  </div>
+
+                  {isEnhancingSpeech && (
+                    <div className="xl:col-span-5">
+                      <SpeechPipeline />
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
+                  <PremiumStats
+                    project={project}
+                    clips={[]}
+                  />
+                </div>
+
+                <EnhanceSpeechPanel
+                  project={project}
+                  status={speechStatus}
+                  onStatusChange={setSpeechStatus}
+                />
+              </>
+            ) : isFullVideoMode ? (
               <>
                 <div className="grid gap-4 xl:grid-cols-12">
                   <div
@@ -2959,7 +3205,9 @@ export const ProjectDetailView: React.FC<
                 </div>
               </div>
 
-              {!isFullVideoMode && !isSpeechOnlyMode && (
+              {!isFullVideoMode &&
+                !isReframeMode &&
+                !isSpeechOnlyMode && (
                 <>
                   <div className="mt-4">
                     <PremiumStats

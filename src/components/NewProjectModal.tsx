@@ -94,7 +94,21 @@ interface CaptionStyle {
 }
 
 // Must match ProcessingMode on the server (server.ts).
-type ProcessingMode = "clips" | "full_video_caption";
+type ProcessingMode =
+  | "clips"
+  | "full_video_caption"
+  | "reframe"
+  | "speech_only";
+
+interface ReframeConfig {
+  enabled: boolean;
+  aspectRatio: "9:16" | "1:1" | "4:5";
+  outputWidth: number;
+  outputHeight: number;
+  mode: "auto" | "speaker" | "center";
+  tracking: "smooth" | "fast";
+  addCaptions: boolean;
+}
 
 /* =========================================================
    CONSTANTS
@@ -130,6 +144,16 @@ const CAPTION_FONTS = [
 
 
 const DEFAULT_PROCESSING_MODE: ProcessingMode = "clips";
+
+const DEFAULT_REFRAME_CONFIG: ReframeConfig = {
+  enabled: true,
+  aspectRatio: "9:16",
+  outputWidth: 720,
+  outputHeight: 1280,
+  mode: "auto",
+  tracking: "smooth",
+  addCaptions: true,
+};
 
 const DEFAULT_CAPTION_STYLE: CaptionStyle = {
   enabled: true,
@@ -449,6 +473,7 @@ interface UploadVideoOptions {
   accessToken: string;
   captionStyle: CaptionStyle;
   mode: ProcessingMode;
+  reframe: ReframeConfig;
 
   onProgress?: (progress: number) => void;
 
@@ -466,6 +491,7 @@ const uploadVideoWithProgress = ({
   accessToken,
   captionStyle,
   mode,
+  reframe,
   onProgress,
   onStage,
   signal,
@@ -669,6 +695,11 @@ const uploadVideoWithProgress = ({
     formData.append(
       "captionStyle",
       JSON.stringify(captionStyle),
+    );
+
+    formData.append(
+      "reframe",
+      JSON.stringify(reframe),
     );
 
     formData.append(
@@ -1253,38 +1284,50 @@ const OutputModePicker: React.FC<{
     icon: React.ReactNode;
     title: string;
     description: string;
+    badge?: string;
+    accent: string;
   }[] = [
     {
       value: "clips",
       icon: <Film className="h-4.5 w-4.5" />,
-      title: "Short clips",
-      description:
-        "AI finds the best moments and cuts several 9:16 clips",
+      title: "AI Short Clips",
+      description: "AI finds the best moments and cuts several social-ready clips",
+      accent: "rgba(139,92,246,0.25)",
+    },
+    {
+      value: "reframe",
+      icon: <Smartphone className="h-4.5 w-4.5" />,
+      title: "AI Reframe",
+      description: "Automatically keep the speaker in frame for vertical social video",
+      badge: "NEW",
+      accent: "rgba(34,211,238,0.25)",
     },
     {
       value: "full_video_caption",
       icon: <Captions className="h-4.5 w-4.5" />,
-      title: "Full video + captions",
-      description:
-        "Keep the whole video, just burn in stylish captions — no clipping",
+      title: "Full Video + Captions",
+      description: "Keep the whole video and burn in stylish captions — no clipping",
+      accent: "rgba(99,102,241,0.25)",
     },
   ];
 
   return (
     <section>
-      <div className="mb-3.5 flex items-end justify-between">
+      <div className="mb-3.5 flex items-end justify-between gap-3">
         <div>
           <p className="text-xs font-bold tracking-tight text-white">
             What do you want to make?
           </p>
-
           <p className="mt-1 text-[9px] text-zinc-600">
-            Choose clips for social feeds, or just caption the full video.
+            Choose clips, reframe the full video, or caption the original.
           </p>
         </div>
+        <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
+          02 / OUTPUT
+        </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
         {options.map((option) => (
           <SourceCard
             key={option.value}
@@ -1293,7 +1336,8 @@ const OutputModePicker: React.FC<{
             icon={option.icon}
             title={option.title}
             description={option.description}
-            accent="rgba(139,92,246,0.25)"
+            badge={option.badge}
+            accent={option.accent}
             onClick={() => onChange(option.value)}
           />
         ))}
@@ -1301,6 +1345,224 @@ const OutputModePicker: React.FC<{
     </section>
   );
 };
+
+const ReframeSettings: React.FC<{
+  config: ReframeConfig;
+  onChange: (config: ReframeConfig) => void;
+  disabled: boolean;
+}> = ({ config, onChange, disabled }) => {
+  const aspectOptions: {
+    value: ReframeConfig["aspectRatio"];
+    label: string;
+    size: string;
+  }[] = [
+    { value: "9:16", label: "9:16", size: "Shorts / Reels / TikTok" },
+    { value: "1:1", label: "1:1", size: "Square social" },
+    { value: "4:5", label: "4:5", size: "Instagram feed" },
+  ];
+
+  const setAspectRatio = (aspectRatio: ReframeConfig["aspectRatio"]) => {
+    const sizes: Record<ReframeConfig["aspectRatio"], [number, number]> = {
+      "9:16": [720, 1280],
+      "1:1": [720, 720],
+      "4:5": [720, 900],
+    };
+
+    const [outputWidth, outputHeight] = sizes[aspectRatio];
+
+    onChange({
+      ...config,
+      aspectRatio,
+      outputWidth,
+      outputHeight,
+    });
+  };
+
+  return (
+    <section className="overflow-hidden rounded-[22px] border border-cyan-400/[0.12] bg-gradient-to-br from-cyan-500/[0.045] via-white/[0.02] to-violet-500/[0.035]">
+      <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-cyan-400/15 bg-cyan-400/10 text-cyan-300">
+            <WandSparkles className="h-4.5 w-4.5" />
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <p className="text-[11px] font-bold text-white">
+                AI Reframe
+              </p>
+              <span className="rounded-full border border-cyan-400/15 bg-cyan-400/10 px-1.5 py-0.5 text-[6px] font-black uppercase tracking-[0.14em] text-cyan-300">
+                Auto tracking
+              </span>
+            </div>
+            <p className="mt-1 text-[8px] leading-4 text-zinc-500">
+              AI follows the main speaker and creates a social-ready frame from your full video.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            role="switch"
+            aria-checked={config.enabled}
+            disabled={disabled}
+            onClick={() => onChange({ ...config, enabled: !config.enabled })}
+            className={`relative h-6 w-11 shrink-0 rounded-full border transition-all disabled:opacity-40 ${
+              config.enabled
+                ? "border-cyan-400/30 bg-cyan-500"
+                : "border-white/[0.1] bg-white/[0.06]"
+            }`}
+          >
+            <span
+              className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-all ${
+                config.enabled ? "left-[22px]" : "left-1"
+              }`}
+            />
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-4 p-4 sm:p-5">
+        <div>
+          <div className="mb-2.5 flex items-center justify-between">
+            <p className="text-[9px] font-bold text-zinc-300">
+              Output format
+            </p>
+            <span className="text-[7px] text-zinc-700">
+              Social optimized
+            </span>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {aspectOptions.map((option) => {
+              const active = config.aspectRatio === option.value;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  disabled={disabled || !config.enabled}
+                  onClick={() => setAspectRatio(option.value)}
+                  className={`group rounded-[14px] border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                    active
+                      ? "border-cyan-400/30 bg-cyan-400/[0.09] shadow-[0_10px_30px_rgba(34,211,238,0.08)]"
+                      : "border-white/[0.07] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.04]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`text-[11px] font-black ${
+                        active ? "text-cyan-300" : "text-white"
+                      }`}
+                    >
+                      {option.label}
+                    </span>
+                    {active && (
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400">
+                        <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 text-[7px] leading-3 text-zinc-600">
+                    {option.size}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          <div>
+            <p className="mb-2 text-[9px] font-bold text-zinc-300">
+              Framing
+            </p>
+            <div className="grid grid-cols-3 gap-1.5">
+              {(["auto", "speaker", "center"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={disabled || !config.enabled}
+                  onClick={() => onChange({ ...config, mode: value })}
+                  className={`rounded-xl border px-2 py-2 text-[7px] font-bold capitalize transition ${
+                    config.mode === value
+                      ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-300"
+                      : "border-white/[0.07] bg-white/[0.025] text-zinc-500 hover:text-zinc-300"
+                  } disabled:opacity-40`}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2 text-[9px] font-bold text-zinc-300">
+              Tracking
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {(["smooth", "fast"] as const).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={disabled || !config.enabled}
+                  onClick={() => onChange({ ...config, tracking: value })}
+                  className={`rounded-xl border px-2 py-2 text-[7px] font-bold capitalize transition ${
+                    config.tracking === value
+                      ? "border-violet-400/25 bg-violet-400/10 text-violet-300"
+                      : "border-white/[0.07] bg-white/[0.025] text-zinc-500 hover:text-zinc-300"
+                  } disabled:opacity-40`}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          role="switch"
+          aria-checked={config.addCaptions}
+          disabled={disabled || !config.enabled}
+          onClick={() =>
+            onChange({
+              ...config,
+              addCaptions: !config.addCaptions,
+            })
+          }
+          className="flex w-full items-center justify-between rounded-[14px] border border-white/[0.07] bg-white/[0.025] px-3.5 py-3 text-left disabled:opacity-40"
+        >
+          <div className="flex items-center gap-2.5">
+            <Captions className="h-4 w-4 text-zinc-500" />
+            <div>
+              <p className="text-[9px] font-bold text-zinc-300">
+                Burn in AI captions
+              </p>
+              <p className="mt-0.5 text-[7px] text-zinc-600">
+                Use the caption style selected below
+              </p>
+            </div>
+          </div>
+
+          <span
+            className={`relative h-5 w-9 rounded-full border ${
+              config.addCaptions
+                ? "border-violet-400/30 bg-violet-600"
+                : "border-white/[0.1] bg-white/[0.06]"
+            }`}
+          >
+            <span
+              className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white transition-all ${
+                config.addCaptions ? "left-[18px]" : "left-0.5"
+              }`}
+            />
+          </span>
+        </button>
+      </div>
+    </section>
+  );
+};
+
 
 /* =========================================================
    COMPONENT
@@ -1358,8 +1620,14 @@ export const NewProjectModal: React.FC<
       DEFAULT_PROCESSING_MODE,
     );
 
+  const [reframeConfig, setReframeConfig] =
+    useState<ReframeConfig>(DEFAULT_REFRAME_CONFIG);
+
   const isFullVideoMode =
     processingMode === "full_video_caption";
+
+  const isReframeMode =
+    processingMode === "reframe";
 
   // Full-video mode has no purpose without captions, so force them on
   // (and keep the toggle locked) whenever this mode is selected.
@@ -1374,6 +1642,22 @@ export const NewProjectModal: React.FC<
       }));
     }
   }, [isFullVideoMode, captionStyle.enabled]);
+
+  // Keep the reframe caption toggle and the caption style picker in sync.
+  useEffect(() => {
+    if (!isReframeMode) return;
+
+    setCaptionStyle((current) => {
+      if (current.enabled === reframeConfig.addCaptions) {
+        return current;
+      }
+
+      return {
+        ...current,
+        enabled: reframeConfig.addCaptions,
+      };
+    });
+  }, [isReframeMode, reframeConfig.addCaptions]);
 
   const fileInputRef =
     useRef<HTMLInputElement | null>(
@@ -1443,6 +1727,7 @@ export const NewProjectModal: React.FC<
     setDragActive(false);
     setIsFocused(false);
     setCaptionStyle(DEFAULT_CAPTION_STYLE);
+    setReframeConfig(DEFAULT_REFRAME_CONFIG);
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
@@ -1470,6 +1755,7 @@ export const NewProjectModal: React.FC<
     setError("");
     setLoading(false);
     setSelectedFile(null);
+    setReframeConfig(DEFAULT_REFRAME_CONFIG);
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
@@ -1874,6 +2160,8 @@ export const NewProjectModal: React.FC<
 
                 mode: effectiveProcessingMode,
 
+                reframe: reframeConfig,
+
                 signal:
                   controller.signal,
 
@@ -1935,6 +2223,8 @@ export const NewProjectModal: React.FC<
                   mode: effectiveProcessingMode,
 
                   captionStyle,
+
+                  reframe: reframeConfig,
                 }),
               },
             );
@@ -2380,6 +2670,14 @@ export const NewProjectModal: React.FC<
               />
             )}
 
+            {intent !== "enhance-speech" && isReframeMode && (
+              <ReframeSettings
+                config={reframeConfig}
+                onChange={setReframeConfig}
+                disabled={loading}
+              />
+            )}
+
             {/* =================================================
                 URL
             ================================================= */}
@@ -2764,14 +3062,15 @@ export const NewProjectModal: React.FC<
                 AI CAPTIONS
             ================================================= */}
 
-            {intent !== "enhance-speech" && (
-              <CaptionStylePicker
-                style={captionStyle}
-                onChange={setCaptionStyle}
-                disabled={loading}
-                lockEnabled={isFullVideoMode}
-              />
-            )}
+            {intent !== "enhance-speech" &&
+              (!isReframeMode || reframeConfig.addCaptions) && (
+                <CaptionStylePicker
+                  style={captionStyle}
+                  onChange={setCaptionStyle}
+                  disabled={loading}
+                  lockEnabled={isFullVideoMode}
+                />
+              )}
 
             {/* =================================================
                 ERROR
@@ -2991,7 +3290,11 @@ export const NewProjectModal: React.FC<
                       <span>
                         {intent === "enhance-speech"
                           ? "Continue"
-                          : "Create my clips"}
+                          : processingMode === "reframe"
+                            ? "Create AI Reframe"
+                            : processingMode === "full_video_caption"
+                              ? "Create full video"
+                              : "Create my clips"}
                       </span>
 
                       <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1" />

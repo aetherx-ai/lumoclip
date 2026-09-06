@@ -804,6 +804,24 @@ const ai = new Proxy({} as ReturnType<typeof getGeminiClient>, {
 interface ProcessingConfig {
   mode: ProcessingMode;
   captionStyle: SubtitleStyle;
+  reframe: ReframeConfig;
+}
+
+interface ReframePoint {
+  time: number;
+  centerX: number;
+  centerY?: number;
+  confidence?: number;
+}
+
+interface ReframeConfig {
+  enabled: boolean;
+  aspectRatio: "9:16" | "1:1" | "4:5";
+  outputWidth: number;
+  outputHeight: number;
+  mode: "auto" | "speaker" | "center";
+  tracking: "smooth" | "fast";
+  addCaptions: boolean;
 }
 
 // The in-memory value makes the mode available to the worker during the
@@ -822,6 +840,7 @@ async function rememberProcessingConfig(
     .update({
       processing_mode: config.mode,
       caption_style: config.captionStyle,
+      reframe_config: config.reframe,
     })
     .eq("id", projectId);
 
@@ -861,7 +880,7 @@ async function getProcessingConfig(
   // compatibility with existing LumoClip databases.
   const { data: metadata, error: metadataError } = await supabase
     .from("projects")
-    .select("processing_mode, caption_style")
+    .select("processing_mode, caption_style, reframe_config")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -872,6 +891,7 @@ async function getProcessingConfig(
     return {
       mode: "speech_only",
       captionStyle: normalizeCaptionStyle(metadata?.caption_style),
+      reframe: normalizeReframeConfig(metadata?.reframe_config),
     };
   }
 
@@ -879,6 +899,7 @@ async function getProcessingConfig(
     return {
       mode: normalizeProcessingMode(metadata.processing_mode),
       captionStyle: normalizeCaptionStyle(metadata.caption_style),
+      reframe: normalizeReframeConfig(metadata.reframe_config),
     };
   }
 
@@ -887,6 +908,7 @@ async function getProcessingConfig(
   return {
     mode: "clips",
     captionStyle: normalizeCaptionStyle(undefined),
+    reframe: normalizeReframeConfig(undefined),
   };
 }
 /* =========================================================
@@ -1040,7 +1062,7 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
-type ProcessingMode = "clips" | "full_video_caption" | "speech_only";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe";
 
 interface SubtitleStyle {
   enabled: boolean;
@@ -1116,12 +1138,59 @@ function normalizeCaptionStyle(value: unknown): SubtitleStyle {
 function normalizeProcessingMode(value: unknown): ProcessingMode {
   if (value === "speech_only") return "speech_only";
   if (value === "full_video_caption") return "full_video_caption";
+  if (value === "reframe") return "reframe";
   return "clips";
+}
+
+function normalizeReframeConfig(value: unknown): ReframeConfig {
+  let raw: any = value;
+  if (typeof value === "string") {
+    try { raw = JSON.parse(value); } catch { raw = {}; }
+  }
+
+  const aspectRatio = ["9:16", "1:1", "4:5"].includes(String(raw?.aspectRatio))
+    ? (String(raw.aspectRatio) as ReframeConfig["aspectRatio"])
+    : "9:16";
+
+  const defaults: Record<ReframeConfig["aspectRatio"], [number, number]> = {
+    "9:16": [720, 1280],
+    "1:1": [720, 720],
+    "4:5": [720, 900],
+  };
+
+  const [defaultWidth, defaultHeight] = defaults[aspectRatio];
+  const requestedWidth = Number(raw?.outputWidth);
+  const outputWidth = Number.isFinite(requestedWidth)
+    ? Math.min(1920, Math.max(360, Math.round(requestedWidth / 2) * 2))
+    : defaultWidth;
+
+  const outputHeight = Number.isFinite(Number(raw?.outputHeight))
+    ? Math.min(1920, Math.max(360, Math.round(Number(raw.outputHeight) / 2) * 2))
+    : defaultHeight;
+
+  const mode = ["auto", "speaker", "center"].includes(String(raw?.mode))
+    ? (String(raw.mode) as ReframeConfig["mode"])
+    : "auto";
+
+  const tracking = ["smooth", "fast"].includes(String(raw?.tracking))
+    ? (String(raw.tracking) as ReframeConfig["tracking"])
+    : "smooth";
+
+  return {
+    enabled: raw?.enabled === false ? false : true,
+    aspectRatio,
+    outputWidth,
+    outputHeight,
+    mode,
+    tracking,
+    addCaptions: raw?.addCaptions === true,
+  };
 }
 
 function getProcessingConfigFromRequest(
   styleValue: unknown,
   modeValue?: unknown,
+  reframeValue?: unknown,
 ): ProcessingConfig {
   let rawStyle: any = styleValue;
 
@@ -1136,6 +1205,7 @@ function getProcessingConfigFromRequest(
   return {
     mode: normalizeProcessingMode(modeValue || rawStyle?.mode),
     captionStyle: normalizeCaptionStyle(rawStyle),
+    reframe: normalizeReframeConfig(reframeValue || rawStyle?.reframe),
   };
 }
 
@@ -3302,6 +3372,12 @@ function publicMediaUrl(
       .join("/")}`;
   }
 
+  if (parts[0] === "reframed") {
+    return `/api/media/${encodedProject}/reframed/${parts
+      .slice(1)
+      .join("/")}`;
+  }
+
   return `/api/media/${encodedProject}/source/${parts.join("/")}`;
 }
 
@@ -3740,6 +3816,7 @@ interface ViralClip {
 interface GeminiAnalysis {
   transcript: TranscriptSegment[];
   clips: ViralClip[];
+  reframe?: ReframePoint[];
   /** True when transcript timing already came from local Whisper fallback. */
   captionTimingReady?: boolean;
 }
@@ -4202,8 +4279,36 @@ function validateAnalysis(
         MAX_CLIPS,
       );
 
+  const reframe: ReframePoint[] = Array.isArray(raw?.reframe)
+    ? raw.reframe
+        .map((point: any) => ({
+          time: Number(point?.time),
+          centerX: Number(point?.centerX),
+          centerY: Number(point?.centerY),
+          confidence: Number(point?.confidence ?? 0.8),
+        }))
+        .filter((point: ReframePoint) =>
+          Number.isFinite(point.time) &&
+          Number.isFinite(point.centerX) &&
+          point.time >= 0 &&
+          point.time <= safeDuration &&
+          point.centerX >= 0 &&
+          point.centerX <= 1
+        )
+        .map((point: ReframePoint) => ({
+          ...point,
+          time: Math.max(0, Math.min(safeDuration, point.time)),
+          centerX: Math.max(0, Math.min(1, point.centerX)),
+          centerY: Number.isFinite(point.centerY)
+            ? Math.max(0, Math.min(1, point.centerY!))
+            : 0.5,
+          confidence: Math.max(0, Math.min(1, Number(point.confidence) || 0.8)),
+        }))
+        .sort((a, b) => a.time - b.time)
+    : [];
+
   console.log(
-    `Gemini validation: ${transcript.length} transcript segments, ${clips.length} valid clips`,
+    `Gemini validation: ${transcript.length} transcript segments, ${clips.length} valid clips, ${reframe.length} reframe points`,
   );
 
   if (!clips.length && options.requireClips !== false) {
@@ -4220,6 +4325,7 @@ function validateAnalysis(
       return {
         transcript,
         clips: recoveredClips,
+        reframe,
       };
     }
 
@@ -4231,6 +4337,7 @@ function validateAnalysis(
   return {
     transcript,
     clips,
+    reframe,
   };
 }
 /* =========================================================
@@ -4294,6 +4401,18 @@ TASK:
 Analyze the entire video and return:
 1. A timestamped transcript, broken into VERY SHORT chunks.
 2. Up to ${MAX_CLIPS} high-retention short-form clips.
+${processingMode === "reframe" ? `
+3. AI Reframe tracking points for the main speaking subject.
+
+REFRAME TRACKING:
+- Return a "reframe" array with one point about every 3-6 seconds; add extra points during fast movement.
+- Each point must be {"time": number, "centerX": number, "centerY": number, "confidence": number}.
+- centerX/centerY are normalized 0..1 coordinates of the main speaker's face or upper-body center in the ORIGINAL frame.
+- Follow the active/main speaker. If multiple people are visible, choose the person who is speaking or visually dominant.
+- Keep points chronologically sorted and cover the video from near 0 seconds through the final seconds.
+- Never use coordinates outside 0..1.
+- Add more points during camera/speaker movement and fewer during static shots.
+` : ""}
 
 TRANSCRIPT GRANULARITY (critical — used to sync on-screen captions):
 - Each transcript entry must cover ONLY 2 to 4 spoken words, never a full sentence.
@@ -4337,7 +4456,9 @@ TRANSCRIPT GRANULARITY (critical — used to sync on-screen captions):
 PROCESSING MODE:
 ${processingMode === "full_video_caption"
   ? "Full-video caption mode: the transcript is required; clips may be an empty array because no clips will be generated."
-  : "Clip mode: return high-retention clips as usual."}
+  : processingMode === "reframe"
+    ? "AI Reframe mode: transcript and reframe tracking points are required; clips may be an empty array because no clips will be generated."
+    : "Clip mode: return high-retention clips as usual."}
 
 TARGET:
 TikTok, Instagram Reels, YouTube Shorts, Facebook Reels.
@@ -4394,6 +4515,9 @@ EXACT JSON SHAPE:
         {"word": "words", "start": 1.05, "end": 1.3}
       ]
     }
+  ],
+  "reframe": [
+    {"time": 0.0, "centerX": 0.5, "centerY": 0.5, "confidence": 0.9}
   ],
   "clips": [
     {
@@ -4456,7 +4580,7 @@ and never return an empty string for it.
     return validateAnalysis(
       parsed,
       duration,
-      { requireClips: processingMode !== "full_video_caption" },
+      { requireClips: processingMode !== "full_video_caption" && processingMode !== "reframe" },
     );
   } catch (error) {
     lastGeminiError = error;
@@ -4480,7 +4604,7 @@ and never return an empty string for it.
 
       if (whisperTranscript && whisperTranscript.length) {
         const fallbackClips =
-          processingMode === "full_video_caption"
+          processingMode === "full_video_caption" || processingMode === "reframe"
             ? []
             : buildFallbackClipsFromTranscript(
                 whisperTranscript,
@@ -4488,7 +4612,7 @@ and never return an empty string for it.
                 MAX_CLIPS,
               );
 
-        if (processingMode !== "full_video_caption" && !fallbackClips.length) {
+        if (processingMode !== "full_video_caption" && processingMode !== "reframe" && !fallbackClips.length) {
           throw new Error(
             "Whisper produced a transcript, but no safe recovery clips could be created.",
           );
@@ -4501,6 +4625,9 @@ and never return an empty string for it.
         return {
           transcript: whisperTranscript,
           clips: fallbackClips,
+          reframe: processingMode === "reframe"
+            ? [{ time: 0, centerX: 0.5, centerY: 0.5, confidence: 0.1 }, { time: duration, centerX: 0.5, centerY: 0.5, confidence: 0.1 }]
+            : [],
           captionTimingReady: true,
         };
       }
@@ -5017,6 +5144,225 @@ function createClip(
 }
 
 /* =========================================================
+   AI REFRAME
+
+   Gemini supplies normalized subject-center keyframes. FFmpeg then creates
+   one continuous 9:16 / 1:1 / 4:5 render with a smoothly moving crop.
+   No second video encode is needed unless captions are explicitly enabled.
+========================================================= */
+
+function getVideoDimensions(inputPath: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (error, metadata) => {
+      if (error) return reject(error);
+      const stream = (metadata.streams || []).find((item) => item.codec_type === "video");
+      const width = Number(stream?.width || 0);
+      const height = Number(stream?.height || 0);
+      if (!width || !height) return reject(new Error("Unable to determine source video dimensions."));
+      resolve({ width, height });
+    });
+  });
+}
+
+function getReframeCropSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  aspectRatio: ReframeConfig["aspectRatio"],
+) {
+  const ratio = aspectRatio === "9:16" ? 9 / 16 : aspectRatio === "4:5" ? 4 / 5 : 1;
+  let cropHeight = sourceHeight;
+  let cropWidth = Math.round(cropHeight * ratio);
+
+  if (cropWidth > sourceWidth) {
+    cropWidth = sourceWidth;
+    cropHeight = Math.round(cropWidth / ratio);
+  }
+
+  cropWidth = Math.max(2, Math.min(sourceWidth, cropWidth));
+  cropHeight = Math.max(2, Math.min(sourceHeight, cropHeight));
+
+  if (cropWidth % 2) cropWidth -= 1;
+  if (cropHeight % 2) cropHeight -= 1;
+
+  return { cropWidth, cropHeight };
+}
+
+const MAX_REFRAME_POINTS = Math.max(20, Number(process.env.MAX_REFRAME_POINTS || 240));
+
+function sanitizeReframePoints(
+  points: ReframePoint[] | undefined,
+  duration: number,
+): ReframePoint[] {
+  const safe = Array.isArray(points)
+    ? points
+        .filter((p) => Number.isFinite(p?.time) && Number.isFinite(p?.centerX))
+        .map((p) => ({
+          time: Math.max(0, Math.min(duration, Number(p.time))),
+          centerX: Math.max(0, Math.min(1, Number(p.centerX))),
+          centerY: Number.isFinite(p.centerY) ? Math.max(0, Math.min(1, Number(p.centerY))) : 0.5,
+          confidence: Number.isFinite(p.confidence) ? Math.max(0, Math.min(1, Number(p.confidence))) : 0.8,
+        }))
+        .sort((a, b) => a.time - b.time)
+    : [];
+
+  // A center fallback keeps the rendering pipeline deterministic if Gemini
+  // cannot produce tracking coordinates. It is intentionally marked low
+  // confidence so the log makes the fallback obvious.
+  if (!safe.length) {
+    return [
+      { time: 0, centerX: 0.5, centerY: 0.5, confidence: 0.05 },
+      { time: Math.max(0.01, duration), centerX: 0.5, centerY: 0.5, confidence: 0.05 },
+    ];
+  }
+
+  if (safe.length > MAX_REFRAME_POINTS) {
+    const sampled: ReframePoint[] = [];
+    for (let i = 0; i < MAX_REFRAME_POINTS; i++) {
+      const index = Math.round((i * (safe.length - 1)) / (MAX_REFRAME_POINTS - 1));
+      sampled.push(safe[index]);
+    }
+    return sampled;
+  }
+
+  if (safe[0].time > 0.25) {
+    safe.unshift({ ...safe[0], time: 0 });
+  }
+  if (safe[safe.length - 1].time < duration - 0.25) {
+    safe.push({ ...safe[safe.length - 1], time: duration });
+  }
+
+  return safe;
+}
+
+function buildReframeXExpression(
+  points: ReframePoint[],
+  sourceWidth: number,
+  cropWidth: number,
+  duration: number,
+  tracking: ReframeConfig["tracking"],
+): string {
+  const maxX = Math.max(0, sourceWidth - cropWidth);
+  const safePoints = sanitizeReframePoints(points, duration);
+
+  if (safePoints.length <= 1 || maxX <= 0) return "0";
+
+  const values = safePoints.map((point) => ({
+    t: point.time,
+    x: Math.max(0, Math.min(maxX, point.centerX * sourceWidth - cropWidth / 2)),
+  }));
+
+  const clamp = (value: number) => Math.max(0, Math.min(maxX, value));
+  const smooth = tracking === "smooth";
+  let expression = clamp(values[values.length - 1].x).toFixed(2);
+
+  for (let i = values.length - 2; i >= 0; i--) {
+    const a = values[i];
+    const b = values[i + 1];
+    const dt = Math.max(0.05, b.t - a.t);
+    const slope = smooth ? (b.x - a.x) / dt : 0;
+    const segment = smooth
+      ? `(${a.x.toFixed(2)}+${slope.toFixed(5)}*(t-${a.t.toFixed(3)}))`
+      : a.x.toFixed(2);
+    expression = `if(lt(t,${b.t.toFixed(3)}),${segment},${expression})`;
+  }
+
+  return `min(${maxX.toFixed(2)},max(0,${expression}))`;
+}
+
+function createAIReframedVideo(
+  inputPath: string,
+  outputPath: string,
+  duration: number,
+  points: ReframePoint[] | undefined,
+  config: ReframeConfig,
+  captionSegments: TranscriptSegment[] = [],
+  captionStyle: SubtitleStyle = DEFAULT_SUBTITLE_STYLE,
+): Promise<void> {
+  return new Promise(async (resolve, reject) => {
+    let assFilePath = "";
+    let settled = false;
+
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      if (assFilePath) {
+        try { fs.unlinkSync(assFilePath); } catch {}
+      }
+      error ? reject(error) : resolve();
+    };
+
+    try {
+      const absoluteInputPath = path.resolve(inputPath);
+      const absoluteOutputPath = path.resolve(outputPath);
+      if (!fs.existsSync(absoluteInputPath)) return finish(new Error("AI Reframe input video was not found."));
+
+      const { width: sourceWidth, height: sourceHeight } = await getVideoDimensions(absoluteInputPath);
+      const { cropWidth, cropHeight } = getReframeCropSize(sourceWidth, sourceHeight, config.aspectRatio);
+      const xExpression = config.mode === "center"
+        ? "(iw-ow)/2"
+        : buildReframeXExpression(points, sourceWidth, cropWidth, duration, config.tracking);
+
+      const filters: string[] = [
+        `crop=${cropWidth}:${cropHeight}:${xExpression}:(ih-oh)/2`,
+        `scale=${config.outputWidth}:${config.outputHeight}:force_original_aspect_ratio=decrease`,
+        `pad=${config.outputWidth}:${config.outputHeight}:(ow-iw)/2:(oh-ih)/2`,
+      ];
+
+      if (config.addCaptions && captionStyle.enabled && captionSegments.length) {
+        const assContent = buildKaraokeAss(captionSegments, captionStyle, config.outputWidth, config.outputHeight);
+        assFilePath = path.join(tempDir, `${generateId()}-reframe.ass`);
+        fs.writeFileSync(assFilePath, assContent, "utf8");
+        filters.push(`subtitles=${escapeFfmpegFilterPath(assFilePath)}`);
+      }
+
+      console.log(
+        `AI Reframe: source=${sourceWidth}x${sourceHeight}, crop=${cropWidth}x${cropHeight}, output=${config.outputWidth}x${config.outputHeight}, points=${sanitizeReframePoints(points, duration).length}, mode=${config.mode}, tracking=${config.tracking}`,
+      );
+
+      const command = ffmpeg(absoluteInputPath)
+        .outputOptions([
+          "-y",
+          "-map", "0:v:0",
+          "-map", "0:a:0?",
+          "-c:v", "libx264",
+          "-preset", FFMPEG_PRESET,
+          "-crf", FFMPEG_CRF,
+          "-threads", String(Math.max(1, CPU_COUNT)),
+          "-pix_fmt", "yuv420p",
+          "-c:a", "aac",
+          "-b:a", "128k",
+          "-movflags", "+faststart",
+        ])
+        .videoFilters(filters)
+        .on("start", (commandLine) => {
+          console.log("AI Reframe encoding started:");
+          console.log(commandLine);
+        })
+        .on("progress", (progress) => {
+          if (typeof progress.percent === "number" && Number.isFinite(progress.percent)) {
+            console.log(`AI Reframe progress: ${Math.min(100, Math.max(0, progress.percent)).toFixed(0)}%`);
+          }
+        })
+        .on("end", () => {
+          if (!fs.existsSync(absoluteOutputPath) || fs.statSync(absoluteOutputPath).size <= 0) {
+            return finish(new Error("AI Reframe video was not created."));
+          }
+          console.log("AI Reframe encoding completed.");
+          finish();
+        })
+        .on("error", (error) => {
+          console.error("AI Reframe FFmpeg failed:", error.message);
+          finish(error);
+        });
+
+      command.save(absoluteOutputPath);
+    } catch (error) {
+      finish(error instanceof Error ? error : new Error("AI Reframe encoding failed."));
+    }
+  });
+}
+
+/* =========================================================
    CREATE FULL CAPTIONED VIDEO
 ========================================================= */
 
@@ -5251,9 +5597,11 @@ async function processVideo(
   originalSourceUrl?: string,
   processingMode: ProcessingMode = "clips",
   captionStyle: SubtitleStyle = DEFAULT_SUBTITLE_STYLE,
+  reframeConfig: ReframeConfig = normalizeReframeConfig(undefined),
 ) {
   const mode = normalizeProcessingMode(processingMode);
   const safeCaptionStyle = normalizeCaptionStyle(captionStyle);
+  const safeReframeConfig = normalizeReframeConfig(reframeConfig);
   try {
     await updateProject(
       projectId,
@@ -5433,6 +5781,83 @@ async function processVideo(
       projectId,
       analysis.transcript,
     );
+
+    if (mode === "reframe") {
+      const reframedFilename = "reframed.mp4";
+      const reframedDir = path.join(projectDir, "reframed");
+      fs.mkdirSync(reframedDir, { recursive: true });
+      const reframedPath = path.join(reframedDir, reframedFilename);
+
+      await updateProject(
+        projectId,
+        55,
+        "AI is reframing your video",
+        "processing",
+        0,
+      );
+
+      await createAIReframedVideo(
+        sourcePath,
+        reframedPath,
+        duration,
+        analysis.reframe,
+        safeReframeConfig,
+        safeReframeConfig.addCaptions ? analysis.transcript : [],
+        safeCaptionStyle,
+      );
+
+      const reframedVideoUrl = publicMediaUrl(
+        projectId,
+        `reframed/${reframedFilename}`,
+      );
+
+      const completion = await supabase
+        .from("projects")
+        .update({
+          full_video_url: reframedVideoUrl,
+          processing_mode: mode,
+          caption_style: safeCaptionStyle,
+          reframe_config: safeReframeConfig,
+          progress: 100,
+          current_step: "AI Reframe video is ready",
+          status: "completed",
+          total_clips: 0,
+        })
+        .eq("id", projectId);
+
+      if (completion.error) {
+        const fallback = await supabase
+          .from("projects")
+          .update({
+            full_video_url: reframedVideoUrl,
+            processing_mode: mode,
+            caption_style: safeCaptionStyle,
+            progress: 100,
+            current_step: "AI Reframe video is ready",
+            status: "completed",
+            total_clips: 0,
+          })
+          .eq("id", projectId);
+        if (fallback.error) throw fallback.error;
+      }
+
+      await createNotification({
+        userId,
+        type: "project_completed",
+        title: "Your AI Reframe video is ready",
+        message: `LumoClip automatically reframed your video to ${safeReframeConfig.aspectRatio}.`,
+        projectId,
+        metadata: {
+          mode,
+          fullVideoUrl: reframedVideoUrl,
+          reframe: safeReframeConfig,
+          generated: 0,
+        },
+      });
+
+      console.log(`Project ${projectId} completed with AI Reframe.`);
+      return;
+    }
 
     if (mode === "full_video_caption") {
       const fullCaptionFilename = "full-captioned.mp4";
@@ -7316,6 +7741,7 @@ app.post(
       const requestedConfig = getProcessingConfigFromRequest(
         req.body?.captionStyle,
         req.body?.mode,
+        req.body?.reframe,
       );
 
       const {
@@ -7413,6 +7839,7 @@ app.post(
         undefined,
         requestedConfig.mode,
         requestedConfig.captionStyle,
+        requestedConfig.reframe,
       ).catch(
         async (
           error,
@@ -7581,6 +8008,7 @@ app.post(
       const requestedConfig = getProcessingConfigFromRequest(
         req.body?.captionStyle,
         req.body?.mode,
+        req.body?.reframe,
       );
 
       const { profile, project, newCredits } =
@@ -7631,6 +8059,7 @@ app.post(
         processing: {
           mode: requestedConfig.mode,
           captionStyle: requestedConfig.captionStyle,
+          reframe: requestedConfig.reframe,
         },
         message: WORKER_ENABLED
           ? "YouTube job queued. Your LumoClip PC worker will download the video."
@@ -7861,6 +8290,7 @@ app.post(
         project.source_url || undefined,
         effectiveProcessingConfig.mode,
         effectiveProcessingConfig.captionStyle,
+        effectiveProcessingConfig.reframe,
       ).catch(async (error) => {
         console.error(`Worker-upload processing failed for project ${projectId}:`, error);
         await refundCredits(project.user_id, projectId);
@@ -8750,6 +9180,12 @@ app.get(
   "/api/media/:projectId/enhanced/:filename",
   (req, res) =>
     sendProjectMedia(req, res, "enhanced"),
+);
+
+app.get(
+  "/api/media/:projectId/reframed/:filename",
+  (req, res) =>
+    sendProjectMedia(req, res, "reframed"),
 );
 
 /* =========================================================
