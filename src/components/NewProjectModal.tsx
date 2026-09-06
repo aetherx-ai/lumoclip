@@ -2651,7 +2651,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[32px]
@@ -2891,12 +2891,11 @@ export const NewProjectModal: React.FC<
                       <>
                         <div className="mb-1 flex items-center gap-2">
                           <button type="button" onClick={handleBackToSource} disabled={loading} aria-label="Back to source" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
-                          <span className="text-[8px] font-medium text-zinc-600">Step 2 of 2</span>
                         </div>
                         {isReframeMode ? (
-                          <div className="space-y-4">
+                          <div className="space-y-3">
                             <div className="flex justify-center">
-                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                              <div className="relative aspect-video w-[266px] overflow-hidden rounded-[10px] border border-white/[0.06] bg-[#151519] shadow-[0_14px_42px_rgba(0,0,0,0.5)]">
                                 {selectedFile ? (
                                   <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
                                 ) : getYouTubeVideoId(youtubeUrl) ? (
@@ -2904,8 +2903,8 @@ export const NewProjectModal: React.FC<
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950"><Video className="h-8 w-8 text-zinc-600" /></div>
                                 )}
-                                <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">720p</div>
-                                <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/55 to-transparent" />
+                                <div className="absolute left-2.5 top-2.5 rounded-[5px] bg-black/75 px-2 py-1 text-[9px] font-bold text-white shadow backdrop-blur">720p</div>
+                                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/55 to-transparent" />
                               </div>
                             </div>
                             <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />
