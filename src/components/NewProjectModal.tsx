@@ -1316,6 +1316,146 @@ const CaptionStylePicker: React.FC<{
 };
 
 /* =========================================================
+   OPUS-STYLE CAPTION SETTINGS
+========================================================= */
+
+const CaptionOpusSettings: React.FC<{
+  style: CaptionStyle;
+  onChange: (next: CaptionStyle) => void;
+  disabled: boolean;
+  sourceType: SourceType;
+  selectedFile: File | null;
+  youtubeUrl: string;
+}> = ({ style, onChange, disabled, selectedFile, youtubeUrl }) => {
+  const railRef = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<"presets" | "templates">("presets");
+
+  const selectPreset = (preset: (typeof CAPTION_STYLE_PRESETS)[number]) => {
+    onChange({ ...style, ...preset.style, enabled: true });
+  };
+
+  const isActive = (preset: (typeof CAPTION_STYLE_PRESETS)[number]) =>
+    style.enabled &&
+    style.font === preset.style.font &&
+    style.textColor.toUpperCase() === preset.style.textColor.toUpperCase() &&
+    style.highlightColor.toUpperCase() === preset.style.highlightColor.toUpperCase() &&
+    style.position === preset.style.position &&
+    style.uppercase === preset.style.uppercase &&
+    style.box === preset.style.box &&
+    style.boxColor.toUpperCase() === preset.style.boxColor.toUpperCase() &&
+    style.animation === preset.style.animation;
+
+  const scroll = (amount: number) => {
+    railRef.current?.scrollBy({ left: amount, behavior: "smooth" });
+  };
+
+  const youtubeId = getYouTubeVideoId(youtubeUrl);
+  const videoSrc = selectedFile ? URL.createObjectURL(selectedFile) : "";
+
+  return (
+    <div className="space-y-4">
+      {/* Video preview — exactly the same visual hierarchy as the speech screen */}
+      <div className="flex justify-center">
+        <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+          {selectedFile ? (
+            <video src={videoSrc} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+          ) : youtubeId ? (
+            <img src={`https://i.ytimg.com/vi/${youtubeId}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950">
+              <Video className="h-8 w-8 text-zinc-600" />
+            </div>
+          )}
+          <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">720p</div>
+          <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/55 to-transparent" />
+        </div>
+      </div>
+
+      {/* Opus-style caption panel */}
+      <div className="overflow-hidden rounded-[4px] bg-[#1b1b1f]">
+        <div className="flex border-b border-black/30 bg-[#18181c]">
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setActiveTab("presets")}
+            className={`relative px-4 py-3 text-[12px] font-bold transition ${activeTab === "presets" ? "bg-[#202024] text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Quick presets
+          </button>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={() => setActiveTab("templates")}
+            className={`relative px-4 py-3 text-[12px] font-bold transition ${activeTab === "templates" ? "bg-[#202024] text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+          >
+            My templates
+          </button>
+        </div>
+
+        {activeTab === "presets" ? (
+          <div className="px-4 pb-4 pt-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-[12px] font-bold text-zinc-300">Caption</p>
+              <div className="flex gap-2">
+                <button type="button" disabled={disabled} onClick={() => scroll(-300)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500 transition hover:text-white disabled:opacity-40" aria-label="Previous caption styles">
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button type="button" disabled={disabled} onClick={() => scroll(300)} className="flex h-8 w-8 items-center justify-center rounded-full border border-white/[0.08] bg-white/[0.03] text-zinc-500 transition hover:text-white disabled:opacity-40" aria-label="Next caption styles">
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div ref={railRef} className="grid auto-cols-[67px] grid-flow-col grid-rows-2 gap-x-3.5 gap-y-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange({ ...style, enabled: false })}
+                className="group flex w-[67px] flex-col items-center gap-1.5 disabled:opacity-40"
+              >
+                <span className={`relative flex h-[50px] w-[67px] items-center justify-center rounded-[9px] border bg-[#3a3a3f] ${!style.enabled ? "border-white ring-2 ring-violet-500/60" : "border-white/[0.06]"}`}>
+                  <span className="h-7 w-7 rounded-full border-2 border-zinc-300" />
+                  <span className="absolute h-[2px] w-9 rotate-45 bg-zinc-300" />
+                  {!style.enabled && <span className="absolute right-1 top-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white"><Check className="h-2 w-2 text-black" strokeWidth={3} /></span>}
+                </span>
+                <span className={`text-[8px] font-semibold ${!style.enabled ? "text-white" : "text-zinc-500"}`}>No caption</span>
+              </button>
+
+              {CAPTION_STYLE_PRESETS.map((preset) => {
+                const active = isActive(preset);
+                const words = preset.style.uppercase ? ["TO", "GET", "STARTED"] : ["To", "get", "started"];
+                return (
+                  <button key={preset.id} type="button" disabled={disabled} onClick={() => selectPreset(preset)} className="group flex w-[67px] flex-col items-center gap-1.5 disabled:opacity-40">
+                    <span
+                      className={`relative flex h-[50px] w-[67px] items-center justify-center overflow-hidden rounded-[9px] border transition ${active ? "border-white ring-2 ring-violet-500/60" : "border-white/[0.06] group-hover:border-white/20"}`}
+                      style={{ background: `radial-gradient(80% 80% at 50% 10%, ${preset.backdrop.a}, transparent 72%), linear-gradient(150deg, ${preset.backdrop.a}, ${preset.backdrop.b})` }}
+                    >
+                      <span className="absolute left-1/2 top-[13%] h-5 w-5 -translate-x-1/2 rounded-full bg-white/[0.12]" />
+                      <span className="absolute bottom-0 left-1/2 h-[58%] w-[52%] -translate-x-1/2 rounded-t-full bg-white/[0.09]" />
+                      <span className={`relative z-[2] text-center text-[7px] font-black leading-[1.1] ${preset.style.box ? "rounded px-1 py-0.5" : "px-0.5"}`} style={{ fontFamily: preset.style.font, color: preset.style.textColor, backgroundColor: preset.style.box ? `${preset.style.boxColor}D8` : "transparent", textShadow: preset.style.box ? "none" : "0 1px 4px rgba(0,0,0,.95)" }}>
+                        {words.map((word, index) => <span key={`${preset.id}-${word}`} style={{ color: index === 1 ? preset.style.highlightColor : preset.style.textColor, marginRight: index < words.length - 1 ? "0.14em" : 0 }}>{word}</span>)}
+                      </span>
+                      {active && <span className="absolute right-1 top-1 z-[4] flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white"><Check className="h-2 w-2 text-black" strokeWidth={3} /></span>}
+                    </span>
+                    <span className={`w-full truncate text-center text-[8px] font-semibold ${active ? "text-white" : "text-zinc-500"}`}>{preset.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-[145px] flex-col items-center justify-center px-5 py-8 text-center">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.03] text-zinc-600"><Captions className="h-4 w-4" /></div>
+            <p className="mt-3 text-[10px] font-bold text-zinc-300">No saved templates yet</p>
+            <p className="mt-1 text-[8px] text-zinc-600">Your custom caption templates will appear here.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+/* =========================================================
    OUTPUT MODE PICKER
 ========================================================= */
 
@@ -2514,7 +2654,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && intent === "enhance-speech" ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[32px]
@@ -2539,13 +2679,13 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && intent === "enhance-speech" ? "px-6 pb-4 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "px-6 pb-3.5 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && intent === "enhance-speech" ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">Enhance speech</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">Enhance voice clarity and remove filler words with one click.</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : "Enhance speech"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : "Enhance voice clarity and remove filler words with one click."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
@@ -2739,14 +2879,28 @@ export const NewProjectModal: React.FC<
                   </>
                 ) : (
                   <>
-                    <div className="flex items-center gap-3">
-                      <button type="button" onClick={handleBackToSource} disabled={loading} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
-                      <div className="min-w-0 flex-1"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">Step 2 of 2</p><p className="mt-1 truncate text-lg font-semibold tracking-tight text-white">{isReframeMode ? "AI Reframe" : isFullVideoMode ? "Full video captions" : "AI clips"}</p></div>
-                    </div>
-                    <div className="flex items-center gap-3 rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.035] px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">{sourceType === "file" ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Link2 className="h-4 w-4 text-emerald-400" />}</div><div className="min-w-0 flex-1"><p className="text-[7px] font-bold uppercase tracking-[0.16em] text-emerald-400">Source ready</p><p className="mt-1 truncate text-[9px] font-medium text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p></div><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /></div>
-                    {isReframeMode && <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />}
-                    {(!isReframeMode || reframeConfig.addCaptions) && <CaptionStylePicker style={captionStyle} onChange={setCaptionStyle} disabled={loading} lockEnabled={isFullVideoMode} />}
-                    <section><div className="mb-2.5 flex items-end justify-between gap-3"><label htmlFor="project-title" className="text-xs font-bold text-white">Project title <span className="ml-1.5 font-normal text-zinc-700">Optional</span></label><span className={`text-[8px] ${projectTitle.length >= MAX_TITLE_LENGTH ? "text-amber-400" : "text-zinc-700"}`}>{projectTitle.length}/{MAX_TITLE_LENGTH}</span></div><input id="project-title" type="text" maxLength={MAX_TITLE_LENGTH} value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} disabled={loading} placeholder="Give your project a name" className="w-full rounded-[18px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-[10px] font-medium text-white outline-none placeholder:text-zinc-700" /></section>
+                    {isFullVideoMode ? (
+                      <div className="-mt-1">
+                        <CaptionOpusSettings
+                          style={captionStyle}
+                          onChange={setCaptionStyle}
+                          disabled={loading}
+                          selectedFile={selectedFile}
+                          youtubeUrl={youtubeUrl}
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-3">
+                          <button type="button" onClick={handleBackToSource} disabled={loading} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                          <div className="min-w-0 flex-1"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">Step 2 of 2</p><p className="mt-1 truncate text-lg font-semibold tracking-tight text-white">{isReframeMode ? "AI Reframe" : "AI clips"}</p></div>
+                        </div>
+                        <div className="flex items-center gap-3 rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.035] px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">{sourceType === "file" ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Link2 className="h-4 w-4 text-emerald-400" />}</div><div className="min-w-0 flex-1"><p className="text-[7px] font-bold uppercase tracking-[0.16em] text-emerald-400">Source ready</p><p className="mt-1 truncate text-[9px] font-medium text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p></div><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /></div>
+                        {isReframeMode && <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />}
+                        {(!isReframeMode || reframeConfig.addCaptions) && <CaptionStylePicker style={captionStyle} onChange={setCaptionStyle} disabled={loading} lockEnabled={false} />}
+                        <section><div className="mb-2.5 flex items-end justify-between gap-3"><label htmlFor="project-title" className="text-xs font-bold text-white">Project title <span className="ml-1.5 font-normal text-zinc-700">Optional</span></label><span className={`text-[8px] ${projectTitle.length >= MAX_TITLE_LENGTH ? "text-amber-400" : "text-zinc-700"}`}>{projectTitle.length}/{MAX_TITLE_LENGTH}</span></div><input id="project-title" type="text" maxLength={MAX_TITLE_LENGTH} value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} disabled={loading} placeholder="Give your project a name" className="w-full rounded-[18px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-[10px] font-medium text-white outline-none placeholder:text-zinc-700" /></section>
+                      </>
+                    )}
                   </>
                 )}
               </section>
@@ -2832,12 +2986,12 @@ export const NewProjectModal: React.FC<
             FOOTER
         ================================================= */}
 
-        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && intent === "enhance-speech" ? "px-6 py-3.5" : "px-5 py-4 sm:px-7"}`}>
+        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
           <div className="flex items-center justify-between gap-3">
-            {wizardStep === 2 && intent === "enhance-speech" ? (
+            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || "Enhancing speech...") : "Enhance speech in 1 click"}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
