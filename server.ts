@@ -181,6 +181,20 @@ const GEMINI_FALLBACK_MODELS = (
   .map((m) => m.trim())
   .filter(Boolean);
 
+// The client's clipSettings.clipModel ("ClipBasic" | "ClipPro") lets the
+// user trade quality for speed/cost. "ClipPro" uses GEMINI_MODEL (the
+// primary model, unchanged default behavior). "ClipBasic" uses the
+// weakest model already configured as a resilience fallback above — it's
+// intentionally the LAST entry in GEMINI_FALLBACK_MODELS, since that list
+// is ordered strongest-first. This is a separate concern from the
+// quota/error fallback cascade in generateGeminiWithRetry(): here we're
+// just choosing which model to try FIRST, and the existing fallback list
+// still applies after it for resilience either way.
+const GEMINI_MODEL_BASIC =
+  process.env.GEMINI_MODEL_BASIC?.trim() ||
+  GEMINI_FALLBACK_MODELS[GEMINI_FALLBACK_MODELS.length - 1] ||
+  GEMINI_MODEL;
+
 // Retry policy is deliberately different by failure class:
 // - Daily/model quota exhaustion (429 + quota) => never retry that model.
 // - Rate limiting (429 without daily quota exhaustion) => honor Retry-After when present.
@@ -4871,7 +4885,10 @@ IMPORTANT: every clip MUST include a non-empty caption.
       const file = await uploadAndActivateGeminiFile();
 
       return {
-        model: GEMINI_MODEL,
+        model:
+          clipSettings.clipModel === "ClipBasic"
+            ? GEMINI_MODEL_BASIC
+            : GEMINI_MODEL,
         contents: createUserContent([
           createPartFromUri(file.uri!, file.mimeType!),
           prompt,
