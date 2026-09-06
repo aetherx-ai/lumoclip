@@ -1834,6 +1834,13 @@ export const NewProjectModal: React.FC<
   const [speechSettings, setSpeechSettings] =
     useState<SpeechSettings>(DEFAULT_SPEECH_SETTINGS);
 
+  // Only used when intent === "enhance-speech": turns the modal into a
+  // 2-step Opus-style wizard — pick the source first, "Continue", then
+  // land on the enhancement toggles screen before the final 1-click submit.
+  // Every other intent keeps the original single-screen layout untouched.
+  const [enhanceStep, setEnhanceStep] =
+    useState<"source" | "settings">("source");
+
   const isFullVideoMode =
     processingMode === "full_video_caption";
 
@@ -1926,6 +1933,12 @@ export const NewProjectModal: React.FC<
         ? "Podcast"
         : "Video upload";
 
+  // Drives the 2-step Opus-style wizard for the enhance-speech intent only;
+  // every other intent renders everything on one screen as before.
+  const isEnhanceFlow = intent === "enhance-speech";
+  const showSourceStep = !isEnhanceFlow || enhanceStep === "source";
+  const showSettingsStep = isEnhanceFlow && enhanceStep === "settings";
+
   /* =======================================================
      RESET
   ======================================================= */
@@ -1941,6 +1954,7 @@ export const NewProjectModal: React.FC<
     setCaptionStyle(DEFAULT_CAPTION_STYLE);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
     setSpeechSettings(DEFAULT_SPEECH_SETTINGS);
+    setEnhanceStep("source");
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
@@ -1972,6 +1986,7 @@ export const NewProjectModal: React.FC<
     setSelectedFile(null);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
     setSpeechSettings(DEFAULT_SPEECH_SETTINGS);
+    setEnhanceStep("source");
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
@@ -1996,9 +2011,17 @@ export const NewProjectModal: React.FC<
       setSourceType("file");
       setSelectedFile(initialFile);
       setYoutubeUrl("");
+
+      if (intent === "enhance-speech") {
+        setEnhanceStep("settings");
+      }
     } else if (dashboardUrl) {
       setSourceType("youtube");
       setYoutubeUrl(dashboardUrl);
+
+      if (intent === "enhance-speech") {
+        setEnhanceStep("settings");
+      }
     } else {
       setSourceType("youtube");
       setYoutubeUrl("");
@@ -2653,7 +2676,9 @@ export const NewProjectModal: React.FC<
                     className="text-[17px] font-bold tracking-[-0.02em] text-white sm:text-xl"
                   >
                     {intent === "enhance-speech"
-                      ? "Start a project to enhance speech"
+                      ? showSettingsStep
+                        ? "Enhance speech"
+                        : "Bring in your video"
                       : "Create a new project"}
                   </h2>
 
@@ -2661,11 +2686,19 @@ export const NewProjectModal: React.FC<
                     <Sparkles className="h-2.5 w-2.5" />
                     AI Studio
                   </span>
+
+                  {intent === "enhance-speech" && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-[7px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                      Step {showSettingsStep ? "2" : "1"} of 2
+                    </span>
+                  )}
                 </div>
 
                 <p className="mt-1.5 max-w-[540px] text-[10px] leading-5 text-zinc-500 sm:text-[11px]">
                   {intent === "enhance-speech"
-                    ? "Paste a link or upload your video, choose what to clean up, then enhance it in one click."
+                    ? showSettingsStep
+                      ? "Enhance voice clarity and remove filler words with one click."
+                      : "Paste a link or upload your video to get started."
                     : "Turn long-form content into scroll-stopping short-form videos with LumoClip AI."}
                 </p>
               </div>
@@ -2824,92 +2857,135 @@ export const NewProjectModal: React.FC<
                 SOURCE
             ================================================= */}
 
-            <section>
-              <div className="mb-3.5 flex items-end justify-between">
-                <div>
-                  <p className="text-xs font-bold tracking-tight text-white">
-                    Choose your source
-                  </p>
+            {showSourceStep && (
+              <section>
+                <div className="mb-3.5 flex items-end justify-between">
+                  <div>
+                    <p className="text-xs font-bold tracking-tight text-white">
+                      Choose your source
+                    </p>
 
-                  <p className="mt-1 text-[9px] text-zinc-600">
-                    Start with a YouTube video, podcast,
-                    or your own footage.
-                  </p>
+                    <p className="mt-1 text-[9px] text-zinc-600">
+                      Start with a YouTube video, podcast,
+                      or your own footage.
+                    </p>
+                  </div>
+
+                  <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
+                    {isEnhanceFlow ? "01 / 02 · SOURCE" : "01 / SOURCE"}
+                  </span>
                 </div>
 
-                <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
-                  01 / SOURCE
-                </span>
-              </div>
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                  <SourceCard
+                    active={
+                      sourceType === "youtube"
+                    }
+                    disabled={loading}
+                    icon={
+                      <Youtube className="h-4.5 w-4.5" />
+                    }
+                    title="YouTube"
+                    description="Video, Shorts or Live"
+                    accent="rgba(239,68,68,0.25)"
+                    onClick={() =>
+                      handleSourceChange(
+                        "youtube",
+                      )
+                    }
+                  />
 
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                <SourceCard
-                  active={
-                    sourceType === "youtube"
-                  }
-                  disabled={loading}
-                  icon={
-                    <Youtube className="h-4.5 w-4.5" />
-                  }
-                  title="YouTube"
-                  description="Video, Shorts or Live"
-                  accent="rgba(239,68,68,0.25)"
-                  onClick={() =>
-                    handleSourceChange(
-                      "youtube",
-                    )
-                  }
-                />
+                  <SourceCard
+                    active={
+                      sourceType === "podcast"
+                    }
+                    disabled={loading}
+                    icon={
+                      <Mic className="h-4.5 w-4.5" />
+                    }
+                    title="Podcast"
+                    description="Episode or audio URL"
+                    badge="BETA"
+                    accent="rgba(168,85,247,0.25)"
+                    onClick={() =>
+                      handleSourceChange(
+                        "podcast",
+                      )
+                    }
+                  />
 
-                <SourceCard
-                  active={
-                    sourceType === "podcast"
-                  }
-                  disabled={loading}
-                  icon={
-                    <Mic className="h-4.5 w-4.5" />
-                  }
-                  title="Podcast"
-                  description="Episode or audio URL"
-                  badge="BETA"
-                  accent="rgba(168,85,247,0.25)"
-                  onClick={() =>
-                    handleSourceChange(
-                      "podcast",
-                    )
-                  }
-                />
+                  <SourceCard
+                    active={
+                      sourceType === "file"
+                    }
+                    disabled={loading}
+                    icon={
+                      <Upload className="h-4.5 w-4.5" />
+                    }
+                    title="Upload"
+                    description="MP4, MOV, WEBM & more"
+                    accent="rgba(59,130,246,0.25)"
+                    onClick={() =>
+                      handleSourceChange(
+                        "file",
+                      )
+                    }
+                  />
+                </div>
+              </section>
+            )}
 
-                <SourceCard
-                  active={
-                    sourceType === "file"
-                  }
+            {/* =================================================
+                ENHANCE SPEECH · CHOSEN SOURCE SUMMARY (step 2)
+            ================================================= */}
+
+            {showSettingsStep && (
+              <section className="flex items-center justify-between gap-3 rounded-[20px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/10 bg-emerald-500/10">
+                    {sourceType === "file" ? (
+                      <FileCheck2 className="h-4 w-4 text-emerald-400" />
+                    ) : (
+                      <Link2 className="h-4 w-4 text-emerald-400" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-[7px] font-bold uppercase tracking-[0.18em] text-zinc-600">
+                      {sourceLabel}
+                    </p>
+
+                    <p className="mt-0.5 truncate text-[10px] font-medium text-zinc-300">
+                      {sourceType === "file"
+                        ? selectedFile?.name ?? "Selected video"
+                        : youtubeUrl}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setEnhanceStep("source")}
                   disabled={loading}
-                  icon={
-                    <Upload className="h-4.5 w-4.5" />
-                  }
-                  title="Upload"
-                  description="MP4, MOV, WEBM & more"
-                  accent="rgba(59,130,246,0.25)"
-                  onClick={() =>
-                    handleSourceChange(
-                      "file",
-                    )
-                  }
-                />
-              </div>
-            </section>
+                  className="shrink-0 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-1.5 text-[8px] font-bold text-zinc-400 transition hover:border-violet-300/20 hover:text-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Change
+                </button>
+              </section>
+            )}
 
             {/* =================================================
                 OUTPUT MODE
             ================================================= */}
 
-            {intent === "enhance-speech" ? (
-              <EnhanceSpeechSettings
-                settings={speechSettings}
-                onChange={setSpeechSettings}
-                disabled={loading}
-              />
+            {isEnhanceFlow ? (
+              showSettingsStep && (
+                <EnhanceSpeechSettings
+                  settings={speechSettings}
+                  onChange={setSpeechSettings}
+                  disabled={loading}
+                />
+              )
             ) : (
               <OutputModePicker
                 mode={processingMode}
@@ -2934,7 +3010,8 @@ export const NewProjectModal: React.FC<
                 URL
             ================================================= */}
 
-            {(sourceType === "youtube" ||
+            {showSourceStep &&
+              (sourceType === "youtube" ||
               sourceType === "podcast") && (
               <section>
                 <div className="mb-3 flex items-end justify-between gap-3">
@@ -3091,7 +3168,7 @@ export const NewProjectModal: React.FC<
                 UPLOAD
             ================================================= */}
 
-            {sourceType === "file" && (
+            {showSourceStep && sourceType === "file" && (
               <section>
                 <div className="mb-3">
                   <div className="flex items-center justify-between">
@@ -3262,6 +3339,7 @@ export const NewProjectModal: React.FC<
                 TITLE
             ================================================= */}
 
+            {showSourceStep && (
             <section>
               <div className="mb-2.5 flex items-end justify-between gap-3">
                 <label
@@ -3309,6 +3387,7 @@ export const NewProjectModal: React.FC<
                 />
               </div>
             </section>
+            )}
 
             {/* =================================================
                 AI CAPTIONS
@@ -3471,12 +3550,48 @@ export const NewProjectModal: React.FC<
                 Cancel
               </button>
 
+              {showSettingsStep && (
+                <button
+                  type="button"
+                  onClick={() => setEnhanceStep("source")}
+                  disabled={loading}
+                  className="
+                    rounded-xl
+                    border border-white/[0.07]
+                    bg-white/[0.03]
+                    px-4 py-2.5
+                    text-[9px]
+                    font-bold
+                    text-zinc-400
+                    transition-all
+                    hover:border-violet-300/20
+                    hover:text-violet-200
+                    focus:outline-none
+                    focus-visible:ring-2
+                    focus-visible:ring-violet-500/70
+                    disabled:cursor-not-allowed
+                    disabled:opacity-40
+                  "
+                >
+                  Back
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
+                  if (showSourceStep && isEnhanceFlow) {
+                    setEnhanceStep("settings");
+                    return;
+                  }
+
                   void handleSubmit();
                 }}
-                disabled={!canSubmit}
+                disabled={
+                  showSourceStep && isEnhanceFlow
+                    ? !sourceReady || loading
+                    : !canSubmit
+                }
                 className="
                   group relative inline-flex
                   min-w-[190px]
@@ -3534,6 +3649,14 @@ export const NewProjectModal: React.FC<
                       <span>
                         Not enough credits
                       </span>
+                    </>
+                  ) : showSourceStep && isEnhanceFlow ? (
+                    <>
+                      <span>
+                        Continue
+                      </span>
+
+                      <ArrowRight className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-1" />
                     </>
                   ) : (
                     <>
