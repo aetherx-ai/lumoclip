@@ -309,6 +309,11 @@ function App() {
   const [newProjectMode, setNewProjectMode] =
     useState<NewProjectMode | undefined>(undefined);
 
+  // The File selected on the landing page hero, carried through to
+  // NewProjectModal as initialFile so the person never has to re-pick it.
+  const [newProjectInitialFile, setNewProjectInitialFile] =
+    useState<File | null>(null);
+
   const appInitialized =
     useRef(false);
 
@@ -318,6 +323,12 @@ function App() {
 
   const pendingProjectUrlRef =
     useRef("");
+
+  // Same pattern as pendingProjectUrlRef: the onAuthStateChange listener
+  // below is registered once with an empty dependency array, so it closes
+  // over stale state. A ref is what survives login and stays current.
+  const pendingProjectFileRef =
+    useRef<File | null>(null);
 
   /* =======================================================
      POLLING
@@ -1019,6 +1030,24 @@ function App() {
 
             setIsAuthModalOpen(false);
 
+            const pendingFile =
+              pendingProjectFileRef.current;
+
+            if (pendingFile) {
+              setNewProjectInitialFile(
+                pendingFile,
+              );
+
+              setIsNewProjectModalOpen(
+                true,
+              );
+
+              pendingProjectFileRef.current =
+                null;
+
+              return;
+            }
+
             const pendingUrl =
               pendingProjectUrlRef.current;
 
@@ -1091,10 +1120,15 @@ function App() {
 
             setNewProjectInitialUrl("");
 
+            setNewProjectInitialFile(null);
+
             setNewProjectIntent("default");
 
             pendingProjectUrlRef.current =
               "";
+
+            pendingProjectFileRef.current =
+              null;
           }
         },
       );
@@ -1227,8 +1261,13 @@ function App() {
 
         setNewProjectInitialUrl("");
 
+        setNewProjectInitialFile(null);
+
         pendingProjectUrlRef.current =
           "";
+
+        pendingProjectFileRef.current =
+          null;
       } catch (error) {
         console.error(
           "Logout error:",
@@ -1442,6 +1481,39 @@ function App() {
     };
 
   /* =======================================================
+     OPEN NEW PROJECT WITH FILE
+     Mirrors openNewProject's auth-gating, but for a File selected on the
+     landing page hero instead of a URL. No duplicate-project lookup here —
+     that check only makes sense for URLs.
+  ======================================================= */
+
+  const openNewProjectWithFile =
+    (file: File) => {
+      setNewProjectIntent("default");
+      setNewProjectMode(undefined);
+      setNewProjectInitialUrl("");
+      pendingProjectUrlRef.current = "";
+
+      if (!user) {
+        pendingProjectFileRef.current =
+          file;
+
+        setIsAuthModalOpen(true);
+
+        return;
+      }
+
+      pendingProjectFileRef.current =
+        null;
+
+      setNewProjectInitialFile(file);
+
+      setIsNewProjectModalOpen(
+        true,
+      );
+    };
+
+  /* =======================================================
      RENDER
   ======================================================= */
 
@@ -1501,6 +1573,13 @@ function App() {
               url: string,
             ) => {
               openNewProject(url);
+            }}
+            onUploadFile={(
+              file: File,
+            ) => {
+              openNewProjectWithFile(
+                file,
+              );
             }}
           />
         )}
@@ -1732,7 +1811,11 @@ function App() {
       <ChunkErrorBoundary fallback={null}>
         <Suspense fallback={null}>
           <NewProjectModalWithInitialUrl
-            key={`${newProjectIntent}:${newProjectInitialUrl}:${newProjectMode ?? ""}`}
+            key={`${newProjectIntent}:${newProjectInitialUrl}:${newProjectMode ?? ""}:${
+              newProjectInitialFile
+                ? `${newProjectInitialFile.name}:${newProjectInitialFile.size}`
+                : ""
+            }`}
             isOpen={
               isNewProjectModalOpen
             }
@@ -1745,6 +1828,10 @@ function App() {
                 "",
               );
 
+              setNewProjectInitialFile(
+                null,
+              );
+
               setNewProjectIntent(
                 "default",
               );
@@ -1755,12 +1842,18 @@ function App() {
 
               pendingProjectUrlRef.current =
                 "";
+
+              pendingProjectFileRef.current =
+                null;
             }}
             credits={
               user?.credits ?? 0
             }
             initialUrl={
               newProjectInitialUrl
+            }
+            initialFile={
+              newProjectInitialFile
             }
             intent={newProjectIntent}
             initialProcessingMode={
@@ -1813,12 +1906,19 @@ function App() {
                 "",
               );
 
+              setNewProjectInitialFile(
+                null,
+              );
+
               setNewProjectIntent(
                 "default",
               );
 
               pendingProjectUrlRef.current =
                 "";
+
+              pendingProjectFileRef.current =
+                null;
 
               setIsNewProjectModalOpen(
                 false,

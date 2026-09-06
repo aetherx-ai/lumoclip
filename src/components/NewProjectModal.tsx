@@ -46,6 +46,11 @@ interface NewProjectModalProps {
   credits?: number;
   initialUrl?: string;
   initialTitle?: string;
+  // Set when the user selected a file on the landing page hero (before this
+  // modal ever opened). Pre-loads that File directly into the upload step
+  // so the person never has to re-select it — see the "OPEN / SYNC" effect
+  // below, which seeds `selectedFile` / `sourceType` from this on open.
+  initialFile?: File | null;
   // Where the user came in from. "enhance-speech" shows a contextual hint
   // explaining that a project must exist before speech can be enhanced,
   // since /api/projects/:projectId/enhance-speech runs on an existing
@@ -1615,6 +1620,7 @@ export const NewProjectModal: React.FC<
   credits = 0,
   initialUrl = "",
   initialTitle = "",
+  initialFile = null,
   intent = "default",
   initialProcessingMode,
 }) => {
@@ -1732,6 +1738,7 @@ export const NewProjectModal: React.FC<
     Boolean(dashboardUrl);
 
   const insufficientCredits =
+    intent !== "enhance-speech" &&
     credits < MIN_CREDITS;
 
   const youtubeValid =
@@ -1823,7 +1830,11 @@ export const NewProjectModal: React.FC<
       message: "",
     });
 
-    if (dashboardUrl) {
+    if (initialFile) {
+      setSourceType("file");
+      setSelectedFile(initialFile);
+      setYoutubeUrl("");
+    } else if (dashboardUrl) {
       setSourceType("youtube");
       setYoutubeUrl(dashboardUrl);
     } else {
@@ -1848,6 +1859,7 @@ export const NewProjectModal: React.FC<
     initialTitle,
     intent,
     initialProcessingMode,
+    initialFile,
   ]);
 
   /* =======================================================
@@ -2093,7 +2105,13 @@ export const NewProjectModal: React.FC<
 
       setError("");
 
-      if (credits < MIN_CREDITS) {
+      // Enhance Speech is completely free (server.ts never charges credits
+      // for it), so it must never be blocked by the credit-balance check
+      // below — only paid modes (clips / full video / reframe) require it.
+      if (
+        intent !== "enhance-speech" &&
+        credits < MIN_CREDITS
+      ) {
         setError(
           `You need at least ${MIN_CREDITS} credits to create a project.`,
         );

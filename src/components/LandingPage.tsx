@@ -74,71 +74,18 @@ type LandingPageProps = {
   ) => void;
 };
 
-const CAPTION_STYLE_PRESETS: CaptionStyleSettings[] = [
-  {
-    preset: "opus-punch",
-    mode: "full_video_caption",
-    font: "Arial",
-    textColor: "#FFFFFF",
-    highlightColor: "#FFD84D",
-    position: "bottom",
-    uppercase: true,
-  },
-  {
-    preset: "clean-cyan",
-    mode: "full_video_caption",
-    font: "Inter",
-    textColor: "#FFFFFF",
-    highlightColor: "#67E8F9",
-    position: "bottom",
-    uppercase: false,
-  },
-  {
-    preset: "creator-pop",
-    mode: "full_video_caption",
-    font: "Poppins",
-    textColor: "#FFFFFF",
-    highlightColor: "#F472B6",
-    position: "center",
-    uppercase: true,
-  },
-  {
-    preset: "neon-energy",
-    mode: "full_video_caption",
-    font: "Impact",
-    textColor: "#D9F99D",
-    highlightColor: "#39FF14",
-    position: "top",
-    uppercase: true,
-  },
-  {
-    preset: "minimal",
-    mode: "full_video_caption",
-    font: "Arial",
-    textColor: "#FFFFFF",
-    highlightColor: "#FFFFFF",
-    position: "bottom",
-    uppercase: false,
-  },
-];
-
-const CAPTION_STYLE_LABELS: Record<string, string> = {
-  "opus-punch": "Opus Punch",
-  "clean-cyan": "Clean Cyan",
-  "creator-pop": "Creator Pop",
-  "neon-energy": "Neon Energy",
-  minimal: "Minimal",
+// The landing page hero always submits this single default caption style —
+// there is no in-page picker, so per-preset labels/descriptions and the
+// other four presets were dead code and have been removed.
+const DEFAULT_CAPTION_STYLE: CaptionStyleSettings = {
+  preset: "opus-punch",
+  mode: "full_video_caption",
+  font: "Arial",
+  textColor: "#FFFFFF",
+  highlightColor: "#FFD84D",
+  position: "bottom",
+  uppercase: true,
 };
-
-const CAPTION_STYLE_DESCRIPTIONS: Record<string, string> = {
-  "opus-punch": "Bold words with a punchy highlight.",
-  "clean-cyan": "Clean, readable captions for every video.",
-  "creator-pop": "Centered creator-style captions with color.",
-  "neon-energy": "High-energy neon captions for fast edits.",
-  minimal: "Simple white captions with no distraction.",
-};
-
-const DEFAULT_CAPTION_STYLE = CAPTION_STYLE_PRESETS[0];
 
 function cloneCaptionStyle(style: CaptionStyleSettings): CaptionStyleSettings {
   return { ...style };
