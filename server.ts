@@ -924,6 +924,13 @@ async function getProcessingConfig(
     };
   }
 
+  // In-memory config (set moments earlier in the same request/worker run)
+  // is more trustworthy than a DB read: if the DB write failed (e.g. a
+  // check-constraint rejection), the DB row still holds a stale/default
+  // processing_mode, and blindly trusting it would silently downgrade
+  // jobs like "reframe" back into "clips". Prefer in-memory when present.
+  if (inMemory) return inMemory;
+
   if (!metadataError && metadata?.processing_mode) {
     return {
       mode: normalizeProcessingMode(metadata.processing_mode),
@@ -931,8 +938,6 @@ async function getProcessingConfig(
       reframe: normalizeReframeConfig(metadata.reframe_config),
     };
   }
-
-  if (inMemory) return inMemory;
 
   return {
     mode: "clips",
