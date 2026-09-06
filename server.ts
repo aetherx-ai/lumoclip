@@ -5399,8 +5399,18 @@ function createAIReframedVideo(
         ? "(iw-ow)/2"
         : buildReframeXExpression(points, sourceWidth, cropWidth, duration, config.tracking);
 
+      // FFmpeg's filtergraph parser splits on unescaped top-level commas to
+      // separate chained filters (e.g. "crop=...,scale=..."), and it does
+      // NOT track parenthesis nesting while doing so. Our tracking
+      // expression uses between(t,a,b)-style function calls, whose internal
+      // commas are otherwise indistinguishable from filter separators to
+      // that parser — causing errors like "No such filter: 'max(0'" once
+      // the expression contains any commas at all. Escaping them with a
+      // backslash tells FFmpeg to treat them as literal characters.
+      const escapedXExpression = xExpression.replace(/,/g, "\\,");
+
       const filters: string[] = [
-        `crop=${cropWidth}:${cropHeight}:${xExpression}:(ih-oh)/2`,
+        `crop=${cropWidth}:${cropHeight}:${escapedXExpression}:(ih-oh)/2`,
         `scale=${config.outputWidth}:${config.outputHeight}:force_original_aspect_ratio=decrease`,
         `pad=${config.outputWidth}:${config.outputHeight}:(ow-iw)/2:(oh-ih)/2`,
       ];
