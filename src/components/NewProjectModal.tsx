@@ -19,6 +19,15 @@ import {
   Film,
   Link2,
   Loader2,
+  Maximize2,
+  Expand,
+  Columns2,
+  MonitorUp,
+  Gamepad2,
+  PanelsTopLeft,
+  Grid2X2,
+  Monitor,
+  Square,
   Mic,
   Play,
   ShieldCheck,
@@ -36,10 +45,10 @@ import {
 import { supabase } from "../lib/supabase";
 
 /* =========================================================
-   OPUS-STYLE SPEECH STEP 2 — FINAL
-   Step 1 accepts YouTube/MP4; Enhance Speech Step 2 mirrors the
-   compact Opus-style modal: preview + Enhancement settings +
-   three toggles + white "Enhance speech in 1 click" CTA.
+   OPUS-STYLE FEATURE STEP 2 — FINAL
+   Step 1 accepts YouTube/MP4. Feature-specific Step 2 layouts
+   mirror the compact Opus-style modal: Speech, Captions, and
+   AI Reframe each get their own settings UI and one-click CTA.
 ========================================================= */
 
 /* =========================================================
@@ -120,12 +129,14 @@ type ProcessingMode =
 
 interface ReframeConfig {
   enabled: boolean;
-  aspectRatio: "9:16" | "1:1" | "4:5";
+  aspectRatio: "9:16" | "1:1" | "4:5" | "16:9";
   outputWidth: number;
   outputHeight: number;
   mode: "auto" | "speaker" | "center";
   tracking: "smooth" | "fast";
   addCaptions: boolean;
+  autoLayout: "fill" | "fit" | "split" | "screenshare" | "gameplay" | "three" | "four";
+  cropRatio: "original" | "4:3" | "1:1";
 }
 
 interface SpeechSettings {
@@ -177,6 +188,8 @@ const DEFAULT_REFRAME_CONFIG: ReframeConfig = {
   mode: "auto",
   tracking: "smooth",
   addCaptions: true,
+  autoLayout: "fill",
+  cropRatio: "original",
 };
 
 const DEFAULT_CAPTION_STYLE: CaptionStyle = {
@@ -1568,213 +1581,197 @@ const ReframeSettings: React.FC<{
   onChange: (config: ReframeConfig) => void;
   disabled: boolean;
 }> = ({ config, onChange, disabled }) => {
-  const aspectOptions: {
+  const aspectOptions: Array<{
     value: ReframeConfig["aspectRatio"];
     label: string;
-    size: string;
-  }[] = [
-    { value: "9:16", label: "9:16", size: "Shorts / Reels / TikTok" },
-    { value: "1:1", label: "1:1", size: "Square social" },
-    { value: "4:5", label: "4:5", size: "Instagram feed" },
+    pro?: boolean;
+  }> = [
+    { value: "9:16", label: "9:16" },
+    { value: "1:1", label: "1:1", pro: true },
+    { value: "16:9", label: "16:9", pro: true },
+    { value: "4:5", label: "4:5", pro: true },
+  ];
+
+  const autoLayouts: Array<{
+    value: ReframeConfig["autoLayout"];
+    label: string;
+    icon: React.ReactNode;
+  }> = [
+    { value: "fill", label: "Fill", icon: <Maximize2 className="h-3 w-3" /> },
+    { value: "fit", label: "Fit", icon: <Expand className="h-3 w-3" /> },
+    { value: "split", label: "Split", icon: <Columns2 className="h-3 w-3" /> },
+    { value: "screenshare", label: "ScreenShare", icon: <MonitorUp className="h-3 w-3" /> },
+    { value: "gameplay", label: "Gameplay", icon: <Gamepad2 className="h-3 w-3" /> },
+    { value: "three", label: "Three", icon: <PanelsTopLeft className="h-3 w-3" /> },
+    { value: "four", label: "Four", icon: <Grid2X2 className="h-3 w-3" /> },
+  ];
+
+  const cropRatios: Array<{ value: ReframeConfig["cropRatio"]; label: string }> = [
+    { value: "original", label: "Original ratio" },
+    { value: "4:3", label: "4:3" },
+    { value: "1:1", label: "1:1" },
   ];
 
   const setAspectRatio = (aspectRatio: ReframeConfig["aspectRatio"]) => {
     const sizes: Record<ReframeConfig["aspectRatio"], [number, number]> = {
       "9:16": [720, 1280],
       "1:1": [720, 720],
+      "16:9": [1280, 720],
       "4:5": [720, 900],
     };
-
     const [outputWidth, outputHeight] = sizes[aspectRatio];
+    onChange({ ...config, aspectRatio, outputWidth, outputHeight });
+  };
 
+  const selectLayout = (autoLayout: ReframeConfig["autoLayout"]) => {
     onChange({
       ...config,
-      aspectRatio,
-      outputWidth,
-      outputHeight,
+      autoLayout,
+      mode: autoLayout === "fill" || autoLayout === "fit" ? "auto" : config.mode,
     });
   };
 
   return (
-    <section className="overflow-hidden rounded-[22px] border border-cyan-400/[0.12] bg-gradient-to-br from-cyan-500/[0.045] via-white/[0.02] to-violet-500/[0.035]">
-      <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[13px] border border-cyan-400/15 bg-cyan-400/10 text-cyan-300">
-            <WandSparkles className="h-4.5 w-4.5" />
+    <section className="overflow-hidden rounded-[4px] bg-[#1b1b1f]">
+      <div className="max-h-[390px] overflow-y-auto px-4 pb-4 pt-5 [scrollbar-width:thin]">
+        <div className="space-y-5">
+          <div>
+            <p className="mb-2.5 text-[10px] font-semibold text-[#a8a8b2]">Aspect ratio</p>
+            <div className="flex flex-wrap gap-2">
+              {aspectOptions.map((option) => {
+                const active = config.aspectRatio === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => setAspectRatio(option.value)}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-[6px] border px-3 text-[11px] font-semibold transition ${
+                      active
+                        ? "border-white/10 bg-white text-[#151519]"
+                        : "border-white/[0.05] bg-[#303035] text-white hover:bg-[#3a3a40]"
+                    } disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    <span className={`inline-flex items-center justify-center ${active ? "text-[#55555d]" : "text-[#9b9ba4]"}`}>
+                      {option.value === "9:16" ? <Smartphone className="h-3 w-3" /> : option.value === "16:9" ? <Monitor className="h-3 w-3" /> : <Square className="h-3 w-3" />}
+                    </span>
+                    {option.label}
+                    {option.pro && (
+                      <span className="rounded-[5px] bg-white px-1.5 py-0.5 text-[8px] font-extrabold text-[#1a1a1d]">Pro</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <p className="text-[11px] font-bold text-white">
-                AI Reframe
-              </p>
-              <span className="rounded-full border border-cyan-400/15 bg-cyan-400/10 px-1.5 py-0.5 text-[6px] font-black uppercase tracking-[0.14em] text-cyan-300">
-                Auto tracking
-              </span>
+          <div>
+            <div className="mb-2.5 flex items-center gap-1.5">
+              <p className="text-[10px] font-semibold text-[#a8a8b2]">Applicable auto layout</p>
+              <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-zinc-600 text-[8px] text-zinc-500">i</span>
             </div>
-            <p className="mt-1 text-[8px] leading-4 text-zinc-500">
-              AI follows the main speaker and creates a social-ready frame from your full video.
-            </p>
+            <div className="flex flex-wrap gap-2">
+              {autoLayouts.map((item) => {
+                const active = config.autoLayout === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => selectLayout(item.value)}
+                    className={`inline-flex h-8 items-center gap-1.5 rounded-[6px] border px-3 text-[10px] font-semibold transition ${
+                      active
+                        ? "border-white/10 bg-white text-[#17171a]"
+                        : "border-transparent bg-[#303035] text-white hover:bg-[#3a3a40]"
+                    } disabled:opacity-40`}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-2.5 text-[10px] font-semibold text-[#a8a8b2]">Fit layout crop aspect ratio</p>
+            <div className="flex flex-wrap gap-2">
+              {cropRatios.map((item) => {
+                const active = config.cropRatio === item.value;
+                return (
+                  <button
+                    key={item.value}
+                    type="button"
+                    disabled={disabled || config.autoLayout !== "fit"}
+                    onClick={() => onChange({ ...config, cropRatio: item.value })}
+                    className={`h-8 rounded-[6px] border px-3 text-[10px] font-semibold transition ${
+                      active
+                        ? "border-white/10 bg-white text-[#17171a]"
+                        : "border-transparent bg-[#303035] text-white hover:bg-[#3a3a40]"
+                    } disabled:cursor-not-allowed disabled:opacity-35`}
+                  >
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
+            {config.autoLayout !== "fit" && (
+              <p className="mt-2 text-[8px] text-zinc-600">Select Fit to customize the crop ratio.</p>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 border-t border-white/[0.06] pt-4">
+            <div>
+              <p className="mb-2 text-[9px] font-semibold text-[#8f8f98]">Framing</p>
+              <div className="flex flex-wrap gap-1.5">
+                {(["auto", "speaker", "center"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange({ ...config, mode: value })}
+                    className={`rounded-[6px] px-2.5 py-1.5 text-[8px] font-semibold capitalize ${config.mode === value ? "bg-cyan-400/15 text-cyan-300" : "bg-white/[0.04] text-zinc-500 hover:text-zinc-300"} disabled:opacity-35`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-[9px] font-semibold text-[#8f8f98]">Tracking</p>
+              <div className="flex gap-1.5">
+                {(["smooth", "fast"] as const).map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => onChange({ ...config, tracking: value })}
+                    className={`rounded-[6px] px-2.5 py-1.5 text-[8px] font-semibold capitalize ${config.tracking === value ? "bg-violet-400/15 text-violet-300" : "bg-white/[0.04] text-zinc-500 hover:text-zinc-300"} disabled:opacity-35`}
+                  >
+                    {value}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <button
             type="button"
             role="switch"
-            aria-checked={config.enabled}
+            aria-checked={config.addCaptions}
             disabled={disabled}
-            onClick={() => onChange({ ...config, enabled: !config.enabled })}
-            className={`relative h-6 w-11 shrink-0 rounded-full border transition-all disabled:opacity-40 ${
-              config.enabled
-                ? "border-cyan-400/30 bg-cyan-500"
-                : "border-white/[0.1] bg-white/[0.06]"
-            }`}
+            onClick={() => onChange({ ...config, addCaptions: !config.addCaptions })}
+            className="flex w-full items-center justify-between rounded-[8px] border border-white/[0.06] bg-black/10 px-3 py-2.5 text-left disabled:opacity-40"
           >
-            <span
-              className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-all ${
-                config.enabled ? "left-[22px]" : "left-1"
-              }`}
-            />
+            <span className="flex items-center gap-2">
+              <Captions className="h-3.5 w-3.5 text-zinc-500" />
+              <span className="text-[9px] font-semibold text-zinc-300">Add AI captions</span>
+            </span>
+            <span className={`relative h-5 w-9 rounded-full ${config.addCaptions ? "bg-white" : "bg-[#4b4b51]"}`}>
+              <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all ${config.addCaptions ? "left-[18px] bg-[#151519]" : "left-0.5 bg-[#222226]"}`} />
+            </span>
           </button>
         </div>
-      </div>
-
-      <div className="space-y-4 p-4 sm:p-5">
-        <div>
-          <div className="mb-2.5 flex items-center justify-between">
-            <p className="text-[9px] font-bold text-zinc-300">
-              Output format
-            </p>
-            <span className="text-[7px] text-zinc-700">
-              Social optimized
-            </span>
-          </div>
-
-          <div className="grid grid-cols-3 gap-2">
-            {aspectOptions.map((option) => {
-              const active = config.aspectRatio === option.value;
-
-              return (
-                <button
-                  key={option.value}
-                  type="button"
-                  disabled={disabled || !config.enabled}
-                  onClick={() => setAspectRatio(option.value)}
-                  className={`group rounded-[14px] border p-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
-                    active
-                      ? "border-cyan-400/30 bg-cyan-400/[0.09] shadow-[0_10px_30px_rgba(34,211,238,0.08)]"
-                      : "border-white/[0.07] bg-white/[0.025] hover:border-white/[0.14] hover:bg-white/[0.04]"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`text-[11px] font-black ${
-                        active ? "text-cyan-300" : "text-white"
-                      }`}
-                    >
-                      {option.label}
-                    </span>
-                    {active && (
-                      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-cyan-400">
-                        <Check className="h-2.5 w-2.5 text-black" strokeWidth={3} />
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-[7px] leading-3 text-zinc-600">
-                    {option.size}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-          <div>
-            <p className="mb-2 text-[9px] font-bold text-zinc-300">
-              Framing
-            </p>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(["auto", "speaker", "center"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={disabled || !config.enabled}
-                  onClick={() => onChange({ ...config, mode: value })}
-                  className={`rounded-xl border px-2 py-2 text-[7px] font-bold capitalize transition ${
-                    config.mode === value
-                      ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-300"
-                      : "border-white/[0.07] bg-white/[0.025] text-zinc-500 hover:text-zinc-300"
-                  } disabled:opacity-40`}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <p className="mb-2 text-[9px] font-bold text-zinc-300">
-              Tracking
-            </p>
-            <div className="grid grid-cols-2 gap-1.5">
-              {(["smooth", "fast"] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={disabled || !config.enabled}
-                  onClick={() => onChange({ ...config, tracking: value })}
-                  className={`rounded-xl border px-2 py-2 text-[7px] font-bold capitalize transition ${
-                    config.tracking === value
-                      ? "border-violet-400/25 bg-violet-400/10 text-violet-300"
-                      : "border-white/[0.07] bg-white/[0.025] text-zinc-500 hover:text-zinc-300"
-                  } disabled:opacity-40`}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          role="switch"
-          aria-checked={config.addCaptions}
-          disabled={disabled || !config.enabled}
-          onClick={() =>
-            onChange({
-              ...config,
-              addCaptions: !config.addCaptions,
-            })
-          }
-          className="flex w-full items-center justify-between rounded-[14px] border border-white/[0.07] bg-white/[0.025] px-3.5 py-3 text-left disabled:opacity-40"
-        >
-          <div className="flex items-center gap-2.5">
-            <Captions className="h-4 w-4 text-zinc-500" />
-            <div>
-              <p className="text-[9px] font-bold text-zinc-300">
-                Burn in AI captions
-              </p>
-              <p className="mt-0.5 text-[7px] text-zinc-600">
-                Use the caption style selected below
-              </p>
-            </div>
-          </div>
-
-          <span
-            className={`relative h-5 w-9 rounded-full border ${
-              config.addCaptions
-                ? "border-violet-400/30 bg-violet-600"
-                : "border-white/[0.1] bg-white/[0.06]"
-            }`}
-          >
-            <span
-              className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-white transition-all ${
-                config.addCaptions ? "left-[18px]" : "left-0.5"
-              }`}
-            />
-          </span>
-        </button>
       </div>
     </section>
   );
@@ -2679,13 +2676,13 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "px-6 pb-3.5 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? "px-6 pb-3.5 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : "Enhance speech"}</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : "Enhance voice clarity and remove filler words with one click."}</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : intent === "enhance-speech" ? "Enhance speech" : "AI Reframe"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : "Let AI automatically reframe your content to fit any social platform."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
@@ -2710,7 +2707,7 @@ export const NewProjectModal: React.FC<
             </button>
           </div>
 
-          {!(wizardStep === 2 && intent === "enhance-speech") && (
+          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode)) && (
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><ShieldCheck className="h-3 w-3 text-emerald-500" />Secure processing</span>
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><Sparkles className="h-3 w-3 text-violet-400" />AI-powered clipping</span>
@@ -2892,14 +2889,33 @@ export const NewProjectModal: React.FC<
                       </div>
                     ) : (
                       <>
-                        <div className="flex items-center gap-3">
-                          <button type="button" onClick={handleBackToSource} disabled={loading} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
-                          <div className="min-w-0 flex-1"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">Step 2 of 2</p><p className="mt-1 truncate text-lg font-semibold tracking-tight text-white">{isReframeMode ? "AI Reframe" : "AI clips"}</p></div>
+                        <div className="mb-1 flex items-center gap-2">
+                          <button type="button" onClick={handleBackToSource} disabled={loading} aria-label="Back to source" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                          <span className="text-[8px] font-medium text-zinc-600">Step 2 of 2</span>
                         </div>
-                        <div className="flex items-center gap-3 rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.035] px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">{sourceType === "file" ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Link2 className="h-4 w-4 text-emerald-400" />}</div><div className="min-w-0 flex-1"><p className="text-[7px] font-bold uppercase tracking-[0.16em] text-emerald-400">Source ready</p><p className="mt-1 truncate text-[9px] font-medium text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p></div><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /></div>
-                        {isReframeMode && <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />}
-                        {(!isReframeMode || reframeConfig.addCaptions) && <CaptionStylePicker style={captionStyle} onChange={setCaptionStyle} disabled={loading} lockEnabled={false} />}
-                        <section><div className="mb-2.5 flex items-end justify-between gap-3"><label htmlFor="project-title" className="text-xs font-bold text-white">Project title <span className="ml-1.5 font-normal text-zinc-700">Optional</span></label><span className={`text-[8px] ${projectTitle.length >= MAX_TITLE_LENGTH ? "text-amber-400" : "text-zinc-700"}`}>{projectTitle.length}/{MAX_TITLE_LENGTH}</span></div><input id="project-title" type="text" maxLength={MAX_TITLE_LENGTH} value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} disabled={loading} placeholder="Give your project a name" className="w-full rounded-[18px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-[10px] font-medium text-white outline-none placeholder:text-zinc-700" /></section>
+                        {isReframeMode ? (
+                          <div className="space-y-4">
+                            <div className="flex justify-center">
+                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                                {selectedFile ? (
+                                  <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                                ) : getYouTubeVideoId(youtubeUrl) ? (
+                                  <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950"><Video className="h-8 w-8 text-zinc-600" /></div>
+                                )}
+                                <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">720p</div>
+                                <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/55 to-transparent" />
+                              </div>
+                            </div>
+                            <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-3 rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.035] px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">{sourceType === "file" ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Link2 className="h-4 w-4 text-emerald-400" />}</div><div className="min-w-0 flex-1"><p className="text-[7px] font-bold uppercase tracking-[0.16em] text-emerald-400">Source ready</p><p className="mt-1 truncate text-[9px] font-medium text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p></div><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /></div>
+                            <section><div className="mb-2.5 flex items-end justify-between gap-3"><label htmlFor="project-title" className="text-xs font-bold text-white">Project title <span className="ml-1.5 font-normal text-zinc-700">Optional</span></label><span className={`text-[8px] ${projectTitle.length >= MAX_TITLE_LENGTH ? "text-amber-400" : "text-zinc-700"}`}>{projectTitle.length}/{MAX_TITLE_LENGTH}</span></div><input id="project-title" type="text" maxLength={MAX_TITLE_LENGTH} value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} disabled={loading} placeholder="Give your project a name" className="w-full rounded-[18px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-[10px] font-medium text-white outline-none placeholder:text-zinc-700" /></section>
+                          </>
+                        )}
                       </>
                     )}
                   </>
@@ -2987,12 +3003,12 @@ export const NewProjectModal: React.FC<
             FOOTER
         ================================================= */}
 
-        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
+        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
           <div className="flex items-center justify-between gap-3">
-            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? (
+            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : "Enhance speech in 1 click")}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isReframeMode ? "Reframing video..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isReframeMode ? "Reframe video in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
