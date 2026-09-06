@@ -1,5 +1,7 @@
 import express, { Request, Response, NextFunction } from "express";
 import dotenv from "dotenv";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,8 +29,35 @@ dotenv.config();
 
 const app = express();
 
+// Render / most hosts sit behind a reverse proxy — needed for correct
+// client IPs (rate limiting, logging) and secure cookies if added later.
+app.set("trust proxy", 1);
+
+// Baseline HTTP security headers. CSP is disabled here because the app
+// serves its own bundled SPA + inline video players; enable/tune it once
+// the frontend's script/style sources are audited.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+);
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
+
+// Global request-rate ceiling. Keeps a single client (or bot) from
+// hammering the API and burning Gemini/FFmpeg/Render worker capacity.
+// Expensive routes (upload, generate, enhance) get their own tighter
+// limiter further down; this is just the outer safety net.
+const globalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many requests. Please slow down and try again shortly." },
+});
+app.use("/api/", globalLimiter);
 
 // SEO: robots.txt
 app.get("/robots.txt", (_req, res) => {
@@ -3003,7 +3032,11 @@ const upload = multer({
     file,
     cb,
   ) => {
-    const allowed = [
+    // Both the mimetype AND extension are client-supplied and trivially
+    // spoofable (they come straight from the multipart headers/filename).
+    // Checking both narrows accidental mismatches, but this is still not
+    // a substitute for verifying actual file content below.
+    const allowedMimes = [
       "video/mp4",
       "video/quicktime",
       "video/webm",
@@ -3011,7 +3044,23 @@ const upload = multer({
       "video/mpeg",
     ];
 
-    if (!allowed.includes(file.mimetype)) {
+    const allowedExtensions = [
+      ".mp4",
+      ".mov",
+      ".webm",
+      ".avi",
+      ".mpeg",
+      ".mpg",
+    ];
+
+    const ext = path
+      .extname(file.originalname || "")
+      .toLowerCase();
+
+    if (
+      !allowedMimes.includes(file.mimetype) ||
+      !allowedExtensions.includes(ext)
+    ) {
       return cb(
         new Error(
           "Only MP4, MOV, WEBM, AVI and MPEG videos are supported.",
@@ -3022,6 +3071,27 @@ const upload = multer({
     cb(null, true);
   },
 });
+
+// Belt-and-suspenders: after multer saves the upload, confirm the file's
+// actual bytes are a video ffprobe can read before it ever reaches Gemini
+// or the ffmpeg pipeline. This is what actually stops a renamed/relabeled
+// non-video (or corrupt) file from being processed, since mimetype and
+// extension checks above can both be spoofed by the client.
+function verifyUploadedFileIsVideo(
+  filePath: string,
+): Promise<boolean> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (error, data) => {
+      if (error) {
+        return resolve(false);
+      }
+      const hasVideoStream = Boolean(
+        data?.streams?.some((s) => s.codec_type === "video"),
+      );
+      resolve(hasVideoStream);
+    });
+  });
+}
 
 /* =========================================================
    HELPERS
@@ -5281,10 +5351,13 @@ function createAIReframedVideo(
   return new Promise(async (resolve, reject) => {
     let assFilePath = "";
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    let command: ReturnType<typeof ffmpeg> | undefined;
 
     const finish = (error?: Error) => {
       if (settled) return;
       settled = true;
+      if (timer) clearTimeout(timer);
       if (assFilePath) {
         try { fs.unlinkSync(assFilePath); } catch {}
       }
@@ -5319,7 +5392,7 @@ function createAIReframedVideo(
         `AI Reframe: source=${sourceWidth}x${sourceHeight}, crop=${cropWidth}x${cropHeight}, output=${config.outputWidth}x${config.outputHeight}, points=${sanitizeReframePoints(points, duration).length}, mode=${config.mode}, tracking=${config.tracking}`,
       );
 
-      const command = ffmpeg(absoluteInputPath)
+      command = ffmpeg(absoluteInputPath)
         .outputOptions([
           "-y",
           "-map", "0:v:0",
@@ -5354,6 +5427,16 @@ function createAIReframedVideo(
           console.error("AI Reframe FFmpeg failed:", error.message);
           finish(error);
         });
+
+      // Hard timeout: a stalled/corrupt input must not occupy a Render
+      // worker forever. Mirrors the same safety net already used for
+      // Whisper extraction and speech enhancement elsewhere in this file.
+      timer = setTimeout(() => {
+        console.error(`AI Reframe timed out after ${FFMPEG_TIMEOUT_MS}ms, killing FFmpeg.`);
+        try { command?.kill("SIGKILL"); } catch {}
+        finish(new Error("AI Reframe timed out."));
+      }, FFMPEG_TIMEOUT_MS);
+      timer.unref?.();
 
       command.save(absoluteOutputPath);
     } catch (error) {
@@ -7728,6 +7811,19 @@ app.post(
       tempPath =
         req.file.path;
 
+      const isActuallyVideo =
+        await verifyUploadedFileIsVideo(tempPath);
+
+      if (!isActuallyVideo) {
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {}
+        return res.status(400).json({
+          error:
+            "The uploaded file isn't a readable video. Please check the file and try again.",
+        });
+      }
+
       const projectName =
         typeof req.body
           .name ===
@@ -8214,6 +8310,16 @@ app.post(
       }
 
       tempPath = req.file.path;
+
+      const isActuallyVideo = await verifyUploadedFileIsVideo(tempPath);
+      if (!isActuallyVideo) {
+        try {
+          fs.unlinkSync(tempPath);
+        } catch {}
+        return res.status(400).json({
+          error: "Worker upload isn't a readable video file.",
+        });
+      }
 
       const { data: project, error: projectError } =
         await supabase
@@ -9618,25 +9724,6 @@ app.get("/sitemap.xml", (_req, res) => {
   res.status(200);
   res.set("Content-Type", "application/xml; charset=utf-8");
   res.send(sitemap);
-});
-
-
-/* =========================================================
-   ROBOTS.TXT
-========================================================= */
-
-app.get("/robots.txt", (_req, res) => {
-  console.log("✅ robots.txt requested");
-
-  const robots = `User-agent: *
-Allow: /
-
-Sitemap: https://lumo-clip.com/sitemap.xml
-`;
-
-  res.status(200);
-  res.set("Content-Type", "text/plain; charset=utf-8");
-  res.send(robots);
 });
 
 
