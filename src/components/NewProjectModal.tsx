@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  Cloud,
   FileCheck2,
   Film,
   Link2,
@@ -426,6 +427,47 @@ const isValidYouTubeUrl = (value: string): boolean => {
     return false;
   } catch {
     return false;
+  }
+};
+
+// Pulls the video id out of any supported YouTube URL shape so we can show
+// the public thumbnail (img.youtube.com) as a preview — no API call needed.
+const extractYouTubeId = (value: string): string | null => {
+  try {
+    const cleaned = cleanUrl(value);
+
+    if (!cleaned) return null;
+
+    const url = new URL(cleaned);
+
+    const hostname = url.hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+
+    if (hostname === "youtu.be") {
+      return url.pathname.slice(1) || null;
+    }
+
+    if (
+      hostname === "youtube.com" ||
+      hostname === "m.youtube.com"
+    ) {
+      if (url.pathname === "/watch") {
+        return url.searchParams.get("v");
+      }
+
+      if (url.pathname.startsWith("/shorts/")) {
+        return url.pathname.replace("/shorts/", "") || null;
+      }
+
+      if (url.pathname.startsWith("/live/")) {
+        return url.pathname.replace("/live/", "") || null;
+      }
+    }
+
+    return null;
+  } catch {
+    return null;
   }
 };
 
@@ -1765,6 +1807,245 @@ const EnhanceSpeechSettings: React.FC<{
 };
 
 /* =========================================================
+   ENHANCE SPEECH · SOURCE PICKER (Opus-style step 1)
+   Single "drop a link" field + Upload / Google Drive actions,
+   replacing the generic 3-card source grid for this intent only.
+========================================================= */
+
+const EnhanceSpeechSourcePicker: React.FC<{
+  youtubeUrl: string;
+  onYoutubeUrlChange: (value: string) => void;
+  youtubeValid: boolean;
+  isFocused: boolean;
+  onFocus: () => void;
+  onBlur: () => void;
+  onUrlKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  sourceType: SourceType;
+  selectedFile: File | null;
+  onBrowseFile: () => void;
+  onRemoveFile: () => void;
+  onDragOver: (event: React.DragEvent) => void;
+  onDragLeave: (event: React.DragEvent) => void;
+  onDrop: (event: React.DragEvent) => void;
+  dragActive: boolean;
+  disabled: boolean;
+}> = ({
+  youtubeUrl,
+  onYoutubeUrlChange,
+  youtubeValid,
+  isFocused,
+  onFocus,
+  onBlur,
+  onUrlKeyDown,
+  sourceType,
+  selectedFile,
+  onBrowseFile,
+  onRemoveFile,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  dragActive,
+  disabled,
+}) => {
+  const hasFile = sourceType === "file" && Boolean(selectedFile);
+
+  return (
+    <section
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      className={`overflow-hidden rounded-[24px] border transition-all duration-300 ${
+        dragActive
+          ? "border-violet-400/50 bg-violet-500/[0.06] shadow-[0_0_60px_rgba(139,92,246,0.12)]"
+          : "border-white/[0.08] bg-white/[0.02]"
+      }`}
+    >
+      {/* Decorative preview — purely illustrative, matches the Opus card */}
+      <div className="flex items-center justify-center border-b border-white/[0.06] bg-gradient-to-br from-violet-500/[0.06] via-white/[0.015] to-fuchsia-500/[0.04] px-6 py-8">
+        <div className="flex items-center gap-4">
+          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/[0.08] bg-black/30 shadow-[0_10px_30px_rgba(0,0,0,0.35)]">
+            <WandSparkles className="h-6 w-6 text-violet-300" />
+          </div>
+
+          <div className="flex h-11 items-center gap-[3px] rounded-full border border-white/[0.08] bg-black/30 px-4">
+            {[6, 14, 22, 12, 18, 9, 16, 24, 11, 7].map((h, i) => (
+              <span
+                key={i}
+                className="w-[3px] rounded-full bg-violet-300/70"
+                style={{ height: `${h}px` }}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="space-y-3 p-4 sm:p-5">
+        {hasFile ? (
+          <div className="relative overflow-hidden rounded-[18px] border border-emerald-500/20 bg-gradient-to-r from-emerald-500/[0.06] via-white/[0.015] to-transparent p-4">
+            <div className="relative flex items-center gap-3.5">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] border border-emerald-500/10 bg-emerald-500/10">
+                <FileCheck2 className="h-4.5 w-4.5 text-emerald-400" />
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[11px] font-bold text-white">
+                  {selectedFile?.name}
+                </p>
+
+                <p className="mt-0.5 text-[8px] text-zinc-600">
+                  {selectedFile
+                    ? formatFileSize(selectedFile.size)
+                    : ""}{" "}
+                  • ready to process
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={onRemoveFile}
+                disabled={disabled}
+                aria-label="Remove selected file"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl text-zinc-600 transition hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div
+            className={`relative rounded-[18px] border bg-white/[0.025] transition-all duration-300 ${
+              isFocused
+                ? "border-violet-500/45 bg-violet-500/[0.035] shadow-[0_0_40px_rgba(124,58,237,0.07)]"
+                : youtubeValid
+                  ? "border-emerald-500/20"
+                  : "border-white/[0.08]"
+            }`}
+          >
+            <Link2
+              className={`absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 transition ${
+                isFocused ? "text-violet-400" : "text-zinc-600"
+              }`}
+            />
+
+            <input
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              value={youtubeUrl}
+              onFocus={onFocus}
+              onBlur={onBlur}
+              onChange={(event) => onYoutubeUrlChange(event.target.value)}
+              onKeyDown={onUrlKeyDown}
+              disabled={disabled}
+              placeholder="Drop a YouTube link"
+              className="relative z-10 w-full rounded-[18px] bg-transparent py-4 pl-11 pr-11 text-[11px] font-medium text-white outline-none placeholder:text-zinc-700 disabled:cursor-not-allowed"
+            />
+
+            {youtubeValid && (
+              <CheckCircle2 className="absolute right-4 top-1/2 z-20 h-4 w-4 -translate-y-1/2 text-emerald-400" />
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={onBrowseFile}
+            disabled={disabled}
+            className="flex items-center justify-center gap-2 rounded-[14px] border border-white/[0.08] bg-white/[0.025] px-3 py-3 text-[9px] font-bold text-zinc-300 transition hover:border-violet-400/25 hover:bg-violet-500/[0.05] hover:text-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Upload
+          </button>
+
+          <button
+            type="button"
+            disabled
+            title="Google Drive import is coming soon"
+            className="flex items-center justify-center gap-2 rounded-[14px] border border-white/[0.06] bg-white/[0.015] px-3 py-3 text-[9px] font-bold text-zinc-600 disabled:cursor-not-allowed"
+          >
+            <Cloud className="h-3.5 w-3.5" />
+            Google Drive
+            <span className="rounded-full border border-white/[0.08] bg-white/[0.04] px-1.5 py-0.5 text-[6px] font-black uppercase tracking-[0.12em] text-zinc-500">
+              Soon
+            </span>
+          </button>
+        </div>
+
+        <p className="text-center text-[8px] text-zinc-700">
+          You can upload videos up to {formatFileSize(MAX_FILE_SIZE)}.
+        </p>
+      </div>
+    </section>
+  );
+};
+
+/* =========================================================
+   ENHANCE SPEECH · VIDEO PREVIEW (Opus-style step 2 header)
+========================================================= */
+
+const EnhanceSpeechPreview: React.FC<{
+  sourceType: SourceType;
+  youtubeUrl: string;
+  fileName: string | null;
+  thumbnailUrl: string | null;
+  onChangeSource: () => void;
+  disabled: boolean;
+}> = ({
+  sourceType,
+  youtubeUrl,
+  fileName,
+  thumbnailUrl,
+  onChangeSource,
+  disabled,
+}) => {
+  return (
+    <section className="group relative overflow-hidden rounded-[22px] border border-white/[0.08] bg-black">
+      <div className="relative mx-auto aspect-video w-full max-w-[420px] overflow-hidden bg-[#101013]">
+        {thumbnailUrl ? (
+          <img
+            src={thumbnailUrl}
+            alt="Selected video preview"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center">
+            {sourceType === "podcast" ? (
+              <Mic className="h-8 w-8 text-zinc-700" />
+            ) : (
+              <Film className="h-8 w-8 text-zinc-700" />
+            )}
+          </div>
+        )}
+
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/20" />
+
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-black/50 backdrop-blur">
+            <Play className="h-4.5 w-4.5 translate-x-0.5 text-white" fill="white" />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onChangeSource}
+          disabled={disabled}
+          className="absolute right-2.5 top-2.5 rounded-lg border border-white/[0.12] bg-black/50 px-2.5 py-1.5 text-[8px] font-bold text-white backdrop-blur transition hover:border-violet-300/30 hover:bg-black/70 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Change
+        </button>
+      </div>
+
+      <div className="border-t border-white/[0.06] bg-[#0a0a0d] px-4 py-2.5">
+        <p className="truncate text-center text-[9px] font-medium text-zinc-500">
+          {sourceType === "file" ? fileName : youtubeUrl}
+        </p>
+      </div>
+    </section>
+  );
+};
+
+/* =========================================================
    COMPONENT
 ========================================================= */
 
@@ -1840,6 +2121,70 @@ export const NewProjectModal: React.FC<
   // Every other intent keeps the original single-screen layout untouched.
   const [enhanceStep, setEnhanceStep] =
     useState<"source" | "settings">("source");
+
+  // Client-side thumbnail for the step-2 preview: a public YouTube
+  // thumbnail for URL sources, or a frame grabbed from the uploaded
+  // file itself (no upload/network round-trip needed for either).
+  const youtubeThumbUrl = useMemo(() => {
+    const id = extractYouTubeId(youtubeUrl);
+    return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  }, [youtubeUrl]);
+
+  const [fileThumbDataUrl, setFileThumbDataUrl] =
+    useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedFile) {
+      setFileThumbDataUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    const objectUrl = URL.createObjectURL(selectedFile);
+    const videoEl = document.createElement("video");
+
+    videoEl.muted = true;
+    videoEl.playsInline = true;
+    videoEl.src = objectUrl;
+
+    const capture = () => {
+      if (cancelled) return;
+
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = videoEl.videoWidth || 640;
+        canvas.height = videoEl.videoHeight || 360;
+
+        const ctx = canvas.getContext("2d");
+
+        if (ctx) {
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+          setFileThumbDataUrl(canvas.toDataURL("image/jpeg", 0.75));
+        }
+      } catch {
+        // Some codecs/browsers block canvas reads — fail silently and
+        // the preview just falls back to the generic film icon.
+      }
+    };
+
+    const onLoadedData = () => {
+      try {
+        videoEl.currentTime = Math.min(1, (videoEl.duration || 2) / 4);
+      } catch {
+        capture();
+      }
+    };
+
+    videoEl.addEventListener("loadeddata", onLoadedData);
+    videoEl.addEventListener("seeked", capture);
+
+    return () => {
+      cancelled = true;
+      videoEl.removeEventListener("loadeddata", onLoadedData);
+      videoEl.removeEventListener("seeked", capture);
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [selectedFile]);
 
   const isFullVideoMode =
     processingMode === "full_video_caption";
@@ -2858,120 +3203,129 @@ export const NewProjectModal: React.FC<
             ================================================= */}
 
             {showSourceStep && (
-              <section>
-                <div className="mb-3.5 flex items-end justify-between">
-                  <div>
-                    <p className="text-xs font-bold tracking-tight text-white">
-                      Choose your source
-                    </p>
+              isEnhanceFlow ? (
+                <EnhanceSpeechSourcePicker
+                  youtubeUrl={youtubeUrl}
+                  onYoutubeUrlChange={(value) => {
+                    setSourceType("youtube");
+                    setYoutubeUrl(value);
 
-                    <p className="mt-1 text-[9px] text-zinc-600">
-                      Start with a YouTube video, podcast,
-                      or your own footage.
-                    </p>
+                    if (error) setError("");
+                  }}
+                  youtubeValid={youtubeValid}
+                  isFocused={isFocused}
+                  onFocus={() => setIsFocused(true)}
+                  onBlur={() => setIsFocused(false)}
+                  onUrlKeyDown={handleUrlKeyDown}
+                  sourceType={sourceType}
+                  selectedFile={selectedFile}
+                  onBrowseFile={() => {
+                    setSourceType("file");
+                    fileInputRef.current?.click();
+                  }}
+                  onRemoveFile={removeSelectedFile}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  dragActive={dragActive}
+                  disabled={loading}
+                />
+              ) : (
+                <section>
+                  <div className="mb-3.5 flex items-end justify-between">
+                    <div>
+                      <p className="text-xs font-bold tracking-tight text-white">
+                        Choose your source
+                      </p>
+
+                      <p className="mt-1 text-[9px] text-zinc-600">
+                        Start with a YouTube video, podcast,
+                        or your own footage.
+                      </p>
+                    </div>
+
+                    <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
+                      01 / SOURCE
+                    </span>
                   </div>
 
-                  <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
-                    {isEnhanceFlow ? "01 / 02 · SOURCE" : "01 / SOURCE"}
-                  </span>
-                </div>
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                    <SourceCard
+                      active={
+                        sourceType === "youtube"
+                      }
+                      disabled={loading}
+                      icon={
+                        <Youtube className="h-4.5 w-4.5" />
+                      }
+                      title="YouTube"
+                      description="Video, Shorts or Live"
+                      accent="rgba(239,68,68,0.25)"
+                      onClick={() =>
+                        handleSourceChange(
+                          "youtube",
+                        )
+                      }
+                    />
 
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                  <SourceCard
-                    active={
-                      sourceType === "youtube"
-                    }
-                    disabled={loading}
-                    icon={
-                      <Youtube className="h-4.5 w-4.5" />
-                    }
-                    title="YouTube"
-                    description="Video, Shorts or Live"
-                    accent="rgba(239,68,68,0.25)"
-                    onClick={() =>
-                      handleSourceChange(
-                        "youtube",
-                      )
-                    }
-                  />
+                    <SourceCard
+                      active={
+                        sourceType === "podcast"
+                      }
+                      disabled={loading}
+                      icon={
+                        <Mic className="h-4.5 w-4.5" />
+                      }
+                      title="Podcast"
+                      description="Episode or audio URL"
+                      badge="BETA"
+                      accent="rgba(168,85,247,0.25)"
+                      onClick={() =>
+                        handleSourceChange(
+                          "podcast",
+                        )
+                      }
+                    />
 
-                  <SourceCard
-                    active={
-                      sourceType === "podcast"
-                    }
-                    disabled={loading}
-                    icon={
-                      <Mic className="h-4.5 w-4.5" />
-                    }
-                    title="Podcast"
-                    description="Episode or audio URL"
-                    badge="BETA"
-                    accent="rgba(168,85,247,0.25)"
-                    onClick={() =>
-                      handleSourceChange(
-                        "podcast",
-                      )
-                    }
-                  />
-
-                  <SourceCard
-                    active={
-                      sourceType === "file"
-                    }
-                    disabled={loading}
-                    icon={
-                      <Upload className="h-4.5 w-4.5" />
-                    }
-                    title="Upload"
-                    description="MP4, MOV, WEBM & more"
-                    accent="rgba(59,130,246,0.25)"
-                    onClick={() =>
-                      handleSourceChange(
-                        "file",
-                      )
-                    }
-                  />
-                </div>
-              </section>
+                    <SourceCard
+                      active={
+                        sourceType === "file"
+                      }
+                      disabled={loading}
+                      icon={
+                        <Upload className="h-4.5 w-4.5" />
+                      }
+                      title="Upload"
+                      description="MP4, MOV, WEBM & more"
+                      accent="rgba(59,130,246,0.25)"
+                      onClick={() =>
+                        handleSourceChange(
+                          "file",
+                        )
+                      }
+                    />
+                  </div>
+                </section>
+              )
             )}
 
             {/* =================================================
-                ENHANCE SPEECH · CHOSEN SOURCE SUMMARY (step 2)
+                ENHANCE SPEECH · VIDEO PREVIEW (step 2)
             ================================================= */}
 
             {showSettingsStep && (
-              <section className="flex items-center justify-between gap-3 rounded-[20px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/10 bg-emerald-500/10">
-                    {sourceType === "file" ? (
-                      <FileCheck2 className="h-4 w-4 text-emerald-400" />
-                    ) : (
-                      <Link2 className="h-4 w-4 text-emerald-400" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0">
-                    <p className="text-[7px] font-bold uppercase tracking-[0.18em] text-zinc-600">
-                      {sourceLabel}
-                    </p>
-
-                    <p className="mt-0.5 truncate text-[10px] font-medium text-zinc-300">
-                      {sourceType === "file"
-                        ? selectedFile?.name ?? "Selected video"
-                        : youtubeUrl}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setEnhanceStep("source")}
-                  disabled={loading}
-                  className="shrink-0 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2.5 py-1.5 text-[8px] font-bold text-zinc-400 transition hover:border-violet-300/20 hover:text-violet-200 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Change
-                </button>
-              </section>
+              <EnhanceSpeechPreview
+                sourceType={sourceType}
+                youtubeUrl={youtubeUrl}
+                fileName={selectedFile?.name ?? null}
+                thumbnailUrl={
+                  sourceType === "youtube"
+                    ? youtubeThumbUrl
+                    : fileThumbDataUrl
+                }
+                onChangeSource={() => setEnhanceStep("source")}
+                disabled={loading}
+              />
             )}
 
             {/* =================================================
@@ -3011,6 +3365,7 @@ export const NewProjectModal: React.FC<
             ================================================= */}
 
             {showSourceStep &&
+              !isEnhanceFlow &&
               (sourceType === "youtube" ||
               sourceType === "podcast") && (
               <section>
@@ -3168,7 +3523,7 @@ export const NewProjectModal: React.FC<
                 UPLOAD
             ================================================= */}
 
-            {showSourceStep && sourceType === "file" && (
+            {showSourceStep && !isEnhanceFlow && sourceType === "file" && (
               <section>
                 <div className="mb-3">
                   <div className="flex items-center justify-between">
