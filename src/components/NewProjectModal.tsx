@@ -2885,6 +2885,7 @@ export const NewProjectModal: React.FC<
                           style={captionStyle}
                           onChange={setCaptionStyle}
                           disabled={loading}
+                          sourceType={sourceType}
                           selectedFile={selectedFile}
                           youtubeUrl={youtubeUrl}
                         />
