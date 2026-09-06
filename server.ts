@@ -857,6 +857,8 @@ interface ProcessingConfig {
   mode: ProcessingMode;
   captionStyle: SubtitleStyle;
   reframe: ReframeConfig;
+  speechSettings: SpeechSettings;
+  clipSettings: ClipSettings;
 }
 
 interface ReframePoint {
@@ -868,12 +870,36 @@ interface ReframePoint {
 
 interface ReframeConfig {
   enabled: boolean;
-  aspectRatio: "9:16" | "1:1" | "4:5";
+  aspectRatio: "9:16" | "1:1" | "4:5" | "16:9";
   outputWidth: number;
   outputHeight: number;
   mode: "auto" | "speaker" | "center";
   tracking: "smooth" | "fast";
   addCaptions: boolean;
+  // autoLayout beyond "fill" (split/screenshare/gameplay/three/four) and
+  // cropRatio are accepted and persisted here, but createAIReframedVideo()
+  // only renders a single tracked crop box today — multi-pane composition
+  // isn't wired up yet. Capturing them now stops the client's selection
+  // from being silently dropped, ready for the renderer to catch up.
+  autoLayout: "fill" | "fit" | "split" | "screenshare" | "gameplay" | "three" | "four";
+  cropRatio: "original" | "4:3" | "1:1";
+}
+
+interface ClipSettings {
+  tab: "ai" | "dont_clip";
+  clipModel: "ClipBasic" | "ClipPro";
+  genre: "Auto" | "Podcast" | "Interview" | "Education" | "Comedy";
+  clipLength: "Auto (0m-3m)" | "Short (0m-1m)" | "Medium (1m-3m)" | "Long (3m-5m)";
+  autoHeadline: boolean;
+  specificMoments: string;
+  startPercent: number;
+  endPercent: number;
+}
+
+interface SpeechSettings {
+  enhancement: boolean;
+  removeFillerWords: boolean;
+  removePauses: boolean;
 }
 
 // The in-memory value makes the mode available to the worker during the
@@ -893,6 +919,8 @@ async function rememberProcessingConfig(
       processing_mode: config.mode,
       caption_style: config.captionStyle,
       reframe_config: config.reframe,
+      speech_settings: config.speechSettings,
+      clip_settings: config.clipSettings,
     })
     .eq("id", projectId);
 
@@ -932,7 +960,7 @@ async function getProcessingConfig(
   // compatibility with existing LumoClip databases.
   const { data: metadata, error: metadataError } = await supabase
     .from("projects")
-    .select("processing_mode, caption_style, reframe_config")
+    .select("processing_mode, caption_style, reframe_config, speech_settings, clip_settings")
     .eq("id", projectId)
     .maybeSingle();
 
@@ -944,6 +972,8 @@ async function getProcessingConfig(
       mode: "speech_only",
       captionStyle: normalizeCaptionStyle(metadata?.caption_style),
       reframe: normalizeReframeConfig(metadata?.reframe_config),
+      speechSettings: normalizeSpeechSettings(metadata?.speech_settings),
+      clipSettings: normalizeClipSettings(metadata?.clip_settings),
     };
   }
 
@@ -959,6 +989,8 @@ async function getProcessingConfig(
       mode: normalizeProcessingMode(metadata.processing_mode),
       captionStyle: normalizeCaptionStyle(metadata.caption_style),
       reframe: normalizeReframeConfig(metadata.reframe_config),
+      speechSettings: normalizeSpeechSettings(metadata?.speech_settings),
+      clipSettings: normalizeClipSettings(metadata?.clip_settings),
     };
   }
 
@@ -966,6 +998,8 @@ async function getProcessingConfig(
     mode: "clips",
     captionStyle: normalizeCaptionStyle(undefined),
     reframe: normalizeReframeConfig(undefined),
+    speechSettings: normalizeSpeechSettings(undefined),
+    clipSettings: normalizeClipSettings(undefined),
   };
 }
 /* =========================================================
@@ -1205,7 +1239,7 @@ function normalizeReframeConfig(value: unknown): ReframeConfig {
     try { raw = JSON.parse(value); } catch { raw = {}; }
   }
 
-  const aspectRatio = ["9:16", "1:1", "4:5"].includes(String(raw?.aspectRatio))
+  const aspectRatio = ["9:16", "1:1", "4:5", "16:9"].includes(String(raw?.aspectRatio))
     ? (String(raw.aspectRatio) as ReframeConfig["aspectRatio"])
     : "9:16";
 
@@ -1213,6 +1247,7 @@ function normalizeReframeConfig(value: unknown): ReframeConfig {
     "9:16": [720, 1280],
     "1:1": [720, 720],
     "4:5": [720, 900],
+    "16:9": [1280, 720],
   };
 
   const [defaultWidth, defaultHeight] = defaults[aspectRatio];
@@ -1233,6 +1268,22 @@ function normalizeReframeConfig(value: unknown): ReframeConfig {
     ? (String(raw.tracking) as ReframeConfig["tracking"])
     : "smooth";
 
+  const autoLayout = [
+    "fill",
+    "fit",
+    "split",
+    "screenshare",
+    "gameplay",
+    "three",
+    "four",
+  ].includes(String(raw?.autoLayout))
+    ? (String(raw.autoLayout) as ReframeConfig["autoLayout"])
+    : "fill";
+
+  const cropRatio = ["original", "4:3", "1:1"].includes(String(raw?.cropRatio))
+    ? (String(raw.cropRatio) as ReframeConfig["cropRatio"])
+    : "original";
+
   return {
     enabled: raw?.enabled === false ? false : true,
     aspectRatio,
@@ -1241,6 +1292,87 @@ function normalizeReframeConfig(value: unknown): ReframeConfig {
     mode,
     tracking,
     addCaptions: raw?.addCaptions === true,
+    autoLayout,
+    cropRatio,
+  };
+}
+
+function normalizeClipSettings(value: unknown): ClipSettings {
+  let raw: any = value;
+
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      raw = {};
+    }
+  }
+
+  raw = raw || {};
+
+  const genre = [
+    "Auto",
+    "Podcast",
+    "Interview",
+    "Education",
+    "Comedy",
+  ].includes(raw?.genre)
+    ? (raw.genre as ClipSettings["genre"])
+    : "Auto";
+
+  const clipLength = [
+    "Auto (0m-3m)",
+    "Short (0m-1m)",
+    "Medium (1m-3m)",
+    "Long (3m-5m)",
+  ].includes(raw?.clipLength)
+    ? (raw.clipLength as ClipSettings["clipLength"])
+    : "Auto (0m-3m)";
+
+  const startPercentRaw = Number(raw?.startPercent);
+  const startPercent = Number.isFinite(startPercentRaw)
+    ? Math.min(100, Math.max(0, startPercentRaw))
+    : 0;
+
+  const endPercentRaw = Number(raw?.endPercent);
+  let endPercent = Number.isFinite(endPercentRaw)
+    ? Math.min(100, Math.max(0, endPercentRaw))
+    : 100;
+
+  if (endPercent <= startPercent) endPercent = 100;
+
+  return {
+    tab: raw?.tab === "dont_clip" ? "dont_clip" : "ai",
+    clipModel: raw?.clipModel === "ClipBasic" ? "ClipBasic" : "ClipPro",
+    genre,
+    clipLength,
+    autoHeadline: raw?.autoHeadline !== false,
+    specificMoments:
+      typeof raw?.specificMoments === "string"
+        ? raw.specificMoments.slice(0, 500)
+        : "",
+    startPercent,
+    endPercent,
+  };
+}
+
+function normalizeSpeechSettings(value: unknown): SpeechSettings {
+  let raw: any = value;
+
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      raw = {};
+    }
+  }
+
+  raw = raw || {};
+
+  return {
+    enhancement: raw?.enhancement !== false,
+    removeFillerWords: raw?.removeFillerWords === true,
+    removePauses: raw?.removePauses === true,
   };
 }
 
@@ -1248,6 +1380,8 @@ function getProcessingConfigFromRequest(
   styleValue: unknown,
   modeValue?: unknown,
   reframeValue?: unknown,
+  speechSettingsValue?: unknown,
+  clipSettingsValue?: unknown,
 ): ProcessingConfig {
   let rawStyle: any = styleValue;
 
@@ -1263,6 +1397,8 @@ function getProcessingConfigFromRequest(
     mode: normalizeProcessingMode(modeValue || rawStyle?.mode),
     captionStyle: normalizeCaptionStyle(rawStyle),
     reframe: normalizeReframeConfig(reframeValue || rawStyle?.reframe),
+    speechSettings: normalizeSpeechSettings(speechSettingsValue),
+    clipSettings: normalizeClipSettings(clipSettingsValue),
   };
 }
 
@@ -4512,6 +4648,7 @@ async function analyzeLocalVideo(
   duration: number,
   processingMode: ProcessingMode = "clips",
   reframeNeedsTranscript = false,
+  clipSettings: ClipSettings = normalizeClipSettings(undefined),
 ): Promise<GeminiAnalysis> {
   let lastGeminiError: unknown;
 
@@ -4565,6 +4702,36 @@ async function analyzeLocalVideo(
     console.log("Gemini file ACTIVE — starting analysis.");
     return file;
   }
+
+  // Translate the client's clip settings into concrete prompt guidance.
+  // These only affect the "clips" branch below — reframeOnly and the
+  // full_video_caption/reframe branches don't generate clips at all.
+  const clipGenreHint =
+    clipSettings.genre === "Auto"
+      ? ""
+      : `\nCONTENT GENRE: This is a "${clipSettings.genre}" video — weigh what counts as a strong moment accordingly (e.g. Podcast/Interview favor standalone spoken insights and back-and-forth exchanges; Education favors clear, self-contained explanations; Comedy favors punchlines and reactions).`;
+
+  const clipLengthRanges: Record<ClipSettings["clipLength"], string> = {
+    "Auto (0m-3m)": "20–60 seconds (use your judgment within 0–3 minutes)",
+    "Short (0m-1m)": "15–45 seconds, never exceeding 60 seconds",
+    "Medium (1m-3m)": "60–180 seconds",
+    "Long (3m-5m)": "180–300 seconds",
+  };
+
+  const clipLengthHint = clipLengthRanges[clipSettings.clipLength];
+
+  const focusWindowHint =
+    clipSettings.startPercent > 0 || clipSettings.endPercent < 100
+      ? `\nFOCUS WINDOW: Only select clips with start/end timestamps between ${((clipSettings.startPercent / 100) * duration).toFixed(2)}s and ${((clipSettings.endPercent / 100) * duration).toFixed(2)}s of the video. Ignore moments outside that window entirely.`
+      : "";
+
+  const specificMomentsHint = clipSettings.specificMoments.trim()
+    ? `\nREQUESTED MOMENTS: The user specifically asked for clips about: "${clipSettings.specificMoments.trim()}". Prioritize matching moments above other criteria when they exist.`
+    : "";
+
+  const autoHeadlineHint = clipSettings.autoHeadline
+    ? ""
+    : `\nTITLES: Keep each clip's "title" short and literal (e.g. a timestamp-style label), not a punchy AI-generated headline.`;
 
   try {
     const prompt = reframeOnly
@@ -4657,9 +4824,10 @@ TikTok, Instagram Reels, YouTube Shorts, Facebook Reels.
 Prioritize strong hooks, surprising statements, useful insights, emotional or funny moments, stories, memorable statements, standalone moments, and high-retention moments.
 
 Avoid greetings, long introductions, ads, dead air, repeated information, and contextless fragments.
+${clipGenreHint}${focusWindowHint}${specificMomentsHint}${autoHeadlineHint}
 
 CLIP LENGTH:
-Normally 20–60 seconds.
+Target ${clipLengthHint}.
 
 TIMESTAMP RULES:
 - start/end MUST be JSON numbers.
@@ -5352,7 +5520,14 @@ function getReframeCropSize(
   sourceHeight: number,
   aspectRatio: ReframeConfig["aspectRatio"],
 ) {
-  const ratio = aspectRatio === "9:16" ? 9 / 16 : aspectRatio === "4:5" ? 4 / 5 : 1;
+  const ratio =
+    aspectRatio === "9:16"
+      ? 9 / 16
+      : aspectRatio === "4:5"
+        ? 4 / 5
+        : aspectRatio === "16:9"
+          ? 16 / 9
+          : 1;
   let cropHeight = sourceHeight;
   let cropWidth = Math.round(cropHeight * ratio);
 
@@ -5835,10 +6010,20 @@ async function processVideo(
   processingMode: ProcessingMode = "clips",
   captionStyle: SubtitleStyle = DEFAULT_SUBTITLE_STYLE,
   reframeConfig: ReframeConfig = normalizeReframeConfig(undefined),
+  // speechSettings isn't consumed here — speech_only mode only prepares the
+  // source; actual enhancement happens later via the separate
+  // /api/projects/:projectId/enhance-speech endpoint, which takes its own
+  // intensity/removeHum options. It's accepted here so callers can pass the
+  // full ProcessingConfig without it being silently dropped, and so it's
+  // available if a future auto-enhance step needs it.
+  speechSettings: SpeechSettings = normalizeSpeechSettings(undefined),
+  clipSettings: ClipSettings = normalizeClipSettings(undefined),
 ) {
   const mode = normalizeProcessingMode(processingMode);
   const safeCaptionStyle = normalizeCaptionStyle(captionStyle);
   const normalizedReframeConfig = normalizeReframeConfig(reframeConfig);
+  const safeClipSettings = normalizeClipSettings(clipSettings);
+  void speechSettings;
   // AI Reframe output must NEVER burn captions into the video. Captions are
   // handled by the dedicated caption feature, not by the Reframe renderer.
   // This also protects against stale/incorrect frontend values.
@@ -5978,6 +6163,7 @@ async function processVideo(
         duration,
         mode,
         false,
+        safeClipSettings,
       );
 
     // Enforce the server-side clip limit even if Gemini returns more.
@@ -8005,6 +8191,8 @@ app.post(
         req.body?.captionStyle,
         req.body?.mode,
         req.body?.reframe,
+        req.body?.speechSettings,
+        req.body?.clipSettings,
       );
 
       const {
@@ -8103,6 +8291,8 @@ app.post(
         requestedConfig.mode,
         requestedConfig.captionStyle,
         requestedConfig.reframe,
+        requestedConfig.speechSettings,
+        requestedConfig.clipSettings,
       ).catch(
         async (
           error,
@@ -8257,6 +8447,20 @@ app.post(
           ? req.body.sourceUrl.trim()
           : "";
 
+      // The client's "podcast" source option accepts any HTTP(S) URL, but
+      // there is no podcast downloader anywhere in this pipeline — only
+      // downloadYouTubeVideo() exists. Rather than let a valid podcast URL
+      // fall through to the YouTube-only check below and come back as a
+      // confusing "invalid YouTube URL", fail clearly and immediately.
+      // TODO: implement real podcast ingestion (feed/direct-audio download)
+      // before enabling this path end-to-end.
+      if (req.body?.sourceType === "podcast") {
+        return res.status(400).json({
+          error:
+            "Podcast URL import isn't supported yet. Please use a YouTube link or upload a file instead.",
+        });
+      }
+
       if (!sourceUrl || !isYouTubeUrl(sourceUrl)) {
         return res.status(400).json({
           error: "Please provide a valid YouTube URL.",
@@ -8272,6 +8476,8 @@ app.post(
         req.body?.captionStyle,
         req.body?.mode,
         req.body?.reframe,
+        req.body?.speechSettings,
+        req.body?.clipSettings,
       );
 
       const { profile, project, newCredits } =
@@ -8564,6 +8770,8 @@ app.post(
         effectiveProcessingConfig.mode,
         effectiveProcessingConfig.captionStyle,
         effectiveProcessingConfig.reframe,
+        effectiveProcessingConfig.speechSettings,
+        effectiveProcessingConfig.clipSettings,
       ).catch(async (error) => {
         console.error(`Worker-upload processing failed for project ${projectId}:`, error);
         await refundCredits(project.user_id, projectId);
