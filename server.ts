@@ -5326,22 +5326,41 @@ function buildReframeXExpression(
     x: Math.max(0, Math.min(maxX, point.centerX * sourceWidth - cropWidth / 2)),
   }));
 
-  const clamp = (value: number) => Math.max(0, Math.min(maxX, value));
   const smooth = tracking === "smooth";
-  let expression = clamp(values[values.length - 1].x).toFixed(2);
 
-  for (let i = values.length - 2; i >= 0; i--) {
+  // IMPORTANT: this used to build a deeply nested if(lt(t,...),...,if(...))
+  // chain — one nesting level per reframe point. FFmpeg's expression parser
+  // has a recursion-depth limit, so long videos with many tracking points
+  // (e.g. 70+ points on a 6-minute video) would parse-fail with a bare
+  // "Conversion failed!" and no useful error. Instead, build a FLAT sum of
+  // segments using between(t, lo, hi), which is 0 outside its range and 1
+  // inside it — since exactly one segment is "active" at any given t, the
+  // terms can simply be added together with no nesting at all, regardless
+  // of how many points there are.
+  const BIG = 1e6;
+  const terms: string[] = [];
+
+  // Before the first point: hold its value.
+  terms.push(
+    `between(t,-${BIG},${values[0].t.toFixed(3)})*${values[0].x.toFixed(2)}`,
+  );
+
+  for (let i = 0; i < values.length - 1; i++) {
     const a = values[i];
     const b = values[i + 1];
     const dt = Math.max(0.05, b.t - a.t);
     const slope = smooth ? (b.x - a.x) / dt : 0;
-    const segment = smooth
+    const valueExpr = smooth
       ? `(${a.x.toFixed(2)}+${slope.toFixed(5)}*(t-${a.t.toFixed(3)}))`
-      : a.x.toFixed(2);
-    expression = `if(lt(t,${b.t.toFixed(3)}),${segment},${expression})`;
+      : `${a.x.toFixed(2)}`;
+    terms.push(`between(t,${a.t.toFixed(3)},${b.t.toFixed(3)})*${valueExpr}`);
   }
 
-  return `min(${maxX.toFixed(2)},max(0,${expression}))`;
+  // After the last point: hold its value.
+  const last = values[values.length - 1];
+  terms.push(`between(t,${last.t.toFixed(3)},${BIG})*${last.x.toFixed(2)}`);
+
+  return `min(${maxX.toFixed(2)},max(0,${terms.join("+")}))`;
 }
 
 function createAIReframedVideo(
@@ -5428,8 +5447,15 @@ function createAIReframedVideo(
           console.log("AI Reframe encoding completed.");
           finish();
         })
-        .on("error", (error) => {
+        .on("error", (error, _stdout, stderr) => {
           console.error("AI Reframe FFmpeg failed:", error.message);
+          if (stderr) {
+            // fluent-ffmpeg's error event carries FFmpeg's actual stderr as a
+            // third argument. Logging it is what actually explains *why* the
+            // conversion failed (e.g. a filter-graph parse error), instead of
+            // just the generic "Conversion failed!" message.
+            console.error("AI Reframe FFmpeg stderr:\n", stderr);
+          }
           finish(error);
         });
 
