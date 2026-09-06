@@ -4424,15 +4424,15 @@ async function analyzeLocalVideo(
   mimeType: string,
   duration: number,
   processingMode: ProcessingMode = "clips",
+  reframeNeedsTranscript = false,
 ): Promise<GeminiAnalysis> {
   let lastGeminiError: unknown;
 
-  // Uploads the source video to whichever Gemini API key is currently
-  // active and waits for it to become ACTIVE. Gemini files are scoped to
-  // the API key/project that uploaded them, so this must be re-run (with
-  // a fresh file.uri) every time generateGeminiWithRetry rotates keys —
-  // reusing a file.uri from a different key fails with 403
-  // PERMISSION_DENIED even though the file itself is still valid.
+  // Reframe does not need transcript/clip analysis unless captions were
+  // explicitly requested. Keeping this path small dramatically reduces the
+  // Gemini response size and analysis time for long videos.
+  const reframeOnly = processingMode === "reframe" && !reframeNeedsTranscript;
+
   async function uploadAndActivateGeminiFile() {
     console.log(
       `Uploading video to Gemini (key #${geminiKeyIndex + 1}/${geminiClients.length}):`,
@@ -4459,12 +4459,54 @@ async function analyzeLocalVideo(
     }
 
     console.log("Gemini file ACTIVE — starting analysis.");
-
     return file;
   }
 
   try {
-  const prompt = `
+    const prompt = reframeOnly
+      ? `
+You are LumoClip's AI Reframe tracking engine.
+
+Return ONLY valid JSON. No markdown, no code fences, no commentary.
+
+VIDEO DURATION:
+${duration.toFixed(2)} seconds
+
+TASK:
+Analyze the entire video ONLY for automatic vertical reframing.
+Do NOT create a transcript.
+Do NOT create clips.
+Do NOT return titles, captions, reasons, or any other analysis.
+
+Return a single "reframe" array containing tracking points for the main
+speaking/visually active subject.
+
+REFRAME TRACKING:
+- Return one point approximately every 5 seconds.
+- Add an extra point when the active subject/camera moves significantly.
+- Each point MUST be:
+  {"time": number, "centerX": number, "centerY": number, "confidence": number}
+- centerX/centerY are normalized 0..1 coordinates in the ORIGINAL frame.
+- Follow the active/main speaker or visually dominant subject.
+- If multiple people are visible, follow the person currently speaking or
+  visually dominant.
+- Keep points chronologically sorted.
+- Cover the video from 0 seconds through the final seconds.
+- Never use coordinates outside 0..1.
+- Avoid unnecessary points during static shots.
+- Do not invent movement when the subject is stationary.
+
+EXACT JSON SHAPE:
+{
+  "transcript": [],
+  "clips": [],
+  "reframe": [
+    {"time": 0.0, "centerX": 0.5, "centerY": 0.5, "confidence": 0.9},
+    {"time": 5.0, "centerX": 0.5, "centerY": 0.5, "confidence": 0.9}
+  ]
+}
+`
+      : `
 You are LumoClip's professional AI video editor.
 
 Return ONLY valid JSON. No markdown, no code fences, no commentary.
@@ -4492,69 +4534,25 @@ REFRAME TRACKING:
 TRANSCRIPT GRANULARITY (critical — used to sync on-screen captions):
 - Each transcript entry must cover ONLY 2 to 4 spoken words, never a full sentence.
 - Split a sentence into multiple consecutive entries.
-- Every transcript entry MUST also include a "words" array with ONE
-  object per spoken word, each with its OWN start/end time — this is
-  what drives the karaoke word-by-word highlight, so per-word timing
-  matters more than chunk timing. Example for the sentence
-  "Hello everyone welcome back to my channel":
-  {"start":0.00,"end":0.55,"text":"Hello everyone","words":[
-    {"word":"Hello","start":0.00,"end":0.28},
-    {"word":"everyone","start":0.28,"end":0.55}
-  ]}
-  {"start":0.55,"end":1.10,"text":"welcome back","words":[
-    {"word":"welcome","start":0.55,"end":0.85},
-    {"word":"back","start":0.85,"end":1.10}
-  ]}
-  {"start":1.10,"end":1.85,"text":"to my channel","words":[
-    {"word":"to","start":1.10,"end":1.25},
-    {"word":"my","start":1.25,"end":1.45},
-    {"word":"channel","start":1.45,"end":1.85}
-  ]}
-- Both the chunk start/end AND every word's start/end MUST match the
-  moment those exact words are actually spoken in the audio — never
-  evenly guessed or split by word length.
+- Every transcript entry MUST also include a "words" array with ONE object per spoken word, each with its OWN start/end time.
+- Both chunk and word timestamps MUST match the actual spoken audio.
 - Do not merge separate breaths/pauses into one chunk.
-- Do not skip ANY spoken portion of the video. The transcript MUST cover
-   the COMPLETE video through ${duration.toFixed(2)} seconds.
-- Before returning JSON, verify that transcript coverage reaches the FINAL
-   spoken words near the end. A transcript ending early is INVALID.
-- EVERY AI-selected clip MUST overlap at least one transcript entry. If a
-   selected clip occurs late in the video, include its spoken dialogue in
-   the transcript before returning the clips.
-- If there are silent sections, preserve the real timestamps; NEVER invent
-   dialogue just to fill a gap.
-- The transcript must cover all spoken portions so clips never lose captions.skip any spoken portion of the video — the transcript must
-  cover the audio continuously from 0 to the end, with no gaps,
-  otherwise clips in the untranscribed portion will show no captions
-  at all.
+- Do not skip any spoken portion of the video.
+- If there are silent sections, preserve the real timestamps.
 
 PROCESSING MODE:
 ${processingMode === "full_video_caption"
   ? "Full-video caption mode: the transcript is required; clips may be an empty array because no clips will be generated."
   : processingMode === "reframe"
-    ? "AI Reframe mode: transcript and reframe tracking points are required; clips may be an empty array because no clips will be generated."
+    ? "AI Reframe mode with captions: transcript and reframe tracking points are required; clips may be an empty array because no clips will be generated."
     : "Clip mode: return high-retention clips as usual."}
 
 TARGET:
 TikTok, Instagram Reels, YouTube Shorts, Facebook Reels.
 
-Prioritize:
-- strong hooks
-- surprising statements
-- useful insights
-- emotional or funny moments
-- stories
-- controversial or memorable statements
-- standalone moments
-- high-retention moments
+Prioritize strong hooks, surprising statements, useful insights, emotional or funny moments, stories, memorable statements, standalone moments, and high-retention moments.
 
-Avoid:
-- greetings
-- long introductions
-- ads
-- dead air
-- repeated information
-- contextless fragments
+Avoid greetings, long introductions, ads, dead air, repeated information, and contextless fragments.
 
 CLIP LENGTH:
 Normally 20–60 seconds.
@@ -4562,8 +4560,6 @@ Normally 20–60 seconds.
 TIMESTAMP RULES:
 - start/end MUST be JSON numbers.
 - timestamps are seconds only.
-- never use MM:SS.
-- never invent timestamps.
 - start >= 0.
 - end > start.
 - end <= ${duration.toFixed(2)}.
@@ -4579,16 +4575,6 @@ EXACT JSON SHAPE:
         {"word": "spoken", "start": 0.0, "end": 0.3},
         {"word": "words", "start": 0.3, "end": 0.6}
       ]
-    },
-    {
-      "start": 0.6,
-      "end": 1.3,
-      "text": "next few words",
-      "words": [
-        {"word": "next", "start": 0.6, "end": 0.85},
-        {"word": "few", "start": 0.85, "end": 1.05},
-        {"word": "words", "start": 1.05, "end": 1.3}
-      ]
     }
   ],
   "reframe": [
@@ -4601,14 +4587,12 @@ EXACT JSON SHAPE:
       "title": "Short viral title",
       "reason": "Why this moment is strong",
       "score": 94,
-      "caption": "Short social caption — REQUIRED, never leave this empty, always write a real caption for the clip"
+      "caption": "Short social caption"
     }
   ]
 }
 
-IMPORTANT: every object in "clips" MUST include a non-empty "caption"
-string written specifically for that clip's content. Never omit it
-and never return an empty string for it.
+IMPORTANT: every clip MUST include a non-empty caption.
 `;
 
     const response = await generateGeminiWithRetry(async () => {
@@ -4622,7 +4606,7 @@ and never return an empty string for it.
         ]),
         config: {
           responseMimeType: "application/json",
-          temperature: 0.2,
+          temperature: reframeOnly ? 0.1 : 0.2,
         },
       };
     });
@@ -4641,14 +4625,8 @@ and never return an empty string for it.
       parsed = JSON.parse(cleanedJson);
     } catch (error) {
       console.error("Gemini JSON parse error:", error);
-      console.error(
-        "Gemini JSON candidate length:",
-        cleanedJson.length,
-      );
-      console.error(
-        "Gemini JSON candidate tail:",
-        cleanedJson.slice(-500),
-      );
+      console.error("Gemini JSON candidate length:", cleanedJson.length);
+      console.error("Gemini JSON candidate tail:", cleanedJson.slice(-500));
       throw new Error("Gemini returned invalid JSON.");
     }
 
@@ -4664,6 +4642,22 @@ and never return an empty string for it.
       "Gemini analysis unavailable after all configured fallbacks:",
       getGeminiErrorMessage(error),
     );
+
+    // Reframe-only fallback intentionally avoids local Whisper. Reframe does
+    // not need speech timing, and CPU-heavy Whisper inference would make the
+    // fast path slow again. Center tracking is deterministic and safe.
+    if (reframeOnly) {
+      console.warn("Reframe-only Gemini failed; using center tracking fallback.");
+      return {
+        transcript: [],
+        clips: [],
+        reframe: [
+          { time: 0, centerX: 0.5, centerY: 0.5, confidence: 0.1 },
+          { time: duration, centerX: 0.5, centerY: 0.5, confidence: 0.1 },
+        ],
+        captionTimingReady: true,
+      };
+    }
 
     // Critical production fallback: Gemini failure must NOT fail the whole
     // project when local Whisper can still produce real word timings.
@@ -4723,7 +4717,6 @@ and never return an empty string for it.
     }
   }
 }
-
 /* =========================================================
    YOUTUBE DOWNLOAD
 
@@ -5858,6 +5851,7 @@ async function processVideo(
         mimeType,
         duration,
         mode,
+        mode === "reframe" ? safeReframeConfig.addCaptions : false,
       );
 
     // Enforce the server-side clip limit even if Gemini returns more.
@@ -5901,10 +5895,12 @@ async function processVideo(
       `Captions: using Gemini transcript timing — ${analysis.transcript.length} transcript segment(s). Whisper is disabled for Render stability.`,
     );
 
-    await saveTranscript(
-      projectId,
-      analysis.transcript,
-    );
+    if (mode !== "reframe" || analysis.transcript.length) {
+      await saveTranscript(
+        projectId,
+        analysis.transcript,
+      );
+    }
 
     if (mode === "reframe") {
       const reframedFilename = "reframed.mp4";
