@@ -296,15 +296,6 @@ function App() {
   const [newProjectIntent, setNewProjectIntent] =
     useState<"default" | "enhance-speech">("default");
 
-  // Which single output card (Short Clips / Reframe / Full Video) the
-  // modal should open pre-selected to, when the user came in via a
-  // specific landing-page button (e.g. "AI Reframe"). Undefined means
-  // show all three like before.
-  const [newProjectInitialMode, setNewProjectInitialMode] =
-    useState<
-      "clips" | "reframe" | "full_video_caption" | undefined
-    >(undefined);
-
   const appInitialized =
     useRef(false);
 
@@ -1352,10 +1343,8 @@ function App() {
     (
       url = "",
       intent: "default" | "enhance-speech" = "default",
-      initialMode?: "clips" | "reframe" | "full_video_caption",
     ) => {
       setNewProjectIntent(intent);
-      setNewProjectInitialMode(initialMode);
 
       const cleanUrl =
         normalizeYouTubeUrl(url);
@@ -1482,12 +1471,10 @@ function App() {
           <LandingPage
             onGetStarted={(
               intent?: "enhance-speech",
-              initialMode?: "clips" | "reframe" | "full_video_caption",
             ) => {
               openNewProject(
                 "",
                 intent ?? "default",
-                initialMode,
               );
             }}
             onOpenPricing={() => {
@@ -1728,7 +1715,7 @@ function App() {
       <ChunkErrorBoundary fallback={null}>
         <Suspense fallback={null}>
           <NewProjectModalWithInitialUrl
-            key={`${newProjectIntent}:${newProjectInitialMode ?? "any"}:${newProjectInitialUrl}`}
+            key={`${newProjectIntent}:${newProjectInitialUrl}`}
             isOpen={
               isNewProjectModalOpen
             }
@@ -1745,10 +1732,6 @@ function App() {
                 "default",
               );
 
-              setNewProjectInitialMode(
-                undefined,
-              );
-
               pendingProjectUrlRef.current =
                 "";
             }}
@@ -1759,7 +1742,6 @@ function App() {
               newProjectInitialUrl
             }
             intent={newProjectIntent}
-            initialMode={newProjectInitialMode}
             onSuccess={(data: any) => {
               if (data?.project) {
                 const project =

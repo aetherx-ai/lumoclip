@@ -51,10 +51,6 @@ interface NewProjectModalProps {
   // since /api/projects/:projectId/enhance-speech runs on an existing
   // project's source or clip, not as a project-creation mode.
   intent?: "default" | "enhance-speech";
-  // When the modal is opened from a specific landing-page button (e.g. the
-  // "AI Reframe" button), pass that mode here so the output picker opens
-  // showing only that option instead of all three.
-  initialMode?: ProcessingMode;
 }
 
 type SourceType = "youtube" | "podcast" | "file";
@@ -1282,12 +1278,7 @@ const OutputModePicker: React.FC<{
   mode: ProcessingMode;
   onChange: (mode: ProcessingMode) => void;
   disabled: boolean;
-  // When set, only the matching card is rendered (the other two are
-  // hidden) instead of showing all three options side by side.
-  lockedTo?: ProcessingMode;
-  // Called when the user wants to see the other two options again.
-  onRequestShowAll?: () => void;
-}> = ({ mode, onChange, disabled, lockedTo, onRequestShowAll }) => {
+}> = ({ mode, onChange, disabled }) => {
   const options: {
     value: ProcessingMode;
     icon: React.ReactNode;
@@ -1320,10 +1311,6 @@ const OutputModePicker: React.FC<{
     },
   ];
 
-  const visibleOptions = lockedTo
-    ? options.filter((option) => option.value === lockedTo)
-    : options;
-
   return (
     <section>
       <div className="mb-3.5 flex items-end justify-between gap-3">
@@ -1332,34 +1319,16 @@ const OutputModePicker: React.FC<{
             What do you want to make?
           </p>
           <p className="mt-1 text-[9px] text-zinc-600">
-            {lockedTo
-              ? "This is the output you selected."
-              : "Choose clips, reframe the full video, or caption the original."}
+            Choose clips, reframe the full video, or caption the original.
           </p>
         </div>
-
-        {lockedTo ? (
-          <button
-            type="button"
-            onClick={onRequestShowAll}
-            disabled={disabled}
-            className="shrink-0 rounded-full border border-white/[0.08] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-400 transition-colors hover:border-violet-400/30 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            Change
-          </button>
-        ) : (
-          <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
-            02 / OUTPUT
-          </span>
-        )}
+        <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
+          02 / OUTPUT
+        </span>
       </div>
 
-      <div
-        className={`grid grid-cols-1 gap-2.5 ${
-          lockedTo ? "" : "sm:grid-cols-3"
-        }`}
-      >
-        {visibleOptions.map((option) => (
+      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+        {options.map((option) => (
           <SourceCard
             key={option.value}
             active={mode === option.value}
@@ -1609,7 +1578,6 @@ export const NewProjectModal: React.FC<
   initialUrl = "",
   initialTitle = "",
   intent = "default",
-  initialMode,
 }) => {
   const [sourceType, setSourceType] =
     useState<SourceType>("youtube");
@@ -1649,14 +1617,8 @@ export const NewProjectModal: React.FC<
 
   const [processingMode, setProcessingMode] =
     useState<ProcessingMode>(
-      initialMode ?? DEFAULT_PROCESSING_MODE,
+      DEFAULT_PROCESSING_MODE,
     );
-
-  // If the user arrived via a specific landing-page button, start with
-  // just that one output card shown. Otherwise (opened generically) show
-  // all three like before. "Change" in the picker reveals the rest.
-  const [showAllModes, setShowAllModes] =
-    useState(!initialMode);
 
   const [reframeConfig, setReframeConfig] =
     useState<ReframeConfig>(DEFAULT_REFRAME_CONFIG);
@@ -2705,12 +2667,6 @@ export const NewProjectModal: React.FC<
                 mode={processingMode}
                 onChange={setProcessingMode}
                 disabled={loading}
-                lockedTo={
-                  showAllModes ? undefined : processingMode
-                }
-                onRequestShowAll={() =>
-                  setShowAllModes(true)
-                }
               />
             )}
 
