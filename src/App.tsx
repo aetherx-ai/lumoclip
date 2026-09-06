@@ -89,6 +89,12 @@ type NewProjectModalProps =
 const NewProjectModalWithInitialUrl =
   NewProjectModal as ComponentType<NewProjectModalProps>;
 
+// Subset of NewProjectModal's ProcessingMode that the landing page's tool
+// grid can pre-select. Kept as a local alias (rather than importing the
+// type from NewProjectModal, which is lazy-loaded) so this file has no
+// extra runtime dependency on that chunk.
+type NewProjectMode = "clips" | "reframe" | "full_video_caption";
+
 /* =========================================================
    ACTIVE TAB
 ========================================================= */
@@ -295,6 +301,13 @@ function App() {
 
   const [newProjectIntent, setNewProjectIntent] =
     useState<"default" | "enhance-speech">("default");
+
+  // Set when the user clicked a specific tool tile on the landing page
+  // (e.g. "AI Reframe" or "Long to shorts") instead of a generic
+  // "New Project" button, so the modal can open locked to that one output
+  // mode. Cleared back to undefined whenever the modal closes.
+  const [newProjectMode, setNewProjectMode] =
+    useState<NewProjectMode | undefined>(undefined);
 
   const appInitialized =
     useRef(false);
@@ -1343,8 +1356,10 @@ function App() {
     (
       url = "",
       intent: "default" | "enhance-speech" = "default",
+      mode?: NewProjectMode,
     ) => {
       setNewProjectIntent(intent);
+      setNewProjectMode(mode);
 
       const cleanUrl =
         normalizeYouTubeUrl(url);
@@ -1471,10 +1486,12 @@ function App() {
           <LandingPage
             onGetStarted={(
               intent?: "enhance-speech",
+              mode?: NewProjectMode,
             ) => {
               openNewProject(
                 "",
                 intent ?? "default",
+                mode,
               );
             }}
             onOpenPricing={() => {
@@ -1715,7 +1732,7 @@ function App() {
       <ChunkErrorBoundary fallback={null}>
         <Suspense fallback={null}>
           <NewProjectModalWithInitialUrl
-            key={`${newProjectIntent}:${newProjectInitialUrl}`}
+            key={`${newProjectIntent}:${newProjectInitialUrl}:${newProjectMode ?? ""}`}
             isOpen={
               isNewProjectModalOpen
             }
@@ -1732,6 +1749,10 @@ function App() {
                 "default",
               );
 
+              setNewProjectMode(
+                undefined,
+              );
+
               pendingProjectUrlRef.current =
                 "";
             }}
@@ -1742,6 +1763,9 @@ function App() {
               newProjectInitialUrl
             }
             intent={newProjectIntent}
+            initialProcessingMode={
+              newProjectMode
+            }
             onSuccess={(data: any) => {
               if (data?.project) {
                 const project =

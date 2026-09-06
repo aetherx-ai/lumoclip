@@ -51,8 +51,18 @@ export type CaptionStyleSettings = {
   uppercase: boolean;
 };
 
+// Output modes the New Project modal already understands (kept as a local
+// union here so this file doesn't need to import from NewProjectModal.tsx).
+export type LandingProcessingMode =
+  | "clips"
+  | "reframe"
+  | "full_video_caption";
+
 type LandingPageProps = {
-  onGetStarted: (intent?: "enhance-speech") => void;
+  onGetStarted: (
+    intent?: "enhance-speech",
+    initialProcessingMode?: LandingProcessingMode
+  ) => void;
   onOpenPricing: () => void;
   onOpenNewProjectWithUrl: (
     url: string,
@@ -461,16 +471,21 @@ type ToolGridItem = {
   label: string;
   badge?: "New" | "Beta";
   accent: string;
+  // Maps this tile to a New Project output mode, so clicking it opens the
+  // modal locked to that mode instead of asking the user to choose again.
+  // Tiles without a mode (Video editor, AI Producer, etc.) open the
+  // generic modal, same as before.
+  mode?: LandingProcessingMode;
 };
 
 const toolGridItems: ToolGridItem[] = [
-  { id: "long-to-shorts", label: "Long to shorts", accent: "gold" },
+  { id: "long-to-shorts", label: "Long to shorts", accent: "gold", mode: "clips" },
   { id: "video-editor", label: "Video editor", accent: "blue" },
-  { id: "ai-captions", label: "AI Captions", badge: "New", accent: "green" },
+  { id: "ai-captions", label: "AI Captions", badge: "New", accent: "green", mode: "full_video_caption" },
   { id: "ai-producer", label: "AI Producer", badge: "Beta", accent: "cyan" },
   { id: "ai-b-roll", label: "AI B-Roll", badge: "New", accent: "violet" },
 
-  { id: "ai-reframe", label: "AI Reframe", accent: "blue" },
+  { id: "ai-reframe", label: "AI Reframe", accent: "blue", mode: "reframe" },
   { id: "auto-sfx", label: "Auto SFX", badge: "New", accent: "violet" },
   { id: "upscale", label: "Upscale", badge: "New", accent: "diamond" },
   { id: "video-dubbing", label: "Video dubbing", badge: "New", accent: "sky" },
@@ -736,7 +751,7 @@ function ToolGridButton({
 function ToolGrid({
   onSelect,
 }: {
-  onSelect?: (label: string) => void;
+  onSelect?: (item: ToolGridItem) => void;
 }) {
   // 12 tools → exactly 2 rows (6 + 6)
   const rows = [
@@ -755,7 +770,7 @@ function ToolGrid({
             <ToolGridButton
               key={item.id}
               item={item}
-              onClick={() => onSelect?.(item.label)}
+              onClick={() => onSelect?.(item)}
             />
           ))}
         </div>
@@ -2239,11 +2254,12 @@ export function LandingPage({
 
               <Reveal immediate delay={260} className="mt-12">
                 <ToolGrid
-                  onSelect={(label) =>
+                  onSelect={(item) =>
                     onGetStarted(
-                      label === "Enhance speech"
+                      item.id === "enhance-speech"
                         ? "enhance-speech"
-                        : undefined
+                        : undefined,
+                      item.mode
                     )
                   }
                 />

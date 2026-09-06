@@ -51,6 +51,12 @@ interface NewProjectModalProps {
   // since /api/projects/:projectId/enhance-speech runs on an existing
   // project's source or clip, not as a project-creation mode.
   intent?: "default" | "enhance-speech";
+  // Set when the user picked a specific output (e.g. clicked "AI Reframe"
+  // on the landing page instead of the generic "New Project" button). When
+  // present, the "What do you want to make?" step opens locked to this one
+  // mode instead of showing all three — the user already told us which one
+  // they want. A "Change" link still lets them see the other options.
+  initialProcessingMode?: ProcessingMode;
 }
 
 type SourceType = "youtube" | "podcast" | "file";
@@ -1278,7 +1284,13 @@ const OutputModePicker: React.FC<{
   mode: ProcessingMode;
   onChange: (mode: ProcessingMode) => void;
   disabled: boolean;
-}> = ({ mode, onChange, disabled }) => {
+  // When set, only this mode's card is shown (the user already chose it
+  // from the landing page) instead of all three options.
+  lockedMode?: ProcessingMode | null;
+  // Shown next to the heading only while locked; lets the user reveal the
+  // other two options if they change their mind.
+  onUnlock?: () => void;
+}> = ({ mode, onChange, disabled, lockedMode, onUnlock }) => {
   const options: {
     value: ProcessingMode;
     icon: React.ReactNode;
@@ -1311,6 +1323,12 @@ const OutputModePicker: React.FC<{
     },
   ];
 
+  const visibleOptions = lockedMode
+    ? options.filter(
+        (option) => option.value === lockedMode,
+      )
+    : options;
+
   return (
     <section>
       <div className="mb-3.5 flex items-end justify-between gap-3">
@@ -1319,16 +1337,36 @@ const OutputModePicker: React.FC<{
             What do you want to make?
           </p>
           <p className="mt-1 text-[9px] text-zinc-600">
-            Choose clips, reframe the full video, or caption the original.
+            {lockedMode
+              ? "Picked from the home screen."
+              : "Choose clips, reframe the full video, or caption the original."}
           </p>
         </div>
-        <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
-          02 / OUTPUT
-        </span>
+
+        {lockedMode ? (
+          onUnlock && (
+            <button
+              type="button"
+              onClick={onUnlock}
+              disabled={disabled}
+              className="shrink-0 rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-400 transition-colors hover:border-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Change
+            </button>
+          )
+        ) : (
+          <span className="hidden rounded-full border border-white/[0.06] bg-white/[0.025] px-2.5 py-1 text-[8px] font-bold text-zinc-600 sm:block">
+            02 / OUTPUT
+          </span>
+        )}
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-        {options.map((option) => (
+      <div
+        className={`grid grid-cols-1 gap-2.5 ${
+          lockedMode ? "" : "sm:grid-cols-3"
+        }`}
+      >
+        {visibleOptions.map((option) => (
           <SourceCard
             key={option.value}
             active={mode === option.value}
@@ -1578,9 +1616,16 @@ export const NewProjectModal: React.FC<
   initialUrl = "",
   initialTitle = "",
   intent = "default",
+  initialProcessingMode,
 }) => {
   const [sourceType, setSourceType] =
     useState<SourceType>("youtube");
+
+  // True while the output-mode step is locked to a single card because the
+  // user arrived via a specific landing-page button (e.g. "AI Reframe").
+  const [modeLocked, setModeLocked] = useState(
+    Boolean(initialProcessingMode),
+  );
 
   const [youtubeUrl, setYoutubeUrl] =
     useState("");
@@ -1731,8 +1776,10 @@ export const NewProjectModal: React.FC<
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
-        : DEFAULT_PROCESSING_MODE,
+        : (initialProcessingMode ??
+            DEFAULT_PROCESSING_MODE),
     );
+    setModeLocked(Boolean(initialProcessingMode));
 
     setUploadState({
       progress: 0,
@@ -1743,7 +1790,7 @@ export const NewProjectModal: React.FC<
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
     }
-  }, [intent]);
+  }, [intent, initialProcessingMode]);
 
   /* =======================================================
      OPEN / SYNC
@@ -1760,11 +1807,15 @@ export const NewProjectModal: React.FC<
 
     // Tool intent is authoritative: Enhance Speech can never fall back
     // to normal clip generation, even if stale modal state exists.
+    // Otherwise, a mode passed in from the landing page (e.g. the "AI
+    // Reframe" button) wins over the generic default.
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
-        : DEFAULT_PROCESSING_MODE,
+        : (initialProcessingMode ??
+            DEFAULT_PROCESSING_MODE),
     );
+    setModeLocked(Boolean(initialProcessingMode));
 
     setUploadState({
       progress: 0,
@@ -1796,6 +1847,7 @@ export const NewProjectModal: React.FC<
     dashboardUrl,
     initialTitle,
     intent,
+    initialProcessingMode,
   ]);
 
   /* =======================================================
@@ -2667,6 +2719,10 @@ export const NewProjectModal: React.FC<
                 mode={processingMode}
                 onChange={setProcessingMode}
                 disabled={loading}
+                lockedMode={
+                  modeLocked ? processingMode : null
+                }
+                onUnlock={() => setModeLocked(false)}
               />
             )}
 
