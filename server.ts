@@ -230,6 +230,29 @@ const FFMPEG_PRESET =
 const FFMPEG_CRF =
   process.env.FFMPEG_CRF?.trim() || "27";
 
+// AI Reframe is a video-to-video operation, so CPU encoding is the main
+// render cost on Render. Keep the reframe encoder lightly threaded by
+// default; Render often exposes more logical CPUs than the actual CPU quota.
+const REFRAME_FFMPEG_THREADS = Math.max(
+  1,
+  Math.min(
+    Number(process.env.REFRAME_FFMPEG_THREADS || (CPU_COUNT >= 4 ? 2 : CPU_COUNT)),
+    4,
+  ),
+);
+
+// The Gemini Reframe-only path uses a tiny low-FPS analysis proxy. This keeps
+// the original quality for the final render while reducing Gemini upload and
+// video-understanding work. Captions still use the original source.
+const REFRAME_ANALYSIS_FPS = Math.max(
+  1,
+  Math.min(Number(process.env.REFRAME_ANALYSIS_FPS || 2), 4),
+);
+const REFRAME_ANALYSIS_HEIGHT = Math.max(
+  240,
+  Math.min(Number(process.env.REFRAME_ANALYSIS_HEIGHT || 360), 720),
+);
+
 // Hard timeout for FFmpeg operations so a corrupt/stalled input cannot
 // occupy a Render worker forever.
 const FFMPEG_TIMEOUT_MS = Number(
@@ -4419,6 +4442,70 @@ function validateAnalysis(
    GEMINI LOCAL VIDEO ANALYSIS
 ========================================================= */
 
+function createReframeAnalysisProxy(
+  inputPath: string,
+  duration: number,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const outputPath = path.join(
+      tempDir,
+      `${generateId()}-reframe-analysis.mp4`,
+    );
+
+    const safeDuration = Math.max(0.1, Number(duration) || 0);
+
+    console.log(
+      `AI Reframe: creating lightweight Gemini analysis proxy (${REFRAME_ANALYSIS_HEIGHT}p @ ${REFRAME_ANALYSIS_FPS}fps)...`,
+    );
+
+    ffmpeg(inputPath)
+      .videoFilters([
+        `scale=-2:${REFRAME_ANALYSIS_HEIGHT}:flags=fast_bilinear`,
+        `fps=${REFRAME_ANALYSIS_FPS}`,
+      ])
+      .outputOptions([
+        "-y",
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "ultrafast",
+        "-crf",
+        "32",
+        "-pix_fmt",
+        "yuv420p",
+        "-movflags",
+        "+faststart",
+        "-t",
+        String(safeDuration),
+      ])
+      .on("start", (cmd) => console.log("Reframe analysis proxy:", cmd))
+      .on("end", () => {
+        try {
+          const stat = fs.statSync(outputPath);
+          if (!stat.isFile() || stat.size <= 0) {
+            return reject(new Error("Reframe analysis proxy was empty."));
+          }
+          console.log(
+            `AI Reframe: analysis proxy ready (${(stat.size / 1024 / 1024).toFixed(2)} MB)`,
+          );
+          resolve(outputPath);
+        } catch (error) {
+          reject(error);
+        }
+      })
+      .on("error", (error) => {
+        try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
+        reject(error);
+      })
+      .save(outputPath);
+  });
+}
+
+/* =========================================================
+   GEMINI LOCAL VIDEO ANALYSIS
+========================================================= */
+
 async function analyzeLocalVideo(
   videoPath: string,
   mimeType: string,
@@ -4432,16 +4519,33 @@ async function analyzeLocalVideo(
   // explicitly requested. Keeping this path small dramatically reduces the
   // Gemini response size and analysis time for long videos.
   const reframeOnly = processingMode === "reframe" && !reframeNeedsTranscript;
+  let analysisVideoPath = videoPath;
+  let analysisProxyPath = "";
+
+  if (reframeOnly) {
+    // Gemini only needs enough visual detail to locate the subject. Do not
+    // send the full-resolution master unless captions are also requested.
+    try {
+      analysisProxyPath = await createReframeAnalysisProxy(videoPath, duration);
+      analysisVideoPath = analysisProxyPath;
+    } catch (proxyError) {
+      console.warn(
+        "AI Reframe: proxy creation failed; falling back to original video:",
+        getGeminiErrorMessage(proxyError),
+      );
+      analysisVideoPath = videoPath;
+    }
+  }
 
   async function uploadAndActivateGeminiFile() {
     console.log(
       `Uploading video to Gemini (key #${geminiKeyIndex + 1}/${geminiClients.length}):`,
-      videoPath,
+      analysisVideoPath,
     );
 
     let file = await ai.files.upload({
-      file: videoPath,
-      config: { mimeType },
+      file: analysisVideoPath,
+      config: { mimeType: "video/mp4" },
     });
 
     console.log("Gemini file:", file.name);
@@ -4630,12 +4734,23 @@ IMPORTANT: every clip MUST include a non-empty caption.
       throw new Error("Gemini returned invalid JSON.");
     }
 
-    return validateAnalysis(
+    const validated = validateAnalysis(
       parsed,
       duration,
       { requireClips: processingMode !== "full_video_caption" && processingMode !== "reframe" },
     );
+
+    if (analysisProxyPath) {
+      try { fs.unlinkSync(analysisProxyPath); } catch {}
+      analysisProxyPath = "";
+    }
+
+    return validated;
   } catch (error) {
+    if (analysisProxyPath) {
+      try { fs.unlinkSync(analysisProxyPath); } catch {}
+      analysisProxyPath = "";
+    }
     lastGeminiError = error;
 
     console.error(
@@ -5382,6 +5497,7 @@ function createAIReframedVideo(
     };
 
     try {
+      const renderStartedAt = Date.now();
       const absoluteInputPath = path.resolve(inputPath);
       const absoluteOutputPath = path.resolve(outputPath);
       if (!fs.existsSync(absoluteInputPath)) return finish(new Error("AI Reframe input video was not found."));
@@ -5404,7 +5520,7 @@ function createAIReframedVideo(
 
       const filters: string[] = [
         `crop=${cropWidth}:${cropHeight}:${escapedXExpression}:(ih-oh)/2`,
-        `scale=${config.outputWidth}:${config.outputHeight}:force_original_aspect_ratio=decrease`,
+        `scale=${config.outputWidth}:${config.outputHeight}:force_original_aspect_ratio=decrease:flags=fast_bilinear`,
         `pad=${config.outputWidth}:${config.outputHeight}:(ow-iw)/2:(oh-ih)/2`,
       ];
 
@@ -5425,9 +5541,11 @@ function createAIReframedVideo(
           "-map", "0:v:0",
           "-map", "0:a:0?",
           "-c:v", "libx264",
-          "-preset", FFMPEG_PRESET,
-          "-crf", FFMPEG_CRF,
-          "-threads", String(Math.max(1, CPU_COUNT)),
+          "-preset", process.env.REFRAME_FFMPEG_PRESET?.trim() || FFMPEG_PRESET,
+          "-crf", process.env.REFRAME_FFMPEG_CRF?.trim() || FFMPEG_CRF,
+          "-threads", String(REFRAME_FFMPEG_THREADS),
+          "-filter_threads", String(REFRAME_FFMPEG_THREADS),
+          "-filter_complex_threads", String(REFRAME_FFMPEG_THREADS),
           "-pix_fmt", "yuv420p",
           "-c:a", "aac",
           "-b:a", "128k",
@@ -5447,7 +5565,9 @@ function createAIReframedVideo(
           if (!fs.existsSync(absoluteOutputPath) || fs.statSync(absoluteOutputPath).size <= 0) {
             return finish(new Error("AI Reframe video was not created."));
           }
-          console.log("AI Reframe encoding completed.");
+          console.log(
+            `AI Reframe encoding completed in ${((Date.now() - renderStartedAt) / 1000).toFixed(1)}s.`,
+          );
           finish();
         })
         .on("error", (error, _stdout, stderr) => {
@@ -5870,11 +5990,16 @@ async function processVideo(
     // Gemini is explicitly required to provide full-video coverage; this
     // guard makes the failure visible in logs instead of looking like an
     // FFmpeg caption problem.
-    analysis.transcript = ensureClipCaptionCoverage(
-      analysis.transcript,
-      analysis.clips,
-      duration,
-    );
+    // Reframe-only intentionally has no transcript and no clips. Running the
+    // caption coverage guard here would add work and can make a perfectly
+    // valid reframe look like a captioning failure.
+    if (mode !== "reframe" || safeReframeConfig.addCaptions) {
+      analysis.transcript = ensureClipCaptionCoverage(
+        analysis.transcript,
+        analysis.clips,
+        duration,
+      );
+    }
 
     // ---------------------------------------------------------
     // Caption timing
@@ -5885,21 +6010,20 @@ async function processVideo(
     // caused by an incomplete Gemini transcript.
     // ---------------------------------------------------------
 
-    await updateProject(
-      projectId,
-      42,
-      "Preparing AI captions",
-    );
-
-    console.log(
-      `Captions: using Gemini transcript timing — ${analysis.transcript.length} transcript segment(s). Whisper is disabled for Render stability.`,
-    );
-
-    if (mode !== "reframe" || analysis.transcript.length) {
-      await saveTranscript(
+    if (mode !== "reframe" || safeReframeConfig.addCaptions) {
+      await updateProject(
         projectId,
-        analysis.transcript,
+        42,
+        "Preparing AI captions",
       );
+
+      console.log(
+        `Captions: using Gemini transcript timing — ${analysis.transcript.length} transcript segment(s). Whisper is disabled for Render stability.`,
+      );
+
+      if (analysis.transcript.length) {
+        await saveTranscript(projectId, analysis.transcript);
+      }
     }
 
     if (mode === "reframe") {
