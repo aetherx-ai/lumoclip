@@ -145,6 +145,17 @@ interface SpeechSettings {
   removePauses: boolean;
 }
 
+interface ClipSettings {
+  tab: "ai" | "dont_clip";
+  clipModel: "ClipBasic" | "ClipPro";
+  genre: "Auto" | "Podcast" | "Interview" | "Education" | "Comedy";
+  clipLength: "Auto (0m-3m)" | "Short (0m-1m)" | "Medium (1m-3m)" | "Long (3m-5m)";
+  autoHeadline: boolean;
+  specificMoments: string;
+  startPercent: number;
+  endPercent: number;
+}
+
 /* =========================================================
    CONSTANTS
 ========================================================= */
@@ -190,6 +201,17 @@ const DEFAULT_REFRAME_CONFIG: ReframeConfig = {
   addCaptions: true,
   autoLayout: "fill",
   cropRatio: "original",
+};
+
+const DEFAULT_CLIP_SETTINGS: ClipSettings = {
+  tab: "ai",
+  clipModel: "ClipBasic",
+  genre: "Auto",
+  clipLength: "Auto (0m-3m)",
+  autoHeadline: true,
+  specificMoments: "",
+  startPercent: 0,
+  endPercent: 100,
 };
 
 const DEFAULT_CAPTION_STYLE: CaptionStyle = {
@@ -524,6 +546,7 @@ interface UploadVideoOptions {
   mode: ProcessingMode;
   reframe: ReframeConfig;
   speechSettings?: SpeechSettings;
+  clipSettings?: ClipSettings;
 
   onProgress?: (progress: number) => void;
 
@@ -543,6 +566,7 @@ const uploadVideoWithProgress = ({
   mode,
   reframe,
   speechSettings,
+  clipSettings,
   onProgress,
   onStage,
   signal,
@@ -752,6 +776,13 @@ const uploadVideoWithProgress = ({
       "reframe",
       JSON.stringify(reframe),
     );
+
+    if (clipSettings) {
+      formData.append(
+        "clipSettings",
+        JSON.stringify(clipSettings),
+      );
+    }
 
     if (speechSettings) {
       formData.append(
@@ -1336,7 +1367,6 @@ const CaptionOpusSettings: React.FC<{
   style: CaptionStyle;
   onChange: (next: CaptionStyle) => void;
   disabled: boolean;
-  sourceType: SourceType;
   selectedFile: File | null;
   youtubeUrl: string;
 }> = ({ style, onChange, disabled, selectedFile, youtubeUrl }) => {
@@ -1782,6 +1812,133 @@ const ReframeSettings: React.FC<{
    COMPONENT
 ========================================================= */
 
+/* =========================================================
+   OPUS-STYLE AI CLIPPING SETTINGS
+========================================================= */
+
+const ClipOpusSettings: React.FC<{
+  settings: ClipSettings;
+  onChange: (next: ClipSettings) => void;
+  disabled: boolean;
+}> = ({ settings, onChange, disabled }) => {
+  const patch = (next: Partial<ClipSettings>) =>
+    onChange({ ...settings, ...next });
+
+  const selectClass =
+    "rounded-lg bg-transparent px-1.5 py-1 text-[11px] font-bold text-zinc-100 outline-none transition hover:bg-white/[0.04] disabled:opacity-40";
+
+  return (
+    <section className="overflow-hidden rounded-[16px] border border-white/[0.07] bg-[#18181c] shadow-[0_18px_55px_rgba(0,0,0,.28)]">
+      <div className="flex items-end border-b border-white/[0.06] bg-[#151519] px-4 pt-1">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => patch({ tab: "ai" })}
+          className={`relative px-0 py-3 mr-5 text-[11px] font-bold transition ${settings.tab === "ai" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+        >
+          AI clipping
+          {settings.tab === "ai" && <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-white" />}
+        </button>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => patch({ tab: "dont_clip" })}
+          className={`relative px-0 py-3 text-[11px] font-medium transition ${settings.tab === "dont_clip" ? "text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+        >
+          Don't clip
+          {settings.tab === "dont_clip" && <span className="absolute inset-x-0 bottom-0 h-[2px] rounded-full bg-white" />}
+        </button>
+      </div>
+
+      {settings.tab === "dont_clip" ? (
+        <div className="flex min-h-[285px] items-center justify-center px-8 py-12 text-center">
+          <div>
+            <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.035]">
+              <Film className="h-5 w-5 text-zinc-500" />
+            </div>
+            <p className="mt-4 text-[12px] font-bold text-zinc-200">Skip AI clipping</p>
+            <p className="mt-1.5 max-w-[300px] text-[9px] leading-4 text-zinc-500">
+              Keep your full source video and continue without generating short clips.
+            </p>
+          </div>
+        </div>
+      ) : (
+        <div className="px-4 pb-5 pt-4">
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-3 text-[10px] text-zinc-400">
+            <label className="flex items-center gap-1.5">
+              <span>Clip model</span>
+              <select value={settings.clipModel} onChange={(e) => patch({ clipModel: e.target.value as ClipSettings["clipModel"] })} disabled={disabled} className={selectClass}>
+                <option>ClipBasic</option>
+                <option>ClipPro</option>
+              </select>
+              <ChevronRight className="h-3 w-3 rotate-90 text-zinc-600" />
+            </label>
+            <label className="flex items-center gap-1.5">
+              <span>Genre</span>
+              <select value={settings.genre} onChange={(e) => patch({ genre: e.target.value as ClipSettings["genre"] })} disabled={disabled} className={selectClass}>
+                <option>Auto</option>
+                <option>Podcast</option>
+                <option>Interview</option>
+                <option>Education</option>
+                <option>Comedy</option>
+              </select>
+              <ChevronRight className="h-3 w-3 rotate-90 text-zinc-600" />
+            </label>
+            <label className="flex items-center gap-1.5">
+              <span>Clip Length</span>
+              <select value={settings.clipLength} onChange={(e) => patch({ clipLength: e.target.value as ClipSettings["clipLength"] })} disabled={disabled} className={selectClass}>
+                <option>Auto (0m-3m)</option>
+                <option>Short (0m-1m)</option>
+                <option>Medium (1m-3m)</option>
+                <option>Long (3m-5m)</option>
+              </select>
+              <ChevronRight className="h-3 w-3 rotate-90 text-zinc-600" />
+            </label>
+          </div>
+
+          <div className="mt-8 flex items-center gap-3">
+            <span className="text-[10px] text-zinc-400">Auto headline</span>
+            <button type="button" role="switch" aria-checked={settings.autoHeadline} disabled={disabled} onClick={() => patch({ autoHeadline: !settings.autoHeadline })} className={`relative h-5 w-9 rounded-full transition ${settings.autoHeadline ? "bg-white" : "bg-[#444449]"}`}>
+              <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all ${settings.autoHeadline ? "left-[18px] bg-[#17171b]" : "left-0.5 bg-[#242428]"}`} />
+            </button>
+          </div>
+
+          <div className="mt-8 flex items-center justify-between gap-4">
+            <span className="text-[10px] text-zinc-400">Include specific moments</span>
+            <span className="text-[9px] text-zinc-500">Not sure how to prompt? <button type="button" className="font-bold text-zinc-200 underline underline-offset-2">learn more</button></span>
+          </div>
+          <input
+            value={settings.specificMoments}
+            onChange={(e) => patch({ specificMoments: e.target.value })}
+            disabled={disabled}
+            placeholder="Example: Compile all the hilarious moments"
+            className="mt-2.5 h-10 w-full rounded-[9px] border border-white/[0.85] bg-transparent px-4 text-[10px] text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-white disabled:opacity-40"
+          />
+
+          <div className="mt-7">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-zinc-400">Processing timeframe</span>
+              <span className="rounded-md bg-emerald-500/15 px-2 py-1 text-[8px] font-bold text-emerald-400">Credit saver</span>
+            </div>
+            <div className="relative mt-5 h-4">
+              <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-300" />
+              <div className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-zinc-300" style={{ width: `${settings.endPercent}%` }} />
+              <input type="range" min="0" max="100" value={settings.startPercent} onChange={(e) => patch({ startPercent: Math.min(Number(e.target.value), settings.endPercent - 1) })} disabled={disabled} className="pointer-events-auto absolute inset-0 h-4 w-full appearance-none bg-transparent accent-zinc-900" />
+              <input type="range" min="0" max="100" value={settings.endPercent} onChange={(e) => patch({ endPercent: Math.max(Number(e.target.value), settings.startPercent + 1) })} disabled={disabled} className="pointer-events-auto absolute inset-0 h-4 w-full appearance-none bg-transparent accent-zinc-900" />
+              <span className="absolute left-0 top-1/2 h-5 w-5 -translate-x-0 -translate-y-1/2 rounded-full border border-zinc-700 bg-[#18181c] shadow" />
+              <span className="absolute right-0 top-1/2 h-5 w-5 -translate-y-1/2 rounded-full border border-zinc-700 bg-[#18181c] shadow" />
+            </div>
+            <div className="mt-2 flex justify-between">
+              <span className="rounded-lg bg-black/20 px-3 py-2 text-[10px] tabular-nums text-zinc-600">0:00:00</span>
+              <span className="rounded-lg bg-black/20 px-3 py-2 text-[10px] tabular-nums text-zinc-600">0:03:08</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+};
+
 export const NewProjectModal: React.FC<
   NewProjectModalProps
 > = ({
@@ -1855,6 +2012,9 @@ export const NewProjectModal: React.FC<
       removeFillerWords: true,
       removePauses: true,
     });
+
+  const [clipSettings, setClipSettings] =
+    useState<ClipSettings>(DEFAULT_CLIP_SETTINGS);
 
   const isFullVideoMode =
     processingMode === "full_video_caption";
@@ -1968,6 +2128,7 @@ export const NewProjectModal: React.FC<
       removeFillerWords: true,
       removePauses: true,
     });
+    setClipSettings(DEFAULT_CLIP_SETTINGS);
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
@@ -1996,7 +2157,7 @@ export const NewProjectModal: React.FC<
 
     setError("");
     setLoading(false);
-    setWizardStep(initialFile || dashboardUrl ? 2 : 1);
+    setWizardStep(1);
     setSelectedFile(null);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
     setSpeechSettings({
@@ -2004,6 +2165,7 @@ export const NewProjectModal: React.FC<
       removeFillerWords: true,
       removePauses: true,
     });
+    setClipSettings(DEFAULT_CLIP_SETTINGS);
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
@@ -2446,6 +2608,7 @@ export const NewProjectModal: React.FC<
 
                 reframe: reframeConfig,
                 speechSettings,
+                clipSettings,
 
                 signal:
                   controller.signal,
@@ -2511,6 +2674,7 @@ export const NewProjectModal: React.FC<
 
                   reframe: reframeConfig,
                   speechSettings,
+                  clipSettings,
                 }),
               },
             );
@@ -2651,7 +2815,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode) ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[32px]
@@ -2676,10 +2840,10 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? "px-6 pb-3.5 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? "px-6 pb-3.5 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? (
                 <>
                   <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : intent === "enhance-speech" ? "Enhance speech" : "AI Reframe"}</h2>
                   <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : "Let AI automatically reframe your content to fit any social platform."}</p>
@@ -2882,7 +3046,6 @@ export const NewProjectModal: React.FC<
                           style={captionStyle}
                           onChange={setCaptionStyle}
                           disabled={loading}
-                          sourceType={sourceType}
                           selectedFile={selectedFile}
                           youtubeUrl={youtubeUrl}
                         />
@@ -2891,11 +3054,12 @@ export const NewProjectModal: React.FC<
                       <>
                         <div className="mb-1 flex items-center gap-2">
                           <button type="button" onClick={handleBackToSource} disabled={loading} aria-label="Back to source" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                          <span className="text-[8px] font-medium text-zinc-600">Step 2 of 2</span>
                         </div>
                         {isReframeMode ? (
-                          <div className="space-y-3">
+                          <div className="space-y-4">
                             <div className="flex justify-center">
-                              <div className="relative aspect-video w-[266px] overflow-hidden rounded-[10px] border border-white/[0.06] bg-[#151519] shadow-[0_14px_42px_rgba(0,0,0,0.5)]">
+                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
                                 {selectedFile ? (
                                   <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
                                 ) : getYouTubeVideoId(youtubeUrl) ? (
@@ -2903,11 +3067,27 @@ export const NewProjectModal: React.FC<
                                 ) : (
                                   <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950"><Video className="h-8 w-8 text-zinc-600" /></div>
                                 )}
-                                <div className="absolute left-2.5 top-2.5 rounded-[5px] bg-black/75 px-2 py-1 text-[9px] font-bold text-white shadow backdrop-blur">720p</div>
-                                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-black/55 to-transparent" />
+                                <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">720p</div>
+                                <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/55 to-transparent" />
                               </div>
                             </div>
                             <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />
+                          </div>
+                        ) : processingMode === "clips" ? (
+                          <div className="space-y-3">
+                            <div className="flex justify-center">
+                              <div className="relative h-[86px] w-[266px] overflow-hidden rounded-[10px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.42)]">
+                                {selectedFile ? (
+                                  <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                                ) : getYouTubeVideoId(youtubeUrl) ? (
+                                  <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950"><Video className="h-7 w-7 text-zinc-600" /></div>
+                                )}
+                                <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[8px] font-bold text-white backdrop-blur">720p</div>
+                              </div>
+                            </div>
+                            <ClipOpusSettings settings={clipSettings} onChange={setClipSettings} disabled={loading} />
                           </div>
                         ) : (
                           <>
@@ -3007,7 +3187,7 @@ export const NewProjectModal: React.FC<
             {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isReframeMode ? "Reframing video..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isReframeMode ? "Reframe video in 1 click" : "Enhance speech in 1 click")}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
