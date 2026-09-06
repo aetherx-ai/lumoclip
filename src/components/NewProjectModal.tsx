@@ -36,6 +36,13 @@ import {
 import { supabase } from "../lib/supabase";
 
 /* =========================================================
+   OPUS-STYLE SPEECH STEP 2 — FINAL
+   Step 1 accepts YouTube/MP4; Enhance Speech Step 2 mirrors the
+   compact Opus-style modal: preview + Enhancement settings +
+   three toggles + white "Enhance speech in 1 click" CTA.
+========================================================= */
+
+/* =========================================================
    TYPES
 ========================================================= */
 
@@ -119,6 +126,12 @@ interface ReframeConfig {
   mode: "auto" | "speaker" | "center";
   tracking: "smooth" | "fast";
   addCaptions: boolean;
+}
+
+interface SpeechSettings {
+  enhancement: boolean;
+  removeFillerWords: boolean;
+  removePauses: boolean;
 }
 
 /* =========================================================
@@ -356,6 +369,18 @@ const cleanUrl = (value: string): string => {
   return trimmed;
 };
 
+const getYouTubeVideoId = (value: string): string => {
+  try {
+    const url = new URL(cleanUrl(value));
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (host === "youtu.be") return url.pathname.slice(1).split("/")[0] || "";
+    if (url.pathname === "/watch") return url.searchParams.get("v") || "";
+    if (url.pathname.startsWith("/shorts/")) return url.pathname.slice(8).split("/")[0] || "";
+    if (url.pathname.startsWith("/live/")) return url.pathname.slice(6).split("/")[0] || "";
+  } catch {}
+  return "";
+};
+
 const isValidHttpUrl = (value: string): boolean => {
   try {
     const url = new URL(cleanUrl(value));
@@ -485,6 +510,7 @@ interface UploadVideoOptions {
   captionStyle: CaptionStyle;
   mode: ProcessingMode;
   reframe: ReframeConfig;
+  speechSettings?: SpeechSettings;
 
   onProgress?: (progress: number) => void;
 
@@ -503,6 +529,7 @@ const uploadVideoWithProgress = ({
   captionStyle,
   mode,
   reframe,
+  speechSettings,
   onProgress,
   onStage,
   signal,
@@ -712,6 +739,13 @@ const uploadVideoWithProgress = ({
       "reframe",
       JSON.stringify(reframe),
     );
+
+    if (speechSettings) {
+      formData.append(
+        "speechSettings",
+        JSON.stringify(speechSettings),
+      );
+    }
 
     formData.append(
       "video",
@@ -1678,6 +1712,13 @@ export const NewProjectModal: React.FC<
   const [reframeConfig, setReframeConfig] =
     useState<ReframeConfig>(DEFAULT_REFRAME_CONFIG);
 
+  const [speechSettings, setSpeechSettings] =
+    useState<SpeechSettings>({
+      enhancement: false,
+      removeFillerWords: true,
+      removePauses: true,
+    });
+
   const isFullVideoMode =
     processingMode === "full_video_caption";
 
@@ -1785,6 +1826,11 @@ export const NewProjectModal: React.FC<
     setIsFocused(false);
     setCaptionStyle(DEFAULT_CAPTION_STYLE);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
+    setSpeechSettings({
+      enhancement: false,
+      removeFillerWords: true,
+      removePauses: true,
+    });
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
@@ -1813,9 +1859,14 @@ export const NewProjectModal: React.FC<
 
     setError("");
     setLoading(false);
-    setWizardStep(1);
+    setWizardStep(initialFile || dashboardUrl ? 2 : 1);
     setSelectedFile(null);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
+    setSpeechSettings({
+      enhancement: false,
+      removeFillerWords: true,
+      removePauses: true,
+    });
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
@@ -2257,6 +2308,7 @@ export const NewProjectModal: React.FC<
                 mode: effectiveProcessingMode,
 
                 reframe: reframeConfig,
+                speechSettings,
 
                 signal:
                   controller.signal,
@@ -2321,6 +2373,7 @@ export const NewProjectModal: React.FC<
                   captionStyle,
 
                   reframe: reframeConfig,
+                  speechSettings,
                 }),
               },
             );
@@ -2405,353 +2458,400 @@ export const NewProjectModal: React.FC<
      CLOSED
   ======================================================= */
 
-  /* =======================================================
-     RENDER — OPUS-STYLE SOURCE → SETTINGS
-  ======================================================= */
-
   if (!isOpen) return null;
 
-  const featureTitle =
-    intent === "enhance-speech"
-      ? "Enhance speech"
-      : processingMode === "reframe"
-        ? "AI Reframe"
-        : processingMode === "full_video_caption"
-          ? "AI Captions"
-          : "Long to Shorts";
-
-  const featureDescription =
-    intent === "enhance-speech"
-      ? "Clean up your voice and make every word sound clearer."
-      : processingMode === "reframe"
-        ? "Automatically keep the speaker in frame for every platform."
-        : processingMode === "full_video_caption"
-          ? "Add accurate, animated captions to your video."
-          : "Find the best moments and turn your long video into shorts.";
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-4 backdrop-blur-xl"
+      className="
+        fixed inset-0 z-[100]
+        flex items-center justify-center
+        overflow-y-auto
+        bg-black/85
+        px-3 py-4
+        backdrop-blur-2xl
+        sm:px-5 sm:py-7
+      "
       role="dialog"
       aria-modal="true"
       aria-labelledby="new-project-title"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) handleClose();
+        if (
+          event.target ===
+          event.currentTarget
+        ) {
+          handleClose();
+        }
       }}
     >
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(124,58,237,0.12),transparent_42%)]" />
+      {/* =================================================
+          AURORA BACKGROUND
+      ================================================= */}
+
+      <div className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute left-1/2 top-1/2 h-[750px] w-[750px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-600/[0.10] blur-[160px] animate-pulse" />
+
+        <div className="absolute -left-40 top-0 h-[500px] w-[500px] rounded-full bg-indigo-600/[0.09] blur-[150px]" />
+
+        <div className="absolute -right-40 bottom-0 h-[520px] w-[520px] rounded-full bg-fuchsia-600/[0.08] blur-[160px]" />
+
+        <div className="absolute left-[30%] top-[20%] h-[220px] w-[220px] rounded-full bg-cyan-500/[0.035] blur-[100px]" />
+
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(0,0,0,0.55)_100%)]" />
+
+        <Particles />
+      </div>
+
+      {/* =================================================
+          MODAL
+      ================================================= */}
 
       <div
         ref={modalRef}
         tabIndex={-1}
-        className="relative flex w-full max-w-[560px] max-h-[90vh] flex-col overflow-hidden rounded-[24px] border border-white/[0.10] bg-[#0b0b0f] shadow-[0_30px_120px_rgba(0,0,0,0.75)] outline-none"
+        className={`
+          relative flex w-full
+          ${wizardStep === 2 && intent === "enhance-speech" ? "max-w-[500px]" : "max-w-[680px]"}
+          max-h-[92vh]
+          flex-col overflow-hidden
+          rounded-[32px]
+          border border-white/[0.11]
+          bg-[#08080b]/[0.97]
+          shadow-[0_50px_180px_rgba(0,0,0,0.85)]
+          outline-none
+          backdrop-blur-2xl
+        `}
       >
-        <div className="pointer-events-none absolute inset-x-10 top-0 h-px bg-gradient-to-r from-transparent via-violet-400/70 to-transparent" />
+        {/* =================================================
+            CINEMATIC BORDER
+        ================================================= */}
 
-        {/* Header */}
-        <header className="flex shrink-0 items-center justify-between border-b border-white/[0.07] px-5 py-4">
-          <div className="flex min-w-0 items-center gap-3">
-            {wizardStep === 2 && (
-              <button
-                type="button"
-                onClick={handleBackToSource}
-                disabled={loading}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
-                aria-label="Back"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </button>
-            )}
+        <div className="pointer-events-none absolute inset-0 rounded-[32px] ring-1 ring-inset ring-white/[0.035]" />
+
+        <div className="pointer-events-none absolute inset-x-8 top-0 h-px bg-gradient-to-r from-transparent via-violet-300/90 to-transparent" />
+
+        <div className="pointer-events-none absolute left-1/2 top-0 h-20 w-[65%] -translate-x-1/2 bg-violet-500/[0.08] blur-3xl" />
+
+        {/* =================================================
+            HEADER
+        ================================================= */}
+
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && intent === "enhance-speech" ? "px-6 pb-4 pt-5" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+          <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="truncate text-[13px] font-semibold tracking-[-0.01em] text-white">
-                {wizardStep === 1 ? "Create a new project" : featureTitle}
-              </p>
-              <p className="mt-0.5 text-[9px] text-zinc-500">
-                {wizardStep === 1 ? "Add your video to get started" : featureDescription}
-              </p>
+              {wizardStep === 2 && intent === "enhance-speech" ? (
+                <>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">Enhance speech</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">Enhance voice clarity and remove filler words with one click.</p>
+                </>
+              ) : (
+                <div className="flex items-start gap-4">
+                  <div className="relative flex h-13 w-13 shrink-0 items-center justify-center rounded-[18px] border border-violet-400/20 bg-gradient-to-br from-violet-500/20 via-indigo-500/10 to-fuchsia-500/10 shadow-[0_15px_50px_rgba(124,58,237,0.18)]">
+                    <div className="absolute inset-0 rounded-[18px] bg-violet-500/20 blur-xl" />
+                    <div className="absolute inset-[1px] rounded-[17px] border border-white/[0.05]" />
+                    <WandSparkles className="relative h-5 w-5 text-violet-200" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 id="new-project-title" className="text-[17px] font-bold tracking-[-0.02em] text-white sm:text-xl">Create a new project</h2>
+                      <span className="inline-flex items-center gap-1 rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 text-[7px] font-bold uppercase tracking-[0.16em] text-violet-300"><Sparkles className="h-2.5 w-2.5" />AI Studio</span>
+                    </div>
+                    <p className="mt-1.5 max-w-[540px] text-[10px] leading-5 text-zinc-500 sm:text-[11px]">Turn long-form content into scroll-stopping short-form videos with LumoClip AI.</p>
+                  </div>
+                </div>
+              )}
             </div>
+
+            <button type="button" onClick={handleClose} disabled={loading} aria-label="Close new project dialog" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-zinc-300 disabled:opacity-40">
+              <X className="h-4 w-4" />
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={handleClose}
-            disabled={loading}
-            aria-label="Close"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          {!(wizardStep === 2 && intent === "enhance-speech") && (
+            <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
+              <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><ShieldCheck className="h-3 w-3 text-emerald-500" />Secure processing</span>
+              <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><Sparkles className="h-3 w-3 text-violet-400" />AI-powered clipping</span>
+              <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><Clock3 className="h-3 w-3 text-zinc-500" />Usually a few minutes</span>
+            </div>
+          )}
         </header>
 
-        {/* Step indicator — intentionally subtle like Opus */}
-        <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
-          <span className={`h-1 flex-1 rounded-full ${wizardStep >= 1 ? "bg-violet-500" : "bg-white/[0.08]"}`} />
-          <span className={`h-1 flex-1 rounded-full ${wizardStep >= 2 ? "bg-violet-500" : "bg-white/[0.08]"}`} />
-        </div>
+        {/* =================================================
+            BODY — OPUS-STYLE TWO STEP WIZARD
+        ================================================= */}
 
-        <main className="min-h-0 flex-1 overflow-y-auto px-5 pb-5 pt-5">
-          {wizardStep === 1 ? (
-            <section>
-              <div className="mb-5 text-center">
-                <h2 className="text-[22px] font-semibold tracking-[-0.03em] text-white">
-                  Start with a video
-                </h2>
-                <p className="mx-auto mt-1.5 max-w-[360px] text-[10px] leading-5 text-zinc-500">
-                  Paste a video link or upload an MP4 to continue.
-                </p>
-              </div>
-
-              {/* Opus-like single input */}
-              <div className={`rounded-[14px] border bg-[#111116] transition ${isFocused ? "border-violet-500/50" : "border-white/[0.08]"}`}>
-                <div className="flex items-center gap-3 px-4">
-                  <Link2 className={`h-4 w-4 shrink-0 ${isFocused ? "text-violet-400" : "text-zinc-600"}`} />
-                  <input
-                    id="source-url"
-                    type="url"
-                    inputMode="url"
-                    autoComplete="url"
-                    value={youtubeUrl}
-                    onFocus={() => setIsFocused(true)}
-                    onBlur={() => setIsFocused(false)}
-                    onChange={(event) => {
-                      setYoutubeUrl(event.target.value);
-                      setSourceType("youtube");
-                      setSelectedFile(null);
-                      if (error) setError("");
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !loading) {
-                        event.preventDefault();
-                        handleContinueToSettings();
-                      }
-                    }}
-                    disabled={loading}
-                    placeholder="Drop a video link"
-                    className="h-[50px] min-w-0 flex-1 bg-transparent text-[12px] text-white outline-none placeholder:text-zinc-600"
-                  />
-                  {youtubeValid && <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />}
-                </div>
-              </div>
-
-              <div className="mt-2 flex flex-wrap gap-1.5 px-1">
-                <span className="text-[8px] text-zinc-600">YouTube</span>
-                <span className="text-[8px] text-zinc-800">•</span>
-                <span className="text-[8px] text-zinc-600">Shorts</span>
-                <span className="text-[8px] text-zinc-800">•</span>
-                <span className="text-[8px] text-zinc-600">Live</span>
-              </div>
-
-              <div className="my-5 flex items-center gap-3">
-                <div className="h-px flex-1 bg-white/[0.07]" />
-                <span className="text-[8px] text-zinc-700">or</span>
-                <div className="h-px flex-1 bg-white/[0.07]" />
-              </div>
-
-              {/* Upload — compact, not a giant drag-drop box */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                disabled={loading}
-                className={`group flex w-full items-center gap-4 rounded-[14px] border px-4 py-4 text-left transition ${dragActive ? "border-violet-400/50 bg-violet-500/[0.08]" : selectedFile ? "border-emerald-500/25 bg-emerald-500/[0.035]" : "border-white/[0.08] bg-[#111116] hover:border-white/[0.15] hover:bg-white/[0.035]"}`}
-              >
-                <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] ${selectedFile ? "bg-emerald-500/10" : "bg-white/[0.05]"}`}>
-                  {selectedFile ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Upload className="h-4 w-4 text-zinc-400 group-hover:text-white" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-semibold text-zinc-200">
-                    {selectedFile ? selectedFile.name : "Upload a video file"}
-                  </p>
-                  <p className="mt-1 truncate text-[8px] text-zinc-600">
-                    {selectedFile ? `${formatFileSize(selectedFile.size)} · Ready to continue` : "Drag & drop or choose a file · MP4, MOV, WEBM"}
+        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="px-5 py-6 sm:px-7">
+            {wizardStep === 1 ? (
+              <section className="mx-auto max-w-[590px]">
+                <div className="mb-7 text-center">
+                  <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-[16px] border border-violet-400/15 bg-violet-500/10 shadow-[0_0_45px_rgba(124,58,237,0.12)]">
+                    <Video className="h-5 w-5 text-violet-300" />
+                  </div>
+                  <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Start with your video</p>
+                  <p className="mx-auto mt-2 max-w-md text-[10px] leading-5 text-zinc-500 sm:text-[11px]">
+                    Paste a video link or upload an MP4. We’ll take you to your AI settings next.
                   </p>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-700 transition group-hover:translate-x-0.5 group-hover:text-zinc-400" />
-              </button>
 
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".mp4,.mov,.avi,.webm,.mpeg,.mpg,.mkv,video/*"
-                onChange={handleFileChange}
-                disabled={loading}
-                className="hidden"
-              />
-
-              {selectedFile && (
-                <button
-                  type="button"
-                  onClick={removeSelectedFile}
-                  disabled={loading}
-                  className="mt-2 text-[8px] font-medium text-zinc-600 transition hover:text-red-400"
-                >
-                  Remove file
-                </button>
-              )}
-
-              {error && (
-                <div role="alert" className="mt-4 rounded-[12px] border border-red-500/20 bg-red-500/[0.06] px-3.5 py-3 text-[9px] text-red-300">
-                  {error}
-                </div>
-              )}
-
-              <p className="mt-5 text-center text-[8px] text-zinc-700">
-                Your video is securely uploaded and processed by LumoClip AI.
-              </p>
-            </section>
-          ) : (
-            <section>
-              {/* Source preview / selected media */}
-              <div className="mb-5 flex items-center gap-3 rounded-[13px] border border-white/[0.07] bg-[#111116] px-3.5 py-3">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-white/[0.05]">
-                  {sourceType === "file" ? <Video className="h-4 w-4 text-zinc-400" /> : <Link2 className="h-4 w-4 text-zinc-400" />}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-[7px] font-medium uppercase tracking-[0.15em] text-zinc-600">Source</p>
-                  <p className="mt-1 truncate text-[9px] text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p>
-                </div>
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
-              </div>
-
-              {/* Feature-specific settings. Do NOT show all tools together. */}
-              {intent !== "enhance-speech" && processingMode === "reframe" && (
-                <div className="space-y-4">
-                  <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />
-                </div>
-              )}
-
-              {intent !== "enhance-speech" && processingMode === "full_video_caption" && (
-                <div className="space-y-4">
-                  <CaptionStylePicker style={captionStyle} onChange={setCaptionStyle} disabled={loading} lockEnabled />
-                </div>
-              )}
-
-              {intent !== "enhance-speech" && processingMode === "clips" && (
-                <div className="space-y-4">
-                  <div className="rounded-[16px] border border-white/[0.07] bg-[#111116] p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-violet-500/10">
-                        <Sparkles className="h-4 w-4 text-violet-300" />
+                <div className={`relative overflow-hidden rounded-[24px] border transition-all duration-300 ${sourceType === "youtube" && youtubeValid ? "border-emerald-500/25 bg-emerald-500/[0.035]" : "border-white/[0.08] bg-white/[0.02] hover:border-violet-500/25"}`}>
+                  <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-violet-500/[0.08] blur-3xl" />
+                  <div className="relative p-5 sm:p-6">
+                    <div className="mb-4 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-red-400/10 bg-red-500/10">
+                        <Youtube className="h-4 w-4 text-red-400" />
                       </div>
                       <div>
-                        <p className="text-[11px] font-semibold text-white">AI clip generation</p>
-                        <p className="mt-1 text-[8px] text-zinc-600">LumoClip will find the strongest moments automatically.</p>
+                        <p className="text-[11px] font-bold text-white">Paste a video link</p>
+                        <p className="mt-0.5 text-[8px] text-zinc-600">YouTube video, Shorts or Live</p>
+                      </div>
+                      {youtubeValid && <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-400" />}
+                    </div>
+                    <div className={`relative rounded-[18px] border ${isFocused ? "border-violet-500/45 bg-violet-500/[0.035]" : "border-white/[0.08] bg-black/20"}`}>
+                      <Link2 className={`absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 ${isFocused ? "text-violet-400" : "text-zinc-600"}`} />
+                      <input
+                        id="source-url"
+                        type="url"
+                        inputMode="url"
+                        autoComplete="url"
+                        value={youtubeUrl}
+                        onFocus={() => setIsFocused(true)}
+                        onBlur={() => setIsFocused(false)}
+                        onChange={(event) => {
+                          setYoutubeUrl(event.target.value);
+                          if (event.target.value.trim()) setSourceType("youtube");
+                          if (error) setError("");
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" && youtubeValid && !loading) {
+                            event.preventDefault();
+                            handleContinueToSettings();
+                          }
+                        }}
+                        disabled={loading}
+                        placeholder="Paste a YouTube URL..."
+                        className="w-full rounded-[18px] bg-transparent py-4 pl-11 pr-11 text-[11px] font-medium text-white outline-none placeholder:text-zinc-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="my-4 flex items-center gap-3">
+                  <div className="h-px flex-1 bg-white/[0.06]" />
+                  <span className="text-[8px] font-bold uppercase tracking-[0.18em] text-zinc-700">or</span>
+                  <div className="h-px flex-1 bg-white/[0.06]" />
+                </div>
+
+                <div
+                  onClick={() => !selectedFile && fileInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => {
+                    if ((event.key === "Enter" || event.key === " ") && !selectedFile) {
+                      event.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  className={`group relative overflow-hidden rounded-[24px] border-2 border-dashed transition-all duration-300 ${dragActive ? "scale-[1.01] border-violet-400 bg-violet-500/[0.08]" : selectedFile ? "border-emerald-500/20 bg-emerald-500/[0.035]" : "border-white/[0.10] bg-white/[0.018] hover:border-violet-500/30 hover:bg-violet-500/[0.025]"}`}
+                >
+                  <div className="relative flex min-h-[170px] flex-col items-center justify-center px-6 py-7 text-center">
+                    {selectedFile ? (
+                      <>
+                        <div className="flex h-12 w-12 items-center justify-center rounded-[15px] border border-emerald-500/15 bg-emerald-500/10"><FileCheck2 className="h-5 w-5 text-emerald-400" /></div>
+                        <p className="mt-4 max-w-full truncate text-[11px] font-bold text-white">{selectedFile.name}</p>
+                        <p className="mt-1 text-[8px] text-emerald-400/80">{formatFileSize(selectedFile.size)} · Ready</p>
+                        <button type="button" onClick={(event) => { event.stopPropagation(); removeSelectedFile(); }} disabled={loading} className="mt-3 rounded-lg px-2.5 py-1 text-[8px] font-bold text-zinc-600 transition hover:bg-red-500/10 hover:text-red-400">Remove & choose another</button>
+                      </>
+                    ) : (
+                      <>
+                        <div className={`flex h-12 w-12 items-center justify-center rounded-[15px] border transition-all ${dragActive ? "border-violet-400/30 bg-violet-500/15" : "border-white/[0.08] bg-zinc-950 group-hover:-translate-y-1 group-hover:border-violet-400/25"}`}><Upload className={`h-5 w-5 ${dragActive ? "text-violet-300" : "text-zinc-500 group-hover:text-violet-300"}`} /></div>
+                        <p className="mt-4 text-[11px] font-bold text-zinc-200">Upload your video</p>
+                        <p className="mt-1.5 text-[8px] text-zinc-600">Drag & drop or click to browse · MP4, MOV, WEBM, MKV</p>
+                        <span className="mt-3 rounded-full border border-white/[0.06] bg-black/20 px-2.5 py-1 text-[7px] font-bold uppercase tracking-[0.14em] text-zinc-700">Max 500MB</span>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                <input ref={fileInputRef} type="file" accept=".mp4,.mov,.avi,.webm,.mpeg,.mpg,.mkv,video/*" onChange={handleFileChange} disabled={loading} className="hidden" />
+
+                <div className="mt-5 flex items-center justify-center gap-5 text-[8px] text-zinc-700">
+                  <span className="flex items-center gap-1.5"><ShieldCheck className="h-3 w-3 text-emerald-500/70" /> Secure upload</span>
+                  <span className="flex items-center gap-1.5"><Sparkles className="h-3 w-3 text-violet-400/70" /> AI powered</span>
+                  <span className="flex items-center gap-1.5"><Clock3 className="h-3 w-3" /> Fast setup</span>
+                </div>
+              </section>
+            ) : (
+              <section className={intent === "enhance-speech" ? "space-y-4" : "space-y-6"}>
+                {intent === "enhance-speech" ? (
+                  <>
+                    <div className="flex justify-center">
+                      <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                        {selectedFile ? (
+                          <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                        ) : getYouTubeVideoId(youtubeUrl) ? (
+                          <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950"><Video className="h-8 w-8 text-zinc-600" /></div>
+                        )}
+                        <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">720p</div>
+                        <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/55 to-transparent" />
                       </div>
                     </div>
-                  </div>
-                  <CaptionStylePicker style={captionStyle} onChange={setCaptionStyle} disabled={loading} lockEnabled={false} />
-                </div>
-              )}
 
-              {intent === "enhance-speech" && (
-                <div className="rounded-[16px] border border-white/[0.07] bg-[#111116] p-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-violet-500/10">
-                      <Mic className="h-4 w-4 text-violet-300" />
+                    <div className="overflow-hidden rounded-[4px] bg-[#1b1b1f]">
+                      <div className="border-b border-black/30 bg-[#18181c] px-4 py-3">
+                        <p className="text-[12px] font-bold text-white">Enhancement settings</p>
+                      </div>
+                      <div className="divide-y divide-black/35">
+                        {[
+                          { key: "enhancement", icon: Mic, title: "Speech enhancement", desc: "Improve vocal clarity and richness" },
+                          { key: "removeFillerWords", icon: Captions, title: "Remove filler words", desc: "Manage default words" },
+                          { key: "removePauses", icon: WandSparkles, title: "Remove pauses", desc: "Remove unnecessary silence" },
+                        ].map((item) => {
+                          const Icon = item.icon;
+                          const enabled = speechSettings[item.key as keyof SpeechSettings];
+                          return (
+                            <button key={item.key} type="button" disabled={loading} onClick={() => setSpeechSettings((current) => ({ ...current, [item.key]: !current[item.key as keyof SpeechSettings] }))} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition hover:bg-white/[0.025] disabled:opacity-50">
+                              <Icon className={`h-4 w-4 shrink-0 ${item.key === "enhancement" ? "text-indigo-300" : item.key === "removeFillerWords" ? "text-cyan-200" : "text-violet-300"}`} />
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[11px] font-bold text-zinc-200">{item.title}</p>
+                                <p className="mt-0.5 text-[8px] text-zinc-500">{item.desc}</p>
+                              </div>
+                              <span className={`relative h-5 w-9 shrink-0 rounded-full transition ${enabled ? "bg-white" : "bg-[#4b4b51]"}`}>
+                                <span className={`absolute top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full transition-all ${enabled ? "left-[18px] bg-[#111114]" : "left-0.5 bg-[#202024]"}`} />
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-[11px] font-semibold text-white">Speech enhancement</p>
-                      <p className="mt-1 text-[8px] text-zinc-600">Improve vocal clarity and reduce distracting noise.</p>
+
+                    {error && (
+                      <div role="alert" className="rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2.5 text-[9px] text-red-300">{error}</div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <button type="button" onClick={handleBackToSource} disabled={loading} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.025] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
+                      <div className="min-w-0 flex-1"><p className="text-[8px] font-bold uppercase tracking-[0.18em] text-violet-400">Step 2 of 2</p><p className="mt-1 truncate text-lg font-semibold tracking-tight text-white">{isReframeMode ? "AI Reframe" : isFullVideoMode ? "Full video captions" : "AI clips"}</p></div>
                     </div>
-                  </div>
-                </div>
-              )}
+                    <div className="flex items-center gap-3 rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.035] px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">{sourceType === "file" ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Link2 className="h-4 w-4 text-emerald-400" />}</div><div className="min-w-0 flex-1"><p className="text-[7px] font-bold uppercase tracking-[0.16em] text-emerald-400">Source ready</p><p className="mt-1 truncate text-[9px] font-medium text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p></div><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /></div>
+                    {isReframeMode && <ReframeSettings config={reframeConfig} onChange={setReframeConfig} disabled={loading} />}
+                    {(!isReframeMode || reframeConfig.addCaptions) && <CaptionStylePicker style={captionStyle} onChange={setCaptionStyle} disabled={loading} lockEnabled={isFullVideoMode} />}
+                    <section><div className="mb-2.5 flex items-end justify-between gap-3"><label htmlFor="project-title" className="text-xs font-bold text-white">Project title <span className="ml-1.5 font-normal text-zinc-700">Optional</span></label><span className={`text-[8px] ${projectTitle.length >= MAX_TITLE_LENGTH ? "text-amber-400" : "text-zinc-700"}`}>{projectTitle.length}/{MAX_TITLE_LENGTH}</span></div><input id="project-title" type="text" maxLength={MAX_TITLE_LENGTH} value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} disabled={loading} placeholder="Give your project a name" className="w-full rounded-[18px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-[10px] font-medium text-white outline-none placeholder:text-zinc-700" /></section>
+                  </>
+                )}
+              </section>
+            )}
 
-              <div className="mt-5">
-                <div className="mb-2 flex items-center justify-between">
-                  <label htmlFor="project-title" className="text-[9px] font-semibold text-zinc-300">Project name</label>
-                  <span className="text-[7px] text-zinc-700">Optional</span>
-                </div>
-                <input
-                  id="project-title"
-                  type="text"
-                  maxLength={MAX_TITLE_LENGTH}
-                  value={projectTitle}
-                  onChange={(event) => setProjectTitle(event.target.value)}
-                  disabled={loading}
-                  placeholder="Untitled project"
-                  className="h-11 w-full rounded-[12px] border border-white/[0.07] bg-[#111116] px-3.5 text-[10px] text-white outline-none placeholder:text-zinc-700 focus:border-violet-500/40"
-                />
-              </div>
-
-              {intent !== "enhance-speech" && (
-                <div className={`mt-4 flex items-center justify-between rounded-[13px] border px-3.5 py-3 ${insufficientCredits ? "border-red-500/20 bg-red-500/[0.05]" : "border-white/[0.07] bg-[#111116]"}`}>
-                  <div className="flex items-center gap-2.5">
-                    <Zap className="h-3.5 w-3.5 text-amber-300" />
-                    <span className="text-[8px] text-zinc-500">Processing</span>
-                  </div>
-                  <span className={`text-[9px] font-semibold ${insufficientCredits ? "text-red-400" : "text-zinc-300"}`}>{MIN_CREDITS} credits</span>
-                </div>
-              )}
-
-              {error && (
-                <div role="alert" className="mt-4 rounded-[12px] border border-red-500/20 bg-red-500/[0.06] px-3.5 py-3 text-[9px] text-red-300">
-                  {error}
-                </div>
-              )}
-            </section>
-          )}
+            {wizardStep === 1 && error && (
+              <div role="alert" className="mx-auto mt-5 flex max-w-[590px] items-start gap-3 rounded-[18px] border border-red-500/20 bg-red-500/[0.06] p-4"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" /><div><p className="text-[8px] font-bold uppercase tracking-[0.15em] text-red-400">Unable to continue</p><p className="mt-1 text-[10px] leading-5 text-red-300/80">{error}</p></div></div>
+            )}
+          </div>
         </main>
 
-        {/* Upload progress */}
-        {loading && sourceType === "file" && (
-          <div className="shrink-0 border-t border-white/[0.07] bg-[#0b0b0f] px-5 py-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="truncate text-[8px] text-zinc-500">{uploadState.message || "Uploading video"}</span>
-              <span className="text-[8px] font-semibold text-violet-300">{uploadState.progress}%</span>
-            </div>
-            <div className="h-1 overflow-hidden rounded-full bg-white/[0.07]">
-              <div className="h-full rounded-full bg-violet-500 transition-[width] duration-200" style={{ width: `${uploadState.progress}%` }} />
-            </div>
-          </div>
-        )}
+        {/* =================================================
+            UPLOAD PROGRESS
+        ================================================= */}
 
-        {/* Footer — one primary action, like Opus */}
-        <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-white/[0.07] bg-[#0b0b0f] px-5 py-3.5">
-          <button
-            type="button"
-            onClick={wizardStep === 2 ? handleBackToSource : handleClose}
-            disabled={loading}
-            className="rounded-[10px] px-3.5 py-2.5 text-[9px] font-medium text-zinc-600 transition hover:bg-white/[0.04] hover:text-zinc-300 disabled:opacity-40"
-          >
-            {wizardStep === 2 ? "Back" : "Cancel"}
-          </button>
+        {loading &&
+          sourceType === "file" && (
+            <div className="relative shrink-0 border-t border-white/[0.06] bg-[#07070a]/95 px-5 pt-4 sm:px-7">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-violet-400/10 bg-violet-500/10">
+                    {uploadState.stage ===
+                    "complete" ? (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                    ) : (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-violet-300" />
+                    )}
+                  </div>
 
-          <button
-            type="button"
-            onClick={() => wizardStep === 1 ? handleContinueToSettings() : void handleSubmit()}
-            disabled={wizardStep === 1 ? loading || !sourceReady : !canSubmit}
-            className="inline-flex min-w-[175px] items-center justify-center gap-2 rounded-[10px] bg-violet-600 px-5 py-2.5 text-[9px] font-semibold text-white shadow-[0_8px_25px_rgba(124,58,237,0.24)] transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-35"
-          >
-            {loading ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>{uploadState.message || "Processing..."}</span>
-              </>
-            ) : wizardStep === 1 ? (
-              <>
-                <span>Continue</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </>
-            ) : insufficientCredits ? (
-              <>
-                <Zap className="h-3.5 w-3.5" />
-                <span>Not enough credits</span>
-              </>
+                  <div className="min-w-0">
+                    <p className="truncate text-[9px] font-bold text-zinc-300">
+                      {uploadState.message ||
+                        "Preparing your video"}
+                    </p>
+
+                    <p className="mt-0.5 text-[7px] text-zinc-700">
+                      {uploadState.stage ===
+                      "uploading"
+                        ? "Uploading source file"
+                        : uploadState.stage ===
+                            "processing"
+                          ? "AI pipeline started"
+                          : "Secure transfer"}
+                    </p>
+                  </div>
+                </div>
+
+                <span className="shrink-0 text-[10px] font-bold tabular-nums text-violet-300">
+                  {uploadState.progress}%
+                </span>
+              </div>
+
+              <div
+                className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={
+                  uploadState.progress
+                }
+                aria-label="Video upload progress"
+              >
+                <div
+                  className="relative h-full rounded-full bg-gradient-to-r from-violet-600 via-fuchsia-500 to-indigo-400 transition-[width] duration-200 ease-out"
+                  style={{
+                    width: `${uploadState.progress}%`,
+                  }}
+                >
+                  <div className="absolute inset-0 bg-white/25 blur-sm" />
+
+                  <div className="absolute right-0 top-0 h-full w-10 bg-white/30 blur-md" />
+                </div>
+              </div>
+
+              <p className="pb-3 pt-2.5 text-[7px] text-zinc-700">
+                Please keep this window open while
+                your video uploads.
+              </p>
+            </div>
+          )}
+
+        {/* =================================================
+            FOOTER
+        ================================================= */}
+
+        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && intent === "enhance-speech" ? "px-6 py-3.5" : "px-5 py-4 sm:px-7"}`}>
+          <div className="flex items-center justify-between gap-3">
+            {wizardStep === 2 && intent === "enhance-speech" ? (
+              <div className="ml-auto w-full">
+                <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || "Enhancing speech...") : "Enhance speech in 1 click"}</span>
+                </button>
+              </div>
             ) : (
               <>
-                <span>{intent === "enhance-speech" ? "Enhance speech" : processingMode === "reframe" ? "Create AI Reframe" : processingMode === "full_video_caption" ? "Add captions" : "Get clips in 1 click"}</span>
-                <ArrowRight className="h-3.5 w-3.5" />
+                <div className="hidden items-center gap-2 sm:flex"><div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.025]"><ShieldCheck className="h-3 w-3 text-zinc-600" /></div><div><p className="text-[8px] font-medium text-zinc-600">Secure processing</p><p className="text-[7px] text-zinc-800">Powered by LumoClip AI</p></div></div>
+                <div className="ml-auto flex items-center gap-2"><button type="button" onClick={wizardStep === 2 ? handleBackToSource : handleClose} disabled={loading} className="rounded-xl border border-transparent px-4 py-2.5 text-[9px] font-bold text-zinc-500 transition hover:border-white/[0.06] hover:bg-white/[0.04] hover:text-white disabled:opacity-40">{wizardStep === 2 ? "Back" : "Cancel"}</button><button type="button" onClick={() => wizardStep === 1 ? handleContinueToSettings() : void handleSubmit()} disabled={wizardStep === 1 ? loading : !canSubmit} className="group relative inline-flex min-w-[190px] items-center justify-center gap-2 overflow-hidden rounded-[14px] border border-violet-400/20 bg-gradient-to-r from-violet-600 via-violet-600 to-indigo-600 px-5 py-3 text-[9px] font-bold text-white shadow-[0_10px_35px_rgba(124,58,237,0.25)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-35"><span className="relative flex items-center justify-center gap-2">{loading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="truncate">{uploadState.message || "Starting AI..."}</span></> : wizardStep === 1 ? <><span>Continue</span><ArrowRight className="h-3.5 w-3.5" /></> : insufficientCredits ? <><Zap className="h-3.5 w-3.5" /><span>Not enough credits</span></> : <><Sparkles className="h-3.5 w-3.5" /><span>{processingMode === "reframe" ? "Create AI Reframe" : processingMode === "full_video_caption" ? "Create full video" : "Create my clips"}</span><ArrowRight className="h-3.5 w-3.5" /></>}</span></button></div>
               </>
             )}
-          </button>
+          </div>
         </footer>
       </div>
     </div>
   );
-}
+};
 
 export default NewProjectModal;
 
