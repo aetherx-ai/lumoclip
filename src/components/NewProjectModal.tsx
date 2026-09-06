@@ -121,6 +121,16 @@ interface ReframeConfig {
   addCaptions: boolean;
 }
 
+// Opus-style "Enhance speech" toggle set — shown only when intent is
+// "enhance-speech", right after the person picks a source. Sent to the
+// server alongside the rest of the project payload so the backend can
+// decide which cleanup passes to run.
+interface SpeechSettings {
+  speechEnhancement: boolean;
+  removeFillerWords: boolean;
+  removePauses: boolean;
+}
+
 /* =========================================================
    CONSTANTS
 ========================================================= */
@@ -164,6 +174,15 @@ const DEFAULT_REFRAME_CONFIG: ReframeConfig = {
   mode: "auto",
   tracking: "smooth",
   addCaptions: true,
+};
+
+// Mirrors Opus's own defaults: speech enhancement starts off (it's the
+// heaviest, most opinionated pass), while filler-word and pause removal
+// start on since almost everyone wants those.
+const DEFAULT_SPEECH_SETTINGS: SpeechSettings = {
+  speechEnhancement: false,
+  removeFillerWords: true,
+  removePauses: true,
 };
 
 const DEFAULT_CAPTION_STYLE: CaptionStyle = {
@@ -485,6 +504,7 @@ interface UploadVideoOptions {
   captionStyle: CaptionStyle;
   mode: ProcessingMode;
   reframe: ReframeConfig;
+  speechSettings?: SpeechSettings;
 
   onProgress?: (progress: number) => void;
 
@@ -503,6 +523,7 @@ const uploadVideoWithProgress = ({
   captionStyle,
   mode,
   reframe,
+  speechSettings,
   onProgress,
   onStage,
   signal,
@@ -712,6 +733,13 @@ const uploadVideoWithProgress = ({
       "reframe",
       JSON.stringify(reframe),
     );
+
+    if (speechSettings) {
+      formData.append(
+        "speechSettings",
+        JSON.stringify(speechSettings),
+      );
+    }
 
     formData.append(
       "video",
@@ -1606,6 +1634,135 @@ const ReframeSettings: React.FC<{
   );
 };
 
+/* =========================================================
+   ENHANCE SPEECH SETTINGS (Opus-style)
+   Shown once a source is chosen while intent === "enhance-speech",
+   right where the output-mode picker would otherwise sit.
+========================================================= */
+
+const EnhanceSpeechToggleRow: React.FC<{
+  icon: React.ReactNode;
+  title: string;
+  description: React.ReactNode;
+  checked: boolean;
+  disabled?: boolean;
+  onToggle: () => void;
+}> = ({ icon, title, description, checked, disabled, onToggle }) => (
+  <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] px-4 py-4 last:border-b-0 sm:px-5">
+    <div className="flex min-w-0 items-start gap-3">
+      <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.035] text-zinc-400">
+        {icon}
+      </div>
+
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold text-white">
+          {title}
+        </p>
+
+        <p className="mt-0.5 text-[8px] leading-4 text-zinc-600">
+          {description}
+        </p>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={title}
+      disabled={disabled}
+      onClick={onToggle}
+      className={`relative h-6 w-11 shrink-0 rounded-full border transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+        checked
+          ? "border-violet-400/35 bg-violet-600"
+          : "border-white/[0.1] bg-white/[0.06]"
+      }`}
+    >
+      <span
+        className={`absolute top-1/2 h-4 w-4 -translate-y-1/2 rounded-full bg-white shadow transition-all ${
+          checked ? "left-[22px]" : "left-1"
+        }`}
+      />
+    </button>
+  </div>
+);
+
+const EnhanceSpeechSettings: React.FC<{
+  settings: SpeechSettings;
+  onChange: (settings: SpeechSettings) => void;
+  disabled: boolean;
+}> = ({ settings, onChange, disabled }) => {
+  return (
+    <section className="overflow-hidden rounded-[22px] border border-violet-400/[0.14] bg-gradient-to-br from-violet-500/[0.05] via-white/[0.02] to-fuchsia-500/[0.03]">
+      <div className="border-b border-white/[0.06] px-4 py-4 sm:px-5">
+        <div className="flex items-center gap-2">
+          <p className="text-[11px] font-bold text-white">
+            Enhancement settings
+          </p>
+
+          <span className="rounded-full border border-violet-400/15 bg-violet-400/10 px-1.5 py-0.5 text-[6px] font-black uppercase tracking-[0.14em] text-violet-300">
+            1-click
+          </span>
+        </div>
+
+        <p className="mt-1 text-[8px] leading-4 text-zinc-500">
+          Choose what to clean up — you can turn any of these off.
+        </p>
+      </div>
+
+      <div>
+        <EnhanceSpeechToggleRow
+          icon={<Mic className="h-4 w-4" />}
+          title="Speech enhancement"
+          description="Improve vocal clarity and richness"
+          checked={settings.speechEnhancement}
+          disabled={disabled}
+          onToggle={() =>
+            onChange({
+              ...settings,
+              speechEnhancement: !settings.speechEnhancement,
+            })
+          }
+        />
+
+        <EnhanceSpeechToggleRow
+          icon={<Captions className="h-4 w-4" />}
+          title="Remove filler words"
+          description={
+            <>
+              Cuts "um", "uh" and other filler words —{" "}
+              <span className="text-zinc-500 underline decoration-zinc-700 underline-offset-2">
+                manage default words
+              </span>
+            </>
+          }
+          checked={settings.removeFillerWords}
+          disabled={disabled}
+          onToggle={() =>
+            onChange({
+              ...settings,
+              removeFillerWords: !settings.removeFillerWords,
+            })
+          }
+        />
+
+        <EnhanceSpeechToggleRow
+          icon={<WandSparkles className="h-4 w-4" />}
+          title="Remove pauses"
+          description="Tighten up dead air between sentences"
+          checked={settings.removePauses}
+          disabled={disabled}
+          onToggle={() =>
+            onChange({
+              ...settings,
+              removePauses: !settings.removePauses,
+            })
+          }
+        />
+      </div>
+    </section>
+  );
+};
 
 /* =========================================================
    COMPONENT
@@ -1673,6 +1830,9 @@ export const NewProjectModal: React.FC<
 
   const [reframeConfig, setReframeConfig] =
     useState<ReframeConfig>(DEFAULT_REFRAME_CONFIG);
+
+  const [speechSettings, setSpeechSettings] =
+    useState<SpeechSettings>(DEFAULT_SPEECH_SETTINGS);
 
   const isFullVideoMode =
     processingMode === "full_video_caption";
@@ -1780,6 +1940,7 @@ export const NewProjectModal: React.FC<
     setIsFocused(false);
     setCaptionStyle(DEFAULT_CAPTION_STYLE);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
+    setSpeechSettings(DEFAULT_SPEECH_SETTINGS);
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
@@ -1810,6 +1971,7 @@ export const NewProjectModal: React.FC<
     setLoading(false);
     setSelectedFile(null);
     setReframeConfig(DEFAULT_REFRAME_CONFIG);
+    setSpeechSettings(DEFAULT_SPEECH_SETTINGS);
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
@@ -2232,6 +2394,11 @@ export const NewProjectModal: React.FC<
 
                 reframe: reframeConfig,
 
+                speechSettings:
+                  intent === "enhance-speech"
+                    ? speechSettings
+                    : undefined,
+
                 signal:
                   controller.signal,
 
@@ -2295,6 +2462,11 @@ export const NewProjectModal: React.FC<
                   captionStyle,
 
                   reframe: reframeConfig,
+
+                  speechSettings:
+                    intent === "enhance-speech"
+                      ? speechSettings
+                      : undefined,
                 }),
               },
             );
@@ -2493,7 +2665,7 @@ export const NewProjectModal: React.FC<
 
                 <p className="mt-1.5 max-w-[540px] text-[10px] leading-5 text-zinc-500 sm:text-[11px]">
                   {intent === "enhance-speech"
-                    ? "Bring in your video first — you'll be able to clean up and enhance its speech once it's ready."
+                    ? "Paste a link or upload your video, choose what to clean up, then enhance it in one click."
                     : "Turn long-form content into scroll-stopping short-form videos with LumoClip AI."}
                 </p>
               </div>
@@ -2732,7 +2904,13 @@ export const NewProjectModal: React.FC<
                 OUTPUT MODE
             ================================================= */}
 
-            {intent !== "enhance-speech" && (
+            {intent === "enhance-speech" ? (
+              <EnhanceSpeechSettings
+                settings={speechSettings}
+                onChange={setSpeechSettings}
+                disabled={loading}
+              />
+            ) : (
               <OutputModePicker
                 mode={processingMode}
                 onChange={setProcessingMode}
@@ -3363,7 +3541,7 @@ export const NewProjectModal: React.FC<
 
                       <span>
                         {intent === "enhance-speech"
-                          ? "Continue"
+                          ? "Enhance speech in 1 click"
                           : processingMode === "reframe"
                             ? "Create AI Reframe"
                             : processingMode === "full_video_caption"
