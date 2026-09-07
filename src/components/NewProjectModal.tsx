@@ -37,6 +37,7 @@ import {
   Trash2,
   Upload,
   Video,
+  Volume2,
   WandSparkles,
   X,
   Youtube,
@@ -121,12 +122,29 @@ interface CaptionStyle {
   animation: "pop" | "none";
 }
 
-// Must match ProcessingMode on the server (server.ts).
+// Must match ProcessingMode on the server (server.ts) — with one
+// exception: "auto_sfx" is a UI-only value. The server has no
+// "auto_sfx" project-creation mode; Auto SFX is a separate free action
+// (POST /api/projects/:projectId/auto-sfx) that runs on a project whose
+// source video already exists. Selecting it here just prepares the
+// source (same as "speech_only"/Enhance Speech) — see
+// getBackendProcessingMode() below, which maps it to "speech_only"
+// before it's ever sent to the server.
 type ProcessingMode =
   | "clips"
   | "full_video_caption"
   | "reframe"
-  | "speech_only";
+  | "speech_only"
+  | "auto_sfx";
+
+// Translates a UI-only ProcessingMode into the value the server actually
+// understands. Every value except "auto_sfx" already matches the server's
+// ProcessingMode 1:1.
+function getBackendProcessingMode(
+  mode: ProcessingMode,
+): "clips" | "full_video_caption" | "reframe" | "speech_only" {
+  return mode === "auto_sfx" ? "speech_only" : mode;
+}
 
 interface ReframeConfig {
   enabled: boolean;
@@ -1544,6 +1562,14 @@ const OutputModePicker: React.FC<{
       description: "Keep the whole video and burn in stylish captions — no clipping",
       accent: "rgba(99,102,241,0.25)",
     },
+    {
+      value: "auto_sfx",
+      icon: <Volume2 className="h-4.5 w-4.5" />,
+      title: "Auto SFX",
+      description: "AI finds key moments and mixes in synced sound effects — free",
+      badge: "FREE",
+      accent: "rgba(52,211,153,0.25)",
+    },
   ];
 
   const visibleOptions = lockedMode
@@ -1562,7 +1588,7 @@ const OutputModePicker: React.FC<{
           <p className="mt-1 text-[9px] text-zinc-600">
             {lockedMode
               ? "Picked from the home screen."
-              : "Choose clips, reframe the full video, or caption the original."}
+              : "Choose clips, reframe, caption, or add Auto SFX to the original."}
           </p>
         </div>
 
@@ -1586,7 +1612,7 @@ const OutputModePicker: React.FC<{
 
       <div
         className={`grid grid-cols-1 gap-2.5 ${
-          lockedMode ? "" : "sm:grid-cols-3"
+          lockedMode ? "" : "sm:grid-cols-2"
         }`}
       >
         {visibleOptions.map((option) => (
@@ -2113,6 +2139,9 @@ export const NewProjectModal: React.FC<
 
   const isReframeMode =
     processingMode === "reframe";
+
+  const isAutoSfxMode =
+    processingMode === "auto_sfx";
 
   // Full-video mode has no purpose without captions, so force them on
   // (and keep the toggle locked) whenever this mode is selected.
@@ -2646,6 +2675,14 @@ export const NewProjectModal: React.FC<
           ? "speech_only"
           : processingMode;
 
+      // The server only understands "clips" | "full_video_caption" |
+      // "reframe" | "speech_only". "auto_sfx" is UI-only — it just
+      // prepares the source (same as Enhance Speech); the actual Auto
+      // SFX pass runs afterward as a separate free action from the
+      // project page, once the source is ready.
+      const backendProcessingMode =
+        getBackendProcessingMode(effectiveProcessingMode);
+
       try {
         const {
           data: { session },
@@ -2696,7 +2733,7 @@ export const NewProjectModal: React.FC<
 
                 captionStyle,
 
-                mode: effectiveProcessingMode,
+                mode: backendProcessingMode,
 
                 reframe: reframeConfig,
                 speechSettings,
@@ -2760,7 +2797,7 @@ export const NewProjectModal: React.FC<
 
                   sourceUrl: finalUrl,
 
-                  mode: effectiveProcessingMode,
+                  mode: backendProcessingMode,
 
                   captionStyle,
 
@@ -2907,7 +2944,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[10px]
@@ -2932,13 +2969,13 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || processingMode === "clips") ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || processingMode === "clips") ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : intent === "enhance-speech" ? "Enhance speech" : "AI Reframe"}</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : "Let AI automatically reframe your content to fit any social platform."}</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : intent === "enhance-speech" ? "Enhance speech" : isAutoSfxMode ? "Auto SFX" : isReframeMode ? "AI Reframe" : "AI Short Clips"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : isAutoSfxMode ? "AI finds key moments and mixes in synced sound effects — free." : isReframeMode ? "Let AI automatically reframe your content to fit any social platform." : "AI finds the best moments and cuts several social-ready clips."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
@@ -2963,7 +3000,7 @@ export const NewProjectModal: React.FC<
             </button>
           </div>
 
-          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode)) && (
+          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode)) && (
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><ShieldCheck className="h-3 w-3 text-emerald-500" />Secure processing</span>
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><Sparkles className="h-3 w-3 text-violet-400" />AI-powered clipping</span>
@@ -3198,6 +3235,42 @@ export const NewProjectModal: React.FC<
                             </div>
                             <ClipOpusSettings settings={clipSettings} onChange={setClipSettings} disabled={loading} />
                           </div>
+                        ) : isAutoSfxMode ? (
+                          <div className="space-y-4">
+                            <div className="flex justify-center">
+                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                                {selectedFile ? (
+                                  <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                                ) : getYouTubeVideoId(youtubeUrl) ? (
+                                  <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950"><Video className="h-8 w-8 text-zinc-600" /></div>
+                                )}
+                                <div className="absolute left-2 top-2 rounded-md bg-black/75 px-2 py-1 text-[9px] font-bold text-white backdrop-blur">720p</div>
+                                <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/55 to-transparent" />
+                              </div>
+                            </div>
+
+                            <div className="overflow-hidden rounded-[14px] border border-emerald-500/15 bg-emerald-500/[0.035] p-4">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">
+                                  <Volume2 className="h-4 w-4 text-emerald-400" />
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-[11px] font-bold text-zinc-100">Fully automatic, always free</p>
+                                  <p className="mt-1 text-[9px] leading-4 text-zinc-500">AI scans the whole video for whooshes, impacts, dings and other emphasis moments, then mixes in matching sound effects — no settings to configure and no credits used for the SFX pass itself.</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            <section>
+                              <div className="mb-2.5 flex items-end justify-between gap-3">
+                                <label htmlFor="project-title" className="text-xs font-bold text-white">Project title <span className="ml-1.5 font-normal text-zinc-700">Optional</span></label>
+                                <span className={`text-[8px] ${projectTitle.length >= MAX_TITLE_LENGTH ? "text-amber-400" : "text-zinc-700"}`}>{projectTitle.length}/{MAX_TITLE_LENGTH}</span>
+                              </div>
+                              <input id="project-title" type="text" maxLength={MAX_TITLE_LENGTH} value={projectTitle} onChange={(event) => setProjectTitle(event.target.value)} disabled={loading} placeholder="Give your project a name" className="w-full rounded-[18px] border border-white/[0.08] bg-white/[0.025] px-4 py-3.5 text-[10px] font-medium text-white outline-none placeholder:text-zinc-700" />
+                            </section>
+                          </div>
                         ) : (
                           <>
                             <div className="flex items-center gap-3 rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.035] px-4 py-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/10">{sourceType === "file" ? <FileCheck2 className="h-4 w-4 text-emerald-400" /> : <Link2 className="h-4 w-4 text-emerald-400" />}</div><div className="min-w-0 flex-1"><p className="text-[7px] font-bold uppercase tracking-[0.16em] text-emerald-400">Source ready</p><p className="mt-1 truncate text-[9px] font-medium text-zinc-300">{sourceType === "file" ? selectedFile?.name : youtubeUrl}</p></div><CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" /></div>
@@ -3291,12 +3364,12 @@ export const NewProjectModal: React.FC<
             FOOTER
         ================================================= */}
 
-        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
+        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
           <div className="flex items-center justify-between gap-3">
-            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode) ? (
+            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isReframeMode ? "Reframing video..." : isAutoSfxMode ? "Preparing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isReframeMode ? "Reframe video in 1 click" : isAutoSfxMode ? "Prepare video for Auto SFX" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
