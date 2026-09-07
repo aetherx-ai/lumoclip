@@ -7,7 +7,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
-import { execFile, spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { createClient } from "@supabase/supabase-js";
@@ -3694,7 +3694,7 @@ function extensionForPodcastSource(
 async function downloadDirectMediaFile(
   sourceUrl: string,
 ): Promise<{ path: string; mimeType: string }> {
-  let response: Response;
+  let response: globalThis.Response;
 
   try {
     response = await fetch(sourceUrl, { redirect: "follow" });
@@ -4751,7 +4751,7 @@ function validateAnalysis(
             : 0.5,
           confidence: Math.max(0, Math.min(1, Number(point.confidence) || 0.8)),
         }))
-        .sort((a, b) => a.time - b.time)
+        .sort((a: ReframePoint, b: ReframePoint) => a.time - b.time)
     : [];
 
   console.log(
