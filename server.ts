@@ -6,6 +6,7 @@ import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import dns from "node:dns/promises";
 import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
@@ -273,6 +274,24 @@ const REFRAME_ANALYSIS_HEIGHT = Math.max(
 // occupy a Render worker forever.
 const FFMPEG_TIMEOUT_MS = Number(
   process.env.FFMPEG_TIMEOUT_MS || 15 * 60 * 1000,
+);
+
+// Auto SFX has two expensive stages: Gemini video understanding and FFmpeg
+// audio mixing. Keep each stage bounded so one stuck provider/process cannot
+// leave the project in "processing" forever.
+const AUTO_SFX_GEMINI_FILE_TIMEOUT_MS = Math.max(
+  60_000,
+  Number(process.env.AUTO_SFX_GEMINI_FILE_TIMEOUT_MS || 10 * 60 * 1000),
+);
+
+const AUTO_SFX_FFMPEG_TIMEOUT_MS = Math.max(
+  60_000,
+  Number(process.env.AUTO_SFX_FFMPEG_TIMEOUT_MS || FFMPEG_TIMEOUT_MS),
+);
+
+const DIRECT_MEDIA_FETCH_TIMEOUT_MS = Math.max(
+  10_000,
+  Number(process.env.DIRECT_MEDIA_FETCH_TIMEOUT_MS || 5 * 60 * 1000),
 );
 
 const SPEECH_ENHANCE_TIMEOUT_MS = Number(
@@ -981,14 +1000,44 @@ const AUTO_SFX_ASSET_DEFS: Record<AutoSfxType, {duration:number; source:string; 
 async function ensureAutoSfxAssets(): Promise<Record<AutoSfxType,string>> {
   fs.mkdirSync(autoSfxDir,{recursive:true});
   const assets = {} as Record<AutoSfxType,string>;
+
   for (const type of AUTO_SFX_TYPES) {
     const def=AUTO_SFX_ASSET_DEFS[type], outputPath=path.join(autoSfxDir,`${type}.wav`);
-    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size<=0) {
-      await new Promise<void>((resolve,reject)=>{
-        const child=spawn(ffmpegPath,["-y","-f","lavfi","-i",def.source,"-t",String(def.duration),"-af",def.filter,"-ar","44100","-ac","2","-c:a","pcm_s16le",outputPath],{windowsHide:true,stdio:["ignore","ignore","pipe"]});
-        let stderr=""; child.stderr?.on("data",c=>stderr+=String(c)); child.on("error",reject); child.on("close",code=>code===0&&fs.existsSync(outputPath)&&fs.statSync(outputPath).size>0?resolve():reject(new Error(`Could not create Auto SFX asset "${type}". ${stderr.slice(-800)}`)));
-      });
+    if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
+      assets[type]=outputPath;
+      continue;
     }
+
+    await new Promise<void>((resolve,reject)=>{
+      let settled=false;
+      let timer:NodeJS.Timeout|undefined;
+      const finish=(error?:Error)=>{
+        if(settled)return;
+        settled=true;
+        if(timer)clearTimeout(timer);
+        if(error){try{fs.unlinkSync(outputPath);}catch{};reject(error);}else resolve();
+      };
+
+      const child=spawn(
+        ffmpegPath,
+        ["-y","-f","lavfi","-i",def.source,"-t",String(def.duration),"-af",def.filter,"-ar","44100","-ac","2","-c:a","pcm_s16le",outputPath],
+        {windowsHide:true,stdio:["ignore","ignore","pipe"]},
+      );
+      let stderr="";
+      child.stderr?.on("data",c=>{stderr+=String(c); if(stderr.length>4000)stderr=stderr.slice(-4000);});
+      child.on("error",error=>finish(error instanceof Error?error:new Error(String(error))));
+      child.on("close",code=>{
+        if(code===0&&fs.existsSync(outputPath)&&fs.statSync(outputPath).size>0) return finish();
+        finish(new Error(`Could not create Auto SFX asset "${type}". ${stderr.slice(-800)}`));
+      });
+
+      timer=setTimeout(()=>{
+        try{child.kill("SIGKILL");}catch{}
+        finish(new Error(`Auto SFX asset generation timed out for "${type}".`));
+      },Math.min(AUTO_SFX_FFMPEG_TIMEOUT_MS,60_000));
+      timer.unref?.();
+    });
+
     assets[type]=outputPath;
   }
   return assets;
@@ -996,21 +1045,62 @@ async function ensureAutoSfxAssets(): Promise<Record<AutoSfxType,string>> {
 
 function applyAutoSfxMix(inputPath:string, outputPath:string, events:AutoSfxEvent[], assets:Record<AutoSfxType,string>, copyVideo:boolean, onProgress?:(percent:number)=>void):Promise<void> {
   return new Promise((resolve,reject)=>{
-    if(!events.length) return reject(new Error("No Auto SFX events were selected."));
+    if(!events.length)return reject(new Error("No Auto SFX events were selected."));
     fs.mkdirSync(path.dirname(outputPath),{recursive:true});
+
+    let settled=false;
+    let timer:NodeJS.Timeout|undefined;
+    const cleanupOutput=()=>{try{if(fs.existsSync(outputPath))fs.unlinkSync(outputPath);}catch{}};
+    const finish=(error?:Error)=>{
+      if(settled)return;
+      settled=true;
+      if(timer)clearTimeout(timer);
+      if(error)cleanupOutput();
+      error?reject(error):resolve();
+    };
+
     const command=ffmpeg(inputPath);
     const inputIndexByType=new Map<AutoSfxType,number>();
-    [...new Set(events.map(e=>e.type))].forEach(type=>{inputIndexByType.set(type,inputIndexByType.size+1);command.input(assets[type]);});
+    [...new Set(events.map(e=>e.type))].forEach(type=>{
+      inputIndexByType.set(type,inputIndexByType.size+1);
+      command.input(assets[type]);
+    });
+
     const filterParts:string[]=["[0:a]volume=1.0[base]"], mixLabels:string[]=["[base]"];
     events.forEach((event,index)=>{
       const inputIndex=inputIndexByType.get(event.type); if(inputIndex==null)return;
       const delayMs=Math.max(0,Math.round(event.time*1000));
       const volume=Math.max(0.05,Math.min(1,AUTO_SFX_DEFAULT_VOLUME*event.intensity));
       const label=`[sfx${index}]`;
-      filterParts.push(`[${inputIndex}:a]adelay=${delayMs}|${delayMs},volume=${volume.toFixed(3)}${label}`); mixLabels.push(label);
+      filterParts.push(`[${inputIndex}:a]adelay=${delayMs}|${delayMs},volume=${volume.toFixed(3)}${label}`);
+      mixLabels.push(label);
     });
     filterParts.push(`${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0:normalize=0[aout]`);
-    command.complexFilter(filterParts).outputOptions(["-y","-map","0:v:0","-map","[aout]","-c:v",copyVideo?"copy":"libx264",...(copyVideo?[]:["-preset",FFMPEG_PRESET,"-crf",FFMPEG_CRF,"-threads",String(FFMPEG_THREADS_PER_CLIP),"-pix_fmt","yuv420p"]),"-c:a","aac","-b:a","192k","-ar","48000","-ac","2","-movflags","+faststart"]).on("progress",p=>{ if(Number.isFinite(p?.percent)) onProgress?.(Math.min(95,Math.max(70,70+(Number(p.percent)*0.25)))); }).on("end",()=>{if(!fs.existsSync(outputPath)||fs.statSync(outputPath).size<=0)return reject(new Error("Auto SFX output was not created."));resolve();}).on("error",(error)=>reject(error)).save(outputPath);
+
+    command
+      .complexFilter(filterParts)
+      .outputOptions(["-y","-map","0:v:0","-map","[aout]","-c:v",copyVideo?"copy":"libx264",...(copyVideo?[]:["-preset",FFMPEG_PRESET,"-crf",FFMPEG_CRF,"-threads",String(FFMPEG_THREADS_PER_CLIP),"-pix_fmt","yuv420p"]),"-c:a","aac","-b:a","192k","-ar","48000","-ac","2","-movflags","+faststart"])
+      .on("start",commandLine=>console.log("Auto SFX FFmpeg started:",commandLine))
+      .on("progress",p=>{
+        if(Number.isFinite(p?.percent))onProgress?.(Math.min(95,Math.max(70,70+(Number(p.percent)*0.25))));
+      })
+      .on("end",()=>{
+        if(!fs.existsSync(outputPath)||fs.statSync(outputPath).size<=0)return finish(new Error("Auto SFX output was not created."));
+        finish();
+      })
+      .on("error",(error,_stdout,stderr)=>{
+        if(stderr)console.error("Auto SFX FFmpeg stderr:\n",stderr);
+        finish(error instanceof Error?error:new Error(String(error)));
+      });
+
+    timer=setTimeout(()=>{
+      console.error(`Auto SFX FFmpeg timed out after ${AUTO_SFX_FFMPEG_TIMEOUT_MS}ms; killing FFmpeg.`);
+      try{command.kill("SIGKILL");}catch{}
+      finish(new Error(`Auto SFX rendering timed out after ${Math.round(AUTO_SFX_FFMPEG_TIMEOUT_MS/1000)} seconds.`));
+    },AUTO_SFX_FFMPEG_TIMEOUT_MS);
+    timer.unref?.();
+
+    command.save(outputPath);
   });
 }
 
@@ -1026,9 +1116,36 @@ JSON: {"events":[{"time":12.4,"type":"impact","intensity":0.65,"reason":"Strong 
   let geminiFileName="";
   try {
     const response=await generateGeminiWithRetry(async()=>{
-      const file=await ai.files.upload({file:videoPath,config:{mimeType:"video/mp4"}}); geminiFileName=file.name||"";
-      while(file.state&&file.state.toString()!=="ACTIVE"){ if(file.state.toString()==="FAILED")throw new Error("Gemini Auto SFX video processing failed."); await sleep(GEMINI_POLL_MS); const refreshed=await ai.files.get({name:file.name!}); if(refreshed.state?.toString()==="FAILED")throw new Error("Gemini Auto SFX video processing failed."); }
-      return {model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(file.uri!,file.mimeType!),prompt]),config:{responseMimeType:"application/json",temperature:0.25}};
+      let file=await ai.files.upload({file:videoPath,config:{mimeType:"video/mp4"}});
+      geminiFileName=file.name||"";
+
+      const startedAt=Date.now();
+      const maxWaitMs=AUTO_SFX_GEMINI_FILE_TIMEOUT_MS;
+
+      while(file.state&&file.state.toString()!=="ACTIVE"){
+        const state=file.state.toString();
+        console.log(`Auto SFX Gemini file state: ${state}`);
+
+        if(state==="FAILED"){
+          throw new Error("Gemini Auto SFX video processing failed.");
+        }
+
+        if(Date.now()-startedAt>=maxWaitMs){
+          throw new Error(`Gemini Auto SFX video processing timed out after ${Math.round(maxWaitMs/1000)} seconds.`);
+        }
+
+        await sleep(GEMINI_POLL_MS);
+
+        // Refresh the uploaded Gemini file so PROCESSING can transition to
+        // ACTIVE. The refreshed object must replace the old one.
+        file=await ai.files.get({name:file.name!});
+      }
+
+      if(!file.uri){
+        throw new Error("Gemini Auto SFX file became ACTIVE without a usable URI.");
+      }
+
+      return {model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(file.uri,file.mimeType||"video/mp4"),prompt]),config:{responseMimeType:"application/json",temperature:0.25}};
     });
     const parsed=JSON.parse(cleanJson(response.text||"")); const events=normalizeAutoSfxEvents(parsed?.events,duration);
     if(!events.length) throw new Error("AI did not find any suitable Auto SFX moments.");
@@ -3804,88 +3921,117 @@ function extensionForPodcastSource(
 // Downloads a direct audio/video URL (the "podcast" source type) to a temp
 // file. Podcast RSS-feed URLs are intentionally NOT supported — only a
 // direct link to a playable file.
+function isBlockedDirectMediaHostname(hostname:string):boolean {
+  const host=hostname.trim().toLowerCase().replace(/^\[|\]$/g,"");
+  if(!host)return true;
+  if(host==="localhost"||host.endsWith(".localhost")||host.endsWith(".local"))return true;
+
+  // Block literal private/link-local/loopback IPv4 destinations.
+  const parts=host.split(".");
+  if(parts.length===4 && parts.every(p=>/^\d+$/.test(p))){
+    const nums=parts.map(Number);
+    if(nums.some(n=>n<0||n>255))return true;
+    const [a,b]=nums;
+    if(a===10||a===127||a===0||a>=224)return true;
+    if(a===169&&b===254)return true;
+    if(a===172&&b>=16&&b<=31)return true;
+    if(a===192&&b===168)return true;
+  }
+
+  // Block common IPv6 private/local ranges and IPv4-mapped private addresses.
+  if(host.includes(":")){
+    if(host==="::1"||host==="::"||host.startsWith("fc")||host.startsWith("fd")||host.startsWith("fe80:"))return true;
+    const mapped=host.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if(mapped)return isBlockedDirectMediaHostname(mapped[1]);
+  }
+  return false;
+}
+
+async function assertPublicDirectMediaUrl(value:string):Promise<URL>{
+  let url:URL;
+  try{url=new URL(value);}catch{throw new Error("Invalid media URL.");}
+  if(url.protocol!=="http:"&&url.protocol!=="https:")throw new Error("Only HTTP/HTTPS media URLs are supported.");
+  if(isBlockedDirectMediaHostname(url.hostname))throw new Error("That media URL points to a private or local network address.");
+
+  try{
+    const addresses=await dns.lookup(url.hostname,{all:true,verbatim:true});
+    for(const address of addresses){
+      if(isBlockedDirectMediaHostname(address.address))throw new Error("That media URL points to a private or local network address.");
+    }
+  }catch(error:any){
+    if(error instanceof Error && error.message.includes("private or local"))throw error;
+    throw new Error(`Could not resolve that media host (${error?.code||error?.message||"DNS error"}).`);
+  }
+  return url;
+}
+
 async function downloadDirectMediaFile(
   sourceUrl: string,
 ): Promise<{ path: string; mimeType: string }> {
-  let response: globalThis.Response;
-
-  try {
-    response = await fetch(sourceUrl, { redirect: "follow" });
-  } catch (error: any) {
-    throw new Error(
-      `Could not reach that URL (${error?.message || "network error"}).`,
-    );
-  }
-
-  if (!response.ok || !response.body) {
-    throw new Error(
-      `Could not download the linked file (HTTP ${response.status}).`,
-    );
-  }
-
-  const contentType = (response.headers.get("content-type") || "")
-    .split(";")[0]
-    .trim()
-    .toLowerCase();
-
   const maxBytes = MAX_UPLOAD_MB * 1024 * 1024;
+  let currentUrl=await assertPublicDirectMediaUrl(sourceUrl);
+  let response:globalThis.Response|undefined;
+  const maxRedirects=5;
 
-  const contentLengthHeader = response.headers.get("content-length");
-  if (contentLengthHeader) {
-    const declaredLength = Number(contentLengthHeader);
-    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-      throw new Error(
-        `The linked file is too large. Maximum size is ${MAX_UPLOAD_MB}MB.`,
-      );
+  for(let redirect=0;redirect<=maxRedirects;redirect++){
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),DIRECT_MEDIA_FETCH_TIMEOUT_MS);
+    timeout.unref?.();
+    try{
+      response=await fetch(currentUrl,{redirect:"manual",signal:controller.signal});
+    }catch(error:any){
+      if(error?.name==="AbortError")throw new Error(`Media download timed out after ${Math.round(DIRECT_MEDIA_FETCH_TIMEOUT_MS/1000)} seconds.`);
+      throw new Error(`Could not reach that URL (${error?.message||"network error"}).`);
+    }finally{clearTimeout(timeout);}
+
+    if(response.status>=300&&response.status<400){
+      const location=response.headers.get("location");
+      if(!location)throw new Error(`Media server returned HTTP ${response.status} without a redirect location.`);
+      if(redirect>=maxRedirects)throw new Error("Too many redirects while downloading the media file.");
+      currentUrl=await assertPublicDirectMediaUrl(new URL(location,currentUrl).toString());
+      continue;
     }
+    break;
   }
 
-  const extension = extensionForPodcastSource(sourceUrl, contentType);
-  if (!extension) {
-    throw new Error(
-      "That link doesn't look like a direct audio/video file. Please link directly to a file such as .mp3, .m4a, .wav, or .mp4 — podcast feed (RSS) URLs aren't supported.",
-    );
+  if(!response||!response.ok||!response.body){
+    throw new Error(`Could not download the linked file (HTTP ${response?.status||0}).`);
   }
 
-  fs.mkdirSync(tempDir, { recursive: true });
-  const destPath = path.join(
-    tempDir,
-    `${generateId()}-podcast.${extension}`,
-  );
+  const contentType=(response.headers.get("content-type")||"").split(";")[0].trim().toLowerCase();
+  const contentLengthHeader=response.headers.get("content-length");
+  if(contentLengthHeader){
+    const declaredLength=Number(contentLengthHeader);
+    if(Number.isFinite(declaredLength)&&declaredLength>maxBytes)throw new Error(`The linked file is too large. Maximum size is ${MAX_UPLOAD_MB}MB.`);
+  }
 
-  try {
+  const extension=extensionForPodcastSource(currentUrl.toString(),contentType);
+  if(!extension)throw new Error("That link doesn't look like a direct audio/video file. Please link directly to a file such as .mp3, .m4a, .wav, or .mp4 — podcast feed (RSS) URLs aren't supported.");
+
+  fs.mkdirSync(tempDir,{recursive:true});
+  const destPath=path.join(tempDir,`${generateId()}-podcast.${extension}`);
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),DIRECT_MEDIA_FETCH_TIMEOUT_MS);
+  timeout.unref?.();
+  try{
     await pipeline(
       Readable.fromWeb(response.body as any),
       fs.createWriteStream(destPath),
+      {signal:controller.signal},
     );
-  } catch (error: any) {
-    try { fs.unlinkSync(destPath); } catch {}
-    throw new Error(
-      `Download failed partway through (${error?.message || "stream error"}).`,
-    );
-  }
+  }catch(error:any){
+    try{fs.unlinkSync(destPath);}catch{}
+    if(error?.name==="AbortError")throw new Error(`Media download timed out after ${Math.round(DIRECT_MEDIA_FETCH_TIMEOUT_MS/1000)} seconds.`);
+    throw new Error(`Download failed partway through (${error?.message||"stream error"}).`);
+  }finally{clearTimeout(timeout);}
 
-  const stat = fs.statSync(destPath);
+  const stat=fs.statSync(destPath);
+  if(stat.size<=0){try{fs.unlinkSync(destPath);}catch{};throw new Error("The linked file was empty or could not be downloaded.");}
+  if(stat.size>maxBytes){try{fs.unlinkSync(destPath);}catch{};throw new Error(`The linked file is too large. Maximum size is ${MAX_UPLOAD_MB}MB.`);}
 
-  if (stat.size <= 0) {
-    try { fs.unlinkSync(destPath); } catch {}
-    throw new Error("The linked file was empty or could not be downloaded.");
-  }
-
-  // Content-Length isn't always sent — re-check against the actual bytes
-  // written, since a streamed download can't be capped mid-flight as
-  // cleanly as multer's upload limit is.
-  if (stat.size > maxBytes) {
-    try { fs.unlinkSync(destPath); } catch {}
-    throw new Error(
-      `The linked file is too large. Maximum size is ${MAX_UPLOAD_MB}MB.`,
-    );
-  }
-
-  return {
-    path: destPath,
-    mimeType: contentType || `audio/${extension}`,
-  };
+  const audioExtensions=new Set(["mp3","m4a","wav","aac","ogg","oga","flac","opus"]);
+  const fallbackMime=audioExtensions.has(extension) ? "audio/mpeg" : "video/mp4";
+  return {path:destPath,mimeType:contentType||fallbackMime};
 }
 
 // Like verifyUploadedFileIsVideo, but accepts audio-only files too — a
@@ -9529,11 +9675,14 @@ app.post("/api/worker/projects/:projectId/fail", async (req, res) => {
   try {
     const { data: project, error } = await supabase
       .from("projects")
-      .select("id, user_id, status")
+      .select("id, user_id, status, current_step")
       .eq("id", projectId)
       .eq("source_type", "youtube")
       .eq("status", "worker_downloading")
-      .eq("current_step", "Worker is downloading YouTube video")
+      .in("current_step", [
+        "Worker is downloading YouTube video",
+        "Worker is downloading YouTube video (speech enhancement source)",
+      ])
       .maybeSingle();
 
     if (error) throw error;
@@ -11057,7 +11206,7 @@ app.listen(
       `Whisper tuning: model=${WHISPER_MODEL}, dtype=${WHISPER_DTYPE}, window=${WHISPER_WINDOW_STEP_S}s, overlap=${WHISPER_WINDOW_OVERLAP_S}s, timeout=${WHISPER_TIMEOUT_MS}ms`,
     );
     console.log(
-      `Hard timeouts: Gemini=${GEMINI_REQUEST_TIMEOUT_MS}ms, FFmpeg=${FFMPEG_TIMEOUT_MS}ms`,
+      `Hard timeouts: Gemini=${GEMINI_REQUEST_TIMEOUT_MS}ms, FFmpeg=${FFMPEG_TIMEOUT_MS}ms, AutoSFX-GeminiFile=${AUTO_SFX_GEMINI_FILE_TIMEOUT_MS}ms, AutoSFX-FFmpeg=${AUTO_SFX_FFMPEG_TIMEOUT_MS}ms, DirectMedia=${DIRECT_MEDIA_FETCH_TIMEOUT_MS}ms`,
     );
 
     console.log(
