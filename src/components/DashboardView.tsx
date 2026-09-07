@@ -81,6 +81,8 @@ type ExtendedProject = Project & {
   error?: string | null;
   error_message?: string | null;
   message?: string | null;
+  processing_mode?: string | null;
+  auto_sfx_url?: string | null;
 };
 
 /* =========================================================
@@ -789,6 +791,9 @@ const ProjectCard: React.FC<
   const progress =
     getProgress(project);
 
+  const processingMode = String((project as ExtendedProject).processing_mode || "").toLowerCase();
+  const isAutoSfx = processingMode === "auto_sfx";
+
   const sourceType =
     String(
       project.source_type ||
@@ -1080,7 +1085,7 @@ const ProjectCard: React.FC<
                       animate-spin
                     "
                   />
-                  AI WORKING
+                  {isAutoSfx ? "AUTO SFX • LIVE" : "AI WORKING"}
                 </span>
               )}
 
@@ -1552,6 +1557,22 @@ const ProjectCard: React.FC<
                 />
               </div>
             </div>
+
+            {isAutoSfx && (
+              <div className="mt-4 rounded-[16px] border border-violet-500/10 bg-violet-500/[0.035] p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-[8px] font-bold uppercase tracking-[0.14em] text-violet-300">Auto SFX pipeline</span>
+                  <span className="text-[8px] font-medium text-zinc-600">Live</span>
+                </div>
+                <div className="grid grid-cols-5 gap-1">
+                  {["Analyze", "Detect", "Select", "Mix", "Render"].map((stage, index) => {
+                    const thresholds = [10, 35, 52, 70, 90];
+                    const active = progress >= thresholds[index];
+                    return <div key={stage} className={`rounded-lg border px-1.5 py-2 text-center text-[7px] font-bold ${active ? "border-violet-400/20 bg-violet-500/10 text-violet-200" : "border-white/[0.05] bg-black/10 text-zinc-700"}`}>{stage}</div>;
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

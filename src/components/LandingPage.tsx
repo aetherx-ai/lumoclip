@@ -56,7 +56,8 @@ export type CaptionStyleSettings = {
 export type LandingProcessingMode =
   | "clips"
   | "reframe"
-  | "full_video_caption";
+  | "full_video_caption"
+  | "auto_sfx";
 
 type LandingPageProps = {
   onGetStarted: (
@@ -433,7 +434,7 @@ const toolGridItems: ToolGridItem[] = [
   { id: "ai-b-roll", label: "AI B-Roll", badge: "New", accent: "violet" },
 
   { id: "ai-reframe", label: "AI Reframe", accent: "blue", mode: "reframe" },
-  { id: "auto-sfx", label: "Auto SFX", badge: "New", accent: "violet" },
+  { id: "auto-sfx", label: "Auto SFX", badge: "New", accent: "violet", mode: "auto_sfx" },
   { id: "upscale", label: "Upscale", badge: "New", accent: "diamond" },
   { id: "video-dubbing", label: "Video dubbing", badge: "New", accent: "sky" },
 

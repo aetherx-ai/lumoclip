@@ -926,428 +926,114 @@ interface SpeechSettings {
 
 /* =========================================================
    AUTO SFX
-   AI detects meaningful moments, then FFmpeg mixes lightweight
-   sound effects into the existing video without re-encoding video.
-   Cost: 0 credits.
+   AI detects meaningful moments, then mixes lightweight SFX into the
+   original video. This is a normal processing mode, so it gets the same
+   project lifecycle + live progress updates as Clips/Reframe/Captions.
 ========================================================= */
-
-type AutoSfxType =
-  | "whoosh"
-  | "impact"
-  | "pop"
-  | "click"
-  | "ding"
-  | "sparkle"
-  | "bass";
-
-interface AutoSfxEvent {
-  time: number;
-  type: AutoSfxType;
-  intensity: number;
-  reason: string;
-}
-
-interface AutoSfxAnalysis {
-  events: AutoSfxEvent[];
-}
-
-const AUTO_SFX_MAX_EVENTS = Math.max(
-  1,
-  Math.min(Number(process.env.AUTO_SFX_MAX_EVENTS || 14), 24),
-);
-
-const AUTO_SFX_MIN_GAP = Math.max(
-  0.25,
-  Number(process.env.AUTO_SFX_MIN_GAP || 0.8),
-);
-
-const AUTO_SFX_DEFAULT_VOLUME = Math.max(
-  0.05,
-  Math.min(Number(process.env.AUTO_SFX_DEFAULT_VOLUME || 0.55), 1),
-);
-
-const AUTO_SFX_TYPES: AutoSfxType[] = [
-  "whoosh",
-  "impact",
-  "pop",
-  "click",
-  "ding",
-  "sparkle",
-  "bass",
-];
-
+type AutoSfxType = "whoosh" | "impact" | "pop" | "click" | "ding" | "sparkle" | "bass";
+interface AutoSfxEvent { time: number; type: AutoSfxType; intensity: number; reason: string; }
+const AUTO_SFX_MAX_EVENTS = Math.max(1, Math.min(Number(process.env.AUTO_SFX_MAX_EVENTS || 14), 24));
+const AUTO_SFX_MIN_GAP = Math.max(0.25, Number(process.env.AUTO_SFX_MIN_GAP || 0.8));
+const AUTO_SFX_DEFAULT_VOLUME = Math.max(0.05, Math.min(Number(process.env.AUTO_SFX_DEFAULT_VOLUME || 0.55), 1));
+const AUTO_SFX_TYPES: AutoSfxType[] = ["whoosh", "impact", "pop", "click", "ding", "sparkle", "bass"];
 
 function normalizeAutoSfxType(value: unknown): AutoSfxType {
   const normalized = String(value || "").trim().toLowerCase();
-  return (AUTO_SFX_TYPES as string[]).includes(normalized)
-    ? (normalized as AutoSfxType)
-    : "pop";
+  return (AUTO_SFX_TYPES as string[]).includes(normalized) ? normalized as AutoSfxType : "pop";
 }
 
-function normalizeAutoSfxEvents(
-  rawEvents: unknown,
-  duration: number,
-): AutoSfxEvent[] {
+function normalizeAutoSfxEvents(rawEvents: unknown, duration: number): AutoSfxEvent[] {
   if (!Array.isArray(rawEvents)) return [];
-
   const safeDuration = Math.max(0.1, Number(duration) || 0);
-
-  const candidates = rawEvents
-    .map((event: any) => {
-      const time = Number(event?.time);
-      const intensity = Number(event?.intensity ?? 0.65);
-      return {
-        time,
-        type: normalizeAutoSfxType(event?.type),
-        intensity: Number.isFinite(intensity)
-          ? Math.max(0.1, Math.min(1, intensity))
-          : 0.65,
-        reason:
-          typeof event?.reason === "string" && event.reason.trim()
-            ? event.reason.trim().slice(0, 180)
-            : "AI-detected emphasis moment.",
-      } satisfies AutoSfxEvent;
-    })
-    .filter(
-      (event) =>
-        Number.isFinite(event.time) &&
-        event.time >= 0 &&
-        event.time < safeDuration - 0.05,
-    )
-    .sort((a, b) => a.time - b.time);
-
+  const candidates = rawEvents.map((event: any) => {
+    const time = Number(event?.time);
+    const intensity = Number(event?.intensity ?? 0.65);
+    return {
+      time, type: normalizeAutoSfxType(event?.type),
+      intensity: Number.isFinite(intensity) ? Math.max(0.1, Math.min(1, intensity)) : 0.65,
+      reason: typeof event?.reason === "string" && event.reason.trim() ? event.reason.trim().slice(0, 180) : "AI-detected emphasis moment.",
+    };
+  }).filter((e) => Number.isFinite(e.time) && e.time >= 0 && e.time < safeDuration - 0.05).sort((a,b) => a.time-b.time);
   const selected: AutoSfxEvent[] = [];
-
   for (const event of candidates) {
     if (selected.length >= AUTO_SFX_MAX_EVENTS) break;
-
     const previous = selected[selected.length - 1];
     if (previous && event.time - previous.time < AUTO_SFX_MIN_GAP) {
-      // Keep the stronger event when AI returns overlapping suggestions.
-      if (event.intensity > previous.intensity) {
-        selected[selected.length - 1] = event;
-      }
+      if (event.intensity > previous.intensity) selected[selected.length - 1] = event;
       continue;
     }
-
     selected.push(event);
   }
-
   return selected.slice(0, AUTO_SFX_MAX_EVENTS);
 }
 
 const autoSfxDir = path.join(process.cwd(), "media", "_sfx");
-
-const AUTO_SFX_ASSET_DEFS: Record<
-  AutoSfxType,
-  { duration: number; source: string; filter: string }
-> = {
-  pop: {
-    duration: 0.18,
-    source: "sine=frequency=620:duration=0.18",
-    filter: "afade=t=out:st=0.03:d=0.15,volume=0.72",
-  },
-  click: {
-    duration: 0.08,
-    source: "sine=frequency=1450:duration=0.08",
-    filter: "afade=t=out:st=0.015:d=0.065,volume=0.48",
-  },
-  ding: {
-    duration: 0.42,
-    source: "sine=frequency=880:duration=0.42",
-    filter: "afade=t=out:st=0.06:d=0.36,volume=0.42",
-  },
-  impact: {
-    duration: 0.34,
-    source: "sine=frequency=95:duration=0.34",
-    filter: "afade=t=out:st=0.04:d=0.30,volume=0.82",
-  },
-  bass: {
-    duration: 0.42,
-    source: "sine=frequency=58:duration=0.42",
-    filter: "afade=t=out:st=0.04:d=0.38,volume=0.58",
-  },
-  whoosh: {
-    duration: 0.55,
-    source: "anoisesrc=color=white:duration=0.55:amplitude=0.28",
-    filter:
-      "highpass=f=700,lowpass=f=9000,afade=t=in:st=0:d=0.16,afade=t=out:st=0.28:d=0.27,volume=0.48",
-  },
-  sparkle: {
-    duration: 0.48,
-    source: "anoisesrc=color=pink:duration=0.48:amplitude=0.16",
-    filter:
-      "highpass=f=3500,lowpass=f=12000,afade=t=in:st=0:d=0.05,afade=t=out:st=0.12:d=0.36,volume=0.34",
-  },
+const AUTO_SFX_ASSET_DEFS: Record<AutoSfxType, {duration:number; source:string; filter:string}> = {
+  pop:{duration:0.18,source:"sine=frequency=620:duration=0.18",filter:"afade=t=out:st=0.03:d=0.15,volume=0.72"},
+  click:{duration:0.08,source:"sine=frequency=1450:duration=0.08",filter:"afade=t=out:st=0.015:d=0.065,volume=0.48"},
+  ding:{duration:0.42,source:"sine=frequency=880:duration=0.42",filter:"afade=t=out:st=0.06:d=0.36,volume=0.42"},
+  impact:{duration:0.34,source:"sine=frequency=95:duration=0.34",filter:"afade=t=out:st=0.04:d=0.30,volume=0.82"},
+  bass:{duration:0.42,source:"sine=frequency=58:duration=0.42",filter:"afade=t=out:st=0.04:d=0.38,volume=0.58"},
+  whoosh:{duration:0.55,source:"anoisesrc=color=white:duration=0.55:amplitude=0.28",filter:"highpass=f=700,lowpass=f=9000,afade=t=in:st=0:d=0.16,afade=t=out:st=0.28:d=0.27,volume=0.48"},
+  sparkle:{duration:0.48,source:"anoisesrc=color=pink:duration=0.48:amplitude=0.16",filter:"highpass=f=3500,lowpass=f=12000,afade=t=in:st=0:d=0.05,afade=t=out:st=0.12:d=0.36,volume=0.34"},
 };
 
-async function ensureAutoSfxAssets(): Promise<Record<AutoSfxType, string>> {
-  fs.mkdirSync(autoSfxDir, { recursive: true });
-
-  const assets = {} as Record<AutoSfxType, string>;
-
+async function ensureAutoSfxAssets(): Promise<Record<AutoSfxType,string>> {
+  fs.mkdirSync(autoSfxDir,{recursive:true});
+  const assets = {} as Record<AutoSfxType,string>;
   for (const type of AUTO_SFX_TYPES) {
-    const definition = AUTO_SFX_ASSET_DEFS[type];
-    const outputPath = path.join(autoSfxDir, `${type}.wav`);
-
-    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
-      await new Promise<void>((resolve, reject) => {
-        const args = [
-          "-y",
-          "-f",
-          "lavfi",
-          "-i",
-          definition.source,
-          "-t",
-          String(definition.duration),
-          "-af",
-          definition.filter,
-          "-ar",
-          "44100",
-          "-ac",
-          "2",
-          "-c:a",
-          "pcm_s16le",
-          outputPath,
-        ];
-
-        const child = spawn(ffmpegPath, args, {
-          windowsHide: true,
-          stdio: ["ignore", "ignore", "pipe"],
-        });
-
-        let stderr = "";
-        child.stderr?.on("data", (chunk) => {
-          stderr += String(chunk);
-        });
-
-        child.on("error", reject);
-        child.on("close", (code) => {
-          if (code === 0 && fs.existsSync(outputPath) && fs.statSync(outputPath).size > 0) {
-            return resolve();
-          }
-
-          reject(
-            new Error(
-              `Could not create Auto SFX asset "${type}". ${stderr.slice(-800)}`,
-            ),
-          );
-        });
+    const def=AUTO_SFX_ASSET_DEFS[type], outputPath=path.join(autoSfxDir,`${type}.wav`);
+    if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size<=0) {
+      await new Promise<void>((resolve,reject)=>{
+        const child=spawn(ffmpegPath,["-y","-f","lavfi","-i",def.source,"-t",String(def.duration),"-af",def.filter,"-ar","44100","-ac","2","-c:a","pcm_s16le",outputPath],{windowsHide:true,stdio:["ignore","ignore","pipe"]});
+        let stderr=""; child.stderr?.on("data",c=>stderr+=String(c)); child.on("error",reject); child.on("close",code=>code===0&&fs.existsSync(outputPath)&&fs.statSync(outputPath).size>0?resolve():reject(new Error(`Could not create Auto SFX asset "${type}". ${stderr.slice(-800)}`)));
       });
     }
-
-    assets[type] = outputPath;
+    assets[type]=outputPath;
   }
-
   return assets;
 }
 
-function applyAutoSfxMix(
-  inputPath: string,
-  outputPath: string,
-  events: AutoSfxEvent[],
-  assets: Record<AutoSfxType, string>,
-  copyVideo: boolean,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (!events.length) {
-      return reject(new Error("No Auto SFX events were selected."));
-    }
-
-    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
-
-    const command = ffmpeg(inputPath);
-
-    const inputIndexByType = new Map<AutoSfxType, number>();
-    const uniqueTypes = [...new Set(events.map((event) => event.type))];
-
-    uniqueTypes.forEach((type) => {
-      inputIndexByType.set(type, inputIndexByType.size + 1);
-      command.input(assets[type]);
+function applyAutoSfxMix(inputPath:string, outputPath:string, events:AutoSfxEvent[], assets:Record<AutoSfxType,string>, copyVideo:boolean, onProgress?:(percent:number)=>void):Promise<void> {
+  return new Promise((resolve,reject)=>{
+    if(!events.length) return reject(new Error("No Auto SFX events were selected."));
+    fs.mkdirSync(path.dirname(outputPath),{recursive:true});
+    const command=ffmpeg(inputPath);
+    const inputIndexByType=new Map<AutoSfxType,number>();
+    [...new Set(events.map(e=>e.type))].forEach(type=>{inputIndexByType.set(type,inputIndexByType.size+1);command.input(assets[type]);});
+    const filterParts:string[]=["[0:a]volume=1.0[base]"], mixLabels:string[]=["[base]"];
+    events.forEach((event,index)=>{
+      const inputIndex=inputIndexByType.get(event.type); if(inputIndex==null)return;
+      const delayMs=Math.max(0,Math.round(event.time*1000));
+      const volume=Math.max(0.05,Math.min(1,AUTO_SFX_DEFAULT_VOLUME*event.intensity));
+      const label=`[sfx${index}]`;
+      filterParts.push(`[${inputIndex}:a]adelay=${delayMs}|${delayMs},volume=${volume.toFixed(3)}${label}`); mixLabels.push(label);
     });
-
-    const filterParts: string[] = ["[0:a]volume=1.0[base]"];
-    const mixLabels: string[] = ["[base]"];
-
-    events.forEach((event, index) => {
-      const inputIndex = inputIndexByType.get(event.type);
-      if (inputIndex == null) return;
-
-      const delayMs = Math.max(0, Math.round(event.time * 1000));
-      const volume = Math.max(
-        0.05,
-        Math.min(1, AUTO_SFX_DEFAULT_VOLUME * event.intensity),
-      );
-      const label = `[sfx${index}]`;
-
-      filterParts.push(
-        `[${inputIndex}:a]adelay=${delayMs}|${delayMs},volume=${volume.toFixed(3)}${label}`,
-      );
-      mixLabels.push(label);
-    });
-
-    filterParts.push(
-      `${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0:normalize=0[aout]`,
-    );
-
-    command
-      .complexFilter(filterParts)
-      .outputOptions([
-        "-y",
-        "-map",
-        "0:v:0",
-        "-map",
-        "[aout]",
-        "-c:v",
-        copyVideo ? "copy" : "libx264",
-        ...(copyVideo
-          ? []
-          : [
-              "-preset",
-              FFMPEG_PRESET,
-              "-crf",
-              FFMPEG_CRF,
-              "-threads",
-              String(FFMPEG_THREADS_PER_CLIP),
-              "-pix_fmt",
-              "yuv420p",
-            ]),
-        "-c:a",
-        "aac",
-        "-b:a",
-        "192k",
-        "-ar",
-        "48000",
-        "-ac",
-        "2",
-        "-movflags",
-        "+faststart",
-      ])
-      .on("start", (cmd) => {
-        console.log("========== AUTO SFX FFMPEG ==========");
-        console.log(cmd);
-        console.log("=====================================");
-      })
-      .on("end", () => {
-        if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
-          return reject(new Error("Auto SFX output was not created."));
-        }
-        resolve();
-      })
-      .on("error", (error, _stdout, stderr) => {
-        console.error("Auto SFX FFmpeg failed:", error.message);
-        console.error("Auto SFX stderr:", stderr);
-        reject(error);
-      })
-      .save(outputPath);
+    filterParts.push(`${mixLabels.join("")}amix=inputs=${mixLabels.length}:duration=first:dropout_transition=0:normalize=0[aout]`);
+    command.complexFilter(filterParts).outputOptions(["-y","-map","0:v:0","-map","[aout]","-c:v",copyVideo?"copy":"libx264",...(copyVideo?[]:["-preset",FFMPEG_PRESET,"-crf",FFMPEG_CRF,"-threads",String(FFMPEG_THREADS_PER_CLIP),"-pix_fmt","yuv420p"]),"-c:a","aac","-b:a","192k","-ar","48000","-ac","2","-movflags","+faststart"]).on("progress",p=>{ if(Number.isFinite(p?.percent)) onProgress?.(Math.min(95,Math.max(70,70+(Number(p.percent)*0.25)))); }).on("end",()=>{if(!fs.existsSync(outputPath)||fs.statSync(outputPath).size<=0)return reject(new Error("Auto SFX output was not created."));resolve();}).on("error",(error)=>reject(error)).save(outputPath);
   });
 }
 
-async function analyzeAutoSfx(
-  videoPath: string,
-  duration: number,
-): Promise<AutoSfxAnalysis> {
-  let geminiFileName = "";
-
-  const prompt = `
-You are LumoClip's professional AI sound-design assistant.
-
-Analyze the entire video and identify the BEST moments where a subtle sound
-effect would improve pacing, emphasis, transitions, reactions, reveals, jokes,
-or viewer retention.
-
-Return ONLY valid JSON. No markdown. No commentary.
-
-Do NOT add an SFX for every sentence. Prefer meaningful moments.
-Do NOT place effects over normal continuous speech unless the moment benefits
-from emphasis.
-
-VIDEO DURATION:
-${duration.toFixed(2)} seconds
-
-ALLOWED SFX TYPES:
-- whoosh: transitions, movement, swipe, scene change, fast motion
-- impact: punchline, reveal, strong statement, visual hit, dramatic emphasis
-- pop: light emphasis, text/reveal, reaction, quick beat
-- click: UI click, typing, button, tiny precise action
-- ding: positive realization, answer, confirmation, success
-- sparkle: magical, exciting, celebratory, polished reveal
-- bass: dramatic low-end emphasis, serious reveal, powerful statement
-
-RULES:
-- Return at most ${AUTO_SFX_MAX_EVENTS} events.
-- Keep events at least ${AUTO_SFX_MIN_GAP.toFixed(2)} seconds apart.
-- "time" is the exact start time in seconds.
-- "intensity" is 0.1 to 1.0 and should normally stay between 0.35 and 0.75.
-- Use subtle SFX; never overpower dialogue.
-- Prefer 4-12 excellent events for a normal long-form video.
-- Cover the whole video when meaningful moments exist.
-- Do not invent events outside the actual video.
-- Do not add music or voice effects.
-
-EXACT JSON:
-{
-  "events": [
-    {
-      "time": 12.4,
-      "type": "impact",
-      "intensity": 0.65,
-      "reason": "Strong reveal that benefits from a short emphasis hit."
-    }
-  ]
-}
-`;
-
+async function analyzeAutoSfx(videoPath:string,duration:number):Promise<{events:AutoSfxEvent[]}> {
+  const prompt=`You are LumoClip's professional AI sound-design assistant.
+Analyze the entire video and identify the BEST moments where a subtle sound effect would improve pacing, emphasis, transitions, reactions, reveals, jokes, or viewer retention.
+Return ONLY valid JSON. No markdown.
+Do NOT add an SFX for every sentence. Prefer meaningful moments and never overpower dialogue.
+VIDEO DURATION: ${duration.toFixed(2)} seconds
+ALLOWED SFX TYPES: whoosh, impact, pop, click, ding, sparkle, bass
+RULES: Return at most ${AUTO_SFX_MAX_EVENTS} events. Keep events at least ${AUTO_SFX_MIN_GAP.toFixed(2)} seconds apart. time is exact seconds. intensity is 0.1-1.0, normally 0.35-0.75. Cover the whole video when meaningful moments exist.
+JSON: {"events":[{"time":12.4,"type":"impact","intensity":0.65,"reason":"Strong reveal that benefits from a short emphasis hit."}]}`;
+  let geminiFileName="";
   try {
-    const response = await generateGeminiWithRetry(async () => {
-      const file = await ai.files.upload({
-        file: videoPath,
-        config: { mimeType: "video/mp4" },
-      });
-
-      geminiFileName = file.name || "";
-
-      while (file.state && file.state.toString() !== "ACTIVE") {
-        if (file.state.toString() === "FAILED") {
-          throw new Error("Gemini Auto SFX video processing failed.");
-        }
-
-        await sleep(GEMINI_POLL_MS);
-
-        const refreshed = await ai.files.get({ name: file.name! });
-        if (refreshed.state?.toString() === "FAILED") {
-          throw new Error("Gemini Auto SFX video processing failed.");
-        }
-      }
-
-      return {
-        model: GEMINI_MODEL,
-        contents: createUserContent([
-          createPartFromUri(file.uri!, file.mimeType!),
-          prompt,
-        ]),
-        config: {
-          responseMimeType: "application/json",
-          temperature: 0.25,
-        },
-      };
+    const response=await generateGeminiWithRetry(async()=>{
+      const file=await ai.files.upload({file:videoPath,config:{mimeType:"video/mp4"}}); geminiFileName=file.name||"";
+      while(file.state&&file.state.toString()!=="ACTIVE"){ if(file.state.toString()==="FAILED")throw new Error("Gemini Auto SFX video processing failed."); await sleep(GEMINI_POLL_MS); const refreshed=await ai.files.get({name:file.name!}); if(refreshed.state?.toString()==="FAILED")throw new Error("Gemini Auto SFX video processing failed."); }
+      return {model:GEMINI_MODEL,contents:createUserContent([createPartFromUri(file.uri!,file.mimeType!),prompt]),config:{responseMimeType:"application/json",temperature:0.25}};
     });
-
-    const parsed = JSON.parse(cleanJson(response.text || ""));
-    const events = normalizeAutoSfxEvents(parsed?.events, duration);
-
-    if (!events.length) {
-      throw new Error("AI did not find any suitable Auto SFX moments.");
-    }
-
-    return { events };
-  } catch (error) {
-    console.error(
-      "Auto SFX Gemini analysis failed:",
-      getGeminiErrorMessage(error),
-    );
-    throw error;
-  }
+    const parsed=JSON.parse(cleanJson(response.text||"")); const events=normalizeAutoSfxEvents(parsed?.events,duration);
+    if(!events.length) throw new Error("AI did not find any suitable Auto SFX moments.");
+    return {events};
+  } finally { void geminiFileName; }
 }
 
 // The in-memory value makes the mode available to the worker during the
@@ -1601,7 +1287,7 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
-type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe" | "auto_sfx";
 
 interface SubtitleStyle {
   enabled: boolean;
@@ -1678,6 +1364,7 @@ function normalizeProcessingMode(value: unknown): ProcessingMode {
   if (value === "speech_only") return "speech_only";
   if (value === "full_video_caption") return "full_video_caption";
   if (value === "reframe") return "reframe";
+  if (value === "auto_sfx") return "auto_sfx";
   return "clips";
 }
 
@@ -4247,12 +3934,6 @@ function publicMediaUrl(
 
   if (parts[0] === "reframed") {
     return `/api/media/${encodedProject}/reframed/${parts
-      .slice(1)
-      .join("/")}`;
-  }
-
-  if (parts[0] === "sfx") {
-    return `/api/media/${encodedProject}/sfx/${parts
       .slice(1)
       .join("/")}`;
   }
@@ -6967,6 +6648,55 @@ async function processVideo(
       return;
     }
 
+    if (mode === "auto_sfx") {
+      await updateProject(projectId, 30, "Auto SFX: analyzing the full video", "processing", 0);
+      const sfxAnalysis = await analyzeAutoSfx(sourcePath, duration);
+      await updateProject(projectId, 52, `Auto SFX: ${sfxAnalysis.events.length} moments detected`, "processing", 0);
+
+      await updateProject(projectId, 62, "Auto SFX: preparing sound effects", "processing", 0);
+      const assets = await ensureAutoSfxAssets();
+      const sfxDir = path.join(projectDir, "sfx");
+      fs.mkdirSync(sfxDir, { recursive: true });
+      const outputPath = path.join(sfxDir, "auto-sfx.mp4");
+
+      await updateProject(projectId, 70, "Auto SFX: mixing sound effects", "processing", sfxAnalysis.events.length);
+      await applyAutoSfxMix(sourcePath, outputPath, sfxAnalysis.events, assets, true, async (percent) => {
+        try { await updateProject(projectId, percent, `Auto SFX: rendering audio mix (${Math.round(percent)}%)`, "processing", sfxAnalysis.events.length); } catch {}
+      });
+
+      const outputUrl = publicMediaUrl(projectId, "sfx/auto-sfx.mp4");
+      const completionPayload = {
+        processing_mode: mode,
+        full_video_url: outputUrl,
+        progress: 100,
+        current_step: `Auto SFX ready — ${sfxAnalysis.events.length} effects added`,
+        status: "completed",
+        total_clips: 0,
+      };
+      const completionUpdate = await supabase
+        .from("projects")
+        .update({ ...completionPayload, auto_sfx_url: outputUrl })
+        .eq("id", projectId);
+
+      // `auto_sfx_url` is optional for older databases. The actual output is
+      // also exposed as full_video_url, so Auto SFX still completes cleanly.
+      if (completionUpdate.error) {
+        const fallbackUpdate = await supabase
+          .from("projects")
+          .update(completionPayload)
+          .eq("id", projectId);
+        if (fallbackUpdate.error) throw fallbackUpdate.error;
+      }
+
+      await createNotification({
+        userId, type: "project_completed", title: "Auto SFX is ready",
+        message: `LumoClip added ${sfxAnalysis.events.length} AI-selected sound effects to your video.`,
+        projectId, metadata: { mode, outputUrl, eventCount: sfxAnalysis.events.length, events: sfxAnalysis.events, creditsUsed: VIDEO_COST },
+      });
+      console.log(`Project ${projectId} completed with Auto SFX (${sfxAnalysis.events.length} effects).`);
+      return;
+    }
+
     await updateProject(
       projectId,
       35,
@@ -8985,13 +8715,6 @@ app.get(
           "full-captioned.mp4",
         );
 
-        const autoSfxPath = path.join(
-          mediaDir,
-          safeSegment(project.id),
-          "sfx",
-          "auto-sfx.mp4",
-        );
-
         return {
           ...project,
           full_video_url:
@@ -8999,7 +8722,7 @@ app.get(
             (fs.existsSync(fullVideoPath)
               ? publicMediaUrl(project.id, "full-captioned.mp4")
               : null),
-          auto_sfx_url: fs.existsSync(autoSfxPath)
+          auto_sfx_url: fs.existsSync(path.join(mediaDir, safeSegment(project.id), "sfx", "auto-sfx.mp4"))
             ? publicMediaUrl(project.id, "sfx/auto-sfx.mp4")
             : null,
         };
@@ -10506,13 +10229,6 @@ app.get(
         "full-captioned.mp4",
       );
 
-      const autoSfxPath = path.join(
-        mediaDir,
-        safeSegment(project.id),
-        "sfx",
-        "auto-sfx.mp4",
-      );
-
       const projectWithFullVideo = {
         ...project,
         full_video_url:
@@ -10520,7 +10236,7 @@ app.get(
           (fs.existsSync(fullVideoPath)
             ? publicMediaUrl(project.id, "full-captioned.mp4")
             : null),
-        auto_sfx_url: fs.existsSync(autoSfxPath)
+        auto_sfx_url: fs.existsSync(path.join(mediaDir, safeSegment(project.id), "sfx", "auto-sfx.mp4"))
           ? publicMediaUrl(project.id, "sfx/auto-sfx.mp4")
           : null,
       };
@@ -10644,12 +10360,6 @@ app.get(
   "/api/media/:projectId/reframed/:filename",
   (req, res) =>
     sendProjectMedia(req, res, "reframed"),
-);
-
-app.get(
-  "/api/media/:projectId/sfx/:filename",
-  (req, res) =>
-    sendProjectMedia(req, res, "sfx"),
 );
 
 /* =========================================================
@@ -10914,171 +10624,6 @@ app.post(
 
       return res.status(error?.statusCode || 500).json({
         error: error?.message || "Speech enhancement failed.",
-      });
-    }
-  },
-);
-
-/* =========================================================
-   AUTO SFX
-
-   Free post-processing action. It analyzes an existing project source,
-   selects meaningful SFX moments with Gemini, and mixes them into the
-   original video while copying the video stream (no video re-encode).
-========================================================= */
-
-app.post(
-  "/api/projects/:projectId/auto-sfx",
-  async (req, res) => {
-    const projectId = String(req.params.projectId || "").trim();
-    let outputPath = "";
-
-    try {
-      if (!projectId) {
-        return res.status(400).json({ error: "Project ID is required." });
-      }
-
-      const user = await getAuthenticatedUser(req);
-
-      const { data: project, error: projectError } = await supabase
-        .from("projects")
-        .select("id, user_id, name, duration")
-        .eq("id", projectId)
-        .eq("user_id", user.id)
-        .single();
-
-      if (projectError || !project) {
-        return res.status(404).json({ error: "Project not found." });
-      }
-
-      const inputPath = resolveProjectSourcePath(projectId);
-      const probe = await probeSpeechEnhancementInput(inputPath);
-
-      if (!probe.hasVideo) {
-        return res.status(400).json({
-          error: "The project source does not contain a video track.",
-        });
-      }
-
-      if (!probe.hasAudio) {
-        return res.status(400).json({
-          error: "Auto SFX requires a video with an audio track.",
-        });
-      }
-
-      const duration = Number(probe.duration || project.duration || 0);
-
-      if (!Number.isFinite(duration) || duration <= 0) {
-        return res.status(400).json({
-          error: "The project source has no valid duration.",
-        });
-      }
-
-      if (duration > MAX_VIDEO_DURATION) {
-        return res.status(400).json({
-          error: `Video duration cannot exceed ${MAX_VIDEO_DURATION} seconds.`,
-        });
-      }
-
-      const sfxDir = path.join(
-        mediaDir,
-        safeSegment(projectId),
-        "sfx",
-      );
-
-      fs.mkdirSync(sfxDir, { recursive: true });
-
-      outputPath = path.join(sfxDir, "auto-sfx.mp4");
-
-      await supabase
-        .from("projects")
-        .update({
-          current_step: "AI is detecting sound-effect moments (10%)",
-        })
-        .eq("id", projectId)
-        .eq("user_id", user.id);
-
-      const analysis = await analyzeAutoSfx(inputPath, duration);
-
-      await supabase
-        .from("projects")
-        .update({
-          current_step: `Mixing ${analysis.events.length} Auto SFX moments (65%)`,
-        })
-        .eq("id", projectId)
-        .eq("user_id", user.id);
-
-      const assets = await ensureAutoSfxAssets();
-
-      await applyAutoSfxMix(
-        inputPath,
-        outputPath,
-        analysis.events,
-        assets,
-        probe.videoCodec === "h264",
-      );
-
-      const outputUrl = publicMediaUrl(
-        projectId,
-        "sfx/auto-sfx.mp4",
-      );
-
-      await supabase.from("usage_logs").insert({
-        user_id: user.id,
-        action: `Auto SFX: ${project.name || projectId}`,
-        credits_used: 0,
-      });
-
-      await supabase
-        .from("projects")
-        .update({
-          current_step: "Auto SFX is ready",
-        })
-        .eq("id", projectId)
-        .eq("user_id", user.id);
-
-      try {
-        await createNotification({
-          userId: user.id,
-          type: "auto_sfx_ready",
-          title: "Auto SFX is ready",
-          message: `LumoClip added ${analysis.events.length} AI-selected sound effects to your video.`,
-          projectId,
-          metadata: {
-            credits: 0,
-            eventCount: analysis.events.length,
-            events: analysis.events,
-            outputUrl,
-          },
-        });
-      } catch (notificationError) {
-        console.error("Auto SFX notification failed:", notificationError);
-      }
-
-      return res.json({
-        success: true,
-        projectId,
-        outputUrl,
-        filename: "auto-sfx.mp4",
-        creditsUsed: 0,
-        events: analysis.events,
-        message: `Auto SFX added successfully (${analysis.events.length} effects).`,
-      });
-    } catch (error: any) {
-      console.error("Auto SFX endpoint failed:", error);
-
-      if (outputPath) {
-        try {
-          if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
-        } catch {}
-      }
-
-      if (error?.message === "UNAUTHORIZED") {
-        return res.status(401).json({ error: "Unauthorized." });
-      }
-
-      return res.status(error?.statusCode || 500).json({
-        error: error?.message || "Auto SFX failed.",
       });
     }
   },
