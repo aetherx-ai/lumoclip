@@ -184,6 +184,39 @@ function isSpeechOnlyProject(project: Project): boolean {
 }
 
 /* =========================================================
+   AUTO SFX HELPERS
+
+   Reads the dedicated Auto SFX fields off the project object:
+     - project.auto_sfx_status    ("idle" | "queued" | "processing" | "completed" | "failed")
+     - project.auto_sfx_progress  (0-100)
+========================================================= */
+
+function getAutoSfxStatus(project: Project): string {
+  const data = project as any;
+
+  return String(
+    data.auto_sfx_status ?? data.autoSfxStatus ?? "idle",
+  ).toLowerCase();
+}
+
+function getAutoSfxProgress(project: Project): number {
+  return normalizeProgress(
+    (project as any).auto_sfx_progress ??
+      (project as any).autoSfxProgress,
+  );
+}
+
+function isAutoSfxActive(project: Project): boolean {
+  const status = getAutoSfxStatus(project);
+
+  return status === "queued" || status === "processing";
+}
+
+function isAutoSfxFailed(project: Project): boolean {
+  return getAutoSfxStatus(project) === "failed";
+}
+
+/* =========================================================
    SHARED UI
 ========================================================= */
 
@@ -276,12 +309,15 @@ const HeroVideo: React.FC<{
   failed: boolean;
   /** When speech enhancement is actively running, override the caption text. */
   speechEnhancing?: boolean;
+  /** When Auto SFX is actively running, override the caption text. */
+  autoSfxRunning?: boolean;
 }> = ({
   project,
   progress,
   completed,
   failed,
   speechEnhancing = false,
+  autoSfxRunning = false,
 }) => {
   const sourceUrl =
     (project as any).source_media_url ||
@@ -352,6 +388,13 @@ const HeroVideo: React.FC<{
               Enhancing speech
             </span>
           )}
+
+          {autoSfxRunning && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/20 bg-amber-500/20 px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-[0.12em] text-amber-200 backdrop-blur-xl">
+              <Sparkles className="h-3 w-3 animate-pulse" />
+              Adding SFX
+            </span>
+          )}
         </div>
 
         <div className="absolute bottom-5 left-5 right-5">
@@ -363,6 +406,16 @@ const HeroVideo: React.FC<{
 
               <p className="mt-1 text-[10px] text-zinc-300">
                 Removing noise and balancing voice levels...
+              </p>
+            </>
+          ) : autoSfxRunning ? (
+            <>
+              <p className="text-sm font-semibold text-white sm:text-base">
+                Adding sound effects
+              </p>
+
+              <p className="mt-1 text-[10px] text-zinc-300">
+                Detecting moments and mixing in SFX...
               </p>
             </>
           ) : !completed && !failed ? (
@@ -397,18 +450,22 @@ const HeroVideo: React.FC<{
           )}
         </div>
 
-        {(speechEnhancing || (!completed && !failed)) && (
+        {(speechEnhancing || autoSfxRunning || (!completed && !failed)) && (
           <div className="absolute bottom-0 left-0 right-0 h-[3px] bg-white/10">
             <div
               className={[
                 "h-full rounded-r-full transition-all duration-700",
                 speechEnhancing
                   ? "w-1/2 animate-pulse bg-gradient-to-r from-cyan-400 to-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.55)]"
+                  : autoSfxRunning
+                  ? "bg-gradient-to-r from-amber-400 to-orange-300 shadow-[0_0_12px_rgba(251,191,36,0.55)]"
                   : "bg-gradient-to-r from-violet-500 to-fuchsia-400 shadow-[0_0_12px_rgba(139,92,246,0.55)]",
               ].join(" ")}
               style={
                 speechEnhancing
                   ? undefined
+                  : autoSfxRunning
+                  ? { width: `${progress}%` }
                   : { width: `${progress}%` }
               }
             />
@@ -1876,6 +1933,158 @@ const SpeechPipeline: React.FC = () => {
 };
 
 /* =========================================================
+   AUTO SFX PIPELINE
+   (Shown instead of the clip-generation Pipeline while an
+   Auto SFX job is actively running. Progress-driven, same as
+   Pipeline, so it reflects the real project.auto_sfx_progress
+   as polling refreshes it.)
+========================================================= */
+
+const AUTO_SFX_STEPS = [
+  {
+    label: "Audio received",
+    description: "Source track queued for effects analysis",
+    threshold: 8,
+  },
+  {
+    label: "Detecting sound moments",
+    description: "Scanning for impacts, transitions and emphasis points",
+    threshold: 32,
+  },
+  {
+    label: "Selecting sound effects",
+    description: "Matching effects from the SFX library to each moment",
+    threshold: 58,
+  },
+  {
+    label: "Mixing effects",
+    description: "Blending SFX levels in with the original audio",
+    threshold: 80,
+  },
+  {
+    label: "Finalizing",
+    description: "Rendering the final audio mix",
+    threshold: 96,
+  },
+];
+
+const AutoSfxPipeline: React.FC<{
+  progress: number;
+  failed?: boolean;
+}> = ({ progress, failed = false }) => {
+  const safeProgress = Math.max(
+    0,
+    Math.min(100, Math.round(progress || 0)),
+  );
+
+  return (
+    <Surface className="h-full p-5 sm:p-6">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-amber-400">
+            Live pipeline
+          </p>
+
+          <h3 className="mt-1 text-base font-semibold text-white">
+            {failed ? "Auto SFX failed" : "Adding sound effects"}
+          </h3>
+        </div>
+
+        {failed ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-red-400/15 bg-red-500/[0.06] px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-red-300">
+            <AlertCircle className="h-3 w-3" />
+            Error
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/10 bg-amber-500/[0.05] px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-amber-300">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+            Live
+          </span>
+        )}
+      </div>
+
+      <div className="mt-7 space-y-1">
+        {AUTO_SFX_STEPS.map((step, index) => {
+          const done = !failed && safeProgress >= step.threshold;
+          const active =
+            !failed && !done && safeProgress >= step.threshold - 15;
+
+          return (
+            <div key={step.label} className="relative flex gap-3">
+              {index < AUTO_SFX_STEPS.length - 1 && (
+                <div
+                  className={[
+                    "absolute left-[13px] top-7 h-[calc(100%-4px)] w-px",
+                    done ? "bg-emerald-500/25" : "bg-white/[0.05]",
+                  ].join(" ")}
+                />
+              )}
+
+              <div
+                className={[
+                  "relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border",
+                  done
+                    ? "border-emerald-400/20 bg-emerald-400/[0.08]"
+                    : active
+                    ? "border-amber-400/20 bg-amber-500/[0.08]"
+                    : "border-white/[0.06] bg-white/[0.02]",
+                ].join(" ")}
+              >
+                {done ? (
+                  <Check className="h-3 w-3 text-emerald-400" />
+                ) : active ? (
+                  <Loader2 className="h-3 w-3 animate-spin text-amber-400" />
+                ) : (
+                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-700" />
+                )}
+              </div>
+
+              <div
+                className={[
+                  "mb-3 flex-1 rounded-xl px-3 py-2",
+                  active ? "bg-amber-500/[0.035]" : "",
+                ].join(" ")}
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p
+                    className={[
+                      "text-[10px] font-medium sm:text-[11px]",
+                      done
+                        ? "text-zinc-300"
+                        : active
+                        ? "text-white"
+                        : "text-zinc-600",
+                    ].join(" ")}
+                  >
+                    {step.label}
+                  </p>
+
+                  {done && (
+                    <span className="text-[7px] font-bold uppercase tracking-wider text-emerald-400">
+                      Done
+                    </span>
+                  )}
+
+                  {active && (
+                    <span className="text-[7px] font-bold uppercase tracking-wider text-amber-400">
+                      Working
+                    </span>
+                  )}
+                </div>
+
+                <p className="mt-1 text-[9px] leading-5 text-zinc-700">
+                  {step.description}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Surface>
+  );
+};
+
+/* =========================================================
    CLIP CARD
 ========================================================= */
 
@@ -2607,6 +2816,21 @@ export const ProjectDetailView: React.FC<
   const isEnhancingSpeech =
     speechStatus === "processing";
 
+  /*
+   * Auto SFX status/progress come straight off the project
+   * object (polled from the backend), unlike speech enhancement
+   * which is a local, user-triggered action. See getAutoSfxStatus
+   * / getAutoSfxProgress / isAutoSfxActive above.
+   */
+  const isAutoSfxRunning =
+    isAutoSfxActive(project) && !isEnhancingSpeech;
+
+  const autoSfxProgress =
+    getAutoSfxProgress(project);
+
+  const autoSfxFailed =
+    isAutoSfxFailed(project);
+
   const safeClips = Array.isArray(clips)
     ? clips
     : [];
@@ -2669,6 +2893,11 @@ export const ProjectDetailView: React.FC<
                       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
                       Enhancing speech
                     </span>
+                  ) : isAutoSfxRunning ? (
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/15 bg-amber-400/[0.08] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.12em] text-amber-300">
+                      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+                      Adding SFX
+                    </span>
                   ) : (
                     <StatusBadge
                       status={badgeStatus}
@@ -2723,7 +2952,8 @@ export const ProjectDetailView: React.FC<
                   )}
 
                   {isCompleted &&
-                    !isEnhancingSpeech && (
+                    !isEnhancingSpeech &&
+                    !isAutoSfxRunning && (
                       <>
                         <span>•</span>
 
@@ -2805,12 +3035,19 @@ export const ProjectDetailView: React.FC<
                   progress={progress}
                   completed={false}
                   failed={false}
+                  speechEnhancing={isEnhancingSpeech}
+                  autoSfxRunning={isAutoSfxRunning}
                 />
               </div>
 
               <div className="xl:col-span-5">
                 {isEnhancingSpeech ? (
                   <SpeechPipeline />
+                ) : isAutoSfxRunning ? (
+                  <AutoSfxPipeline
+                    progress={autoSfxProgress}
+                    failed={autoSfxFailed}
+                  />
                 ) : (
                   <Pipeline
                     project={project}
@@ -2937,6 +3174,8 @@ export const ProjectDetailView: React.FC<
                 "mb-4 flex flex-col gap-3 rounded-2xl border px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5",
                 isEnhancingSpeech
                   ? "border-cyan-400/10 bg-cyan-500/[0.035]"
+                  : isAutoSfxRunning
+                  ? "border-amber-400/10 bg-amber-500/[0.035]"
                   : "border-emerald-400/10 bg-emerald-500/[0.035]",
               ].join(" ")}
             >
@@ -2946,11 +3185,20 @@ export const ProjectDetailView: React.FC<
                     "flex h-9 w-9 items-center justify-center rounded-xl",
                     isEnhancingSpeech
                       ? "bg-cyan-500/[0.08]"
+                      : isAutoSfxRunning
+                      ? "bg-amber-500/[0.08]"
                       : "bg-emerald-500/[0.08]",
                   ].join(" ")}
                 >
-                  {isEnhancingSpeech ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
+                  {isEnhancingSpeech || isAutoSfxRunning ? (
+                    <Loader2
+                      className={[
+                        "h-4 w-4 animate-spin",
+                        isEnhancingSpeech
+                          ? "text-cyan-400"
+                          : "text-amber-400",
+                      ].join(" ")}
+                    />
                   ) : (
                     <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                   )}
@@ -2962,17 +3210,23 @@ export const ProjectDetailView: React.FC<
                       "text-[8px] font-bold uppercase tracking-[0.18em]",
                       isEnhancingSpeech
                         ? "text-cyan-400"
+                        : isAutoSfxRunning
+                        ? "text-amber-400"
                         : "text-emerald-400",
                     ].join(" ")}
                   >
                     {isEnhancingSpeech
                       ? "Audio enhancement running"
+                      : isAutoSfxRunning
+                      ? "Auto SFX running"
                       : "AI processing complete"}
                   </p>
 
                   <p className="mt-1 text-sm font-semibold text-white">
                     {isEnhancingSpeech
                       ? "Cleaning up your audio..."
+                      : isAutoSfxRunning
+                      ? "Adding sound effects..."
                       : isSpeechOnlyMode
                       ? "Your source is ready for speech enhancement"
                       : isFullVideoMode
@@ -2985,6 +3239,11 @@ export const ProjectDetailView: React.FC<
               {isEnhancingSpeech ? (
                 <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-cyan-400/10 bg-cyan-500/[0.07] px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-cyan-300">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-cyan-400" />
+                  Working
+                </span>
+              ) : isAutoSfxRunning ? (
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-400/10 bg-amber-500/[0.07] px-3 py-1.5 text-[8px] font-bold uppercase tracking-wider text-amber-300">
+                  <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
                   Working
                 </span>
               ) : (
@@ -3000,7 +3259,7 @@ export const ProjectDetailView: React.FC<
                 <div className="grid gap-4 xl:grid-cols-12">
                   <div
                     className={
-                      isEnhancingSpeech
+                      isEnhancingSpeech || isAutoSfxRunning
                         ? "xl:col-span-7"
                         : "xl:col-span-12"
                     }
@@ -3018,6 +3277,15 @@ export const ProjectDetailView: React.FC<
                   {isEnhancingSpeech && (
                     <div className="xl:col-span-5">
                       <SpeechPipeline />
+                    </div>
+                  )}
+
+                  {isAutoSfxRunning && !isEnhancingSpeech && (
+                    <div className="xl:col-span-5">
+                      <AutoSfxPipeline
+                        progress={autoSfxProgress}
+                        failed={autoSfxFailed}
+                      />
                     </div>
                   )}
                 </div>
@@ -3040,7 +3308,7 @@ export const ProjectDetailView: React.FC<
                 <div className="grid gap-4 xl:grid-cols-12">
                   <div
                     className={
-                      isEnhancingSpeech
+                      isEnhancingSpeech || isAutoSfxRunning
                         ? "xl:col-span-7"
                         : "xl:col-span-12"
                     }
@@ -3058,6 +3326,15 @@ export const ProjectDetailView: React.FC<
                   {isEnhancingSpeech && (
                     <div className="xl:col-span-5">
                       <SpeechPipeline />
+                    </div>
+                  )}
+
+                  {isAutoSfxRunning && !isEnhancingSpeech && (
+                    <div className="xl:col-span-5">
+                      <AutoSfxPipeline
+                        progress={autoSfxProgress}
+                        failed={autoSfxFailed}
+                      />
                     </div>
                   )}
                 </div>
@@ -3093,6 +3370,11 @@ export const ProjectDetailView: React.FC<
                   <div className="xl:col-span-5">
                     {isEnhancingSpeech ? (
                       <SpeechPipeline />
+                    ) : isAutoSfxRunning ? (
+                      <AutoSfxPipeline
+                        progress={autoSfxProgress}
+                        failed={autoSfxFailed}
+                      />
                     ) : isSpeechOnlyMode ? (
                       <Surface className="h-full border-cyan-400/10 bg-gradient-to-b from-cyan-500/[0.045] to-[#09090d] p-6">
                         <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-cyan-400/10 bg-cyan-500/[0.07]">
