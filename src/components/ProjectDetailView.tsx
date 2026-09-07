@@ -555,12 +555,15 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
     setSelectedClipId("");
     setInputType("source");
     setStartedAt(null);
+    setElapsedTick(0);
   }, [project.id]);
 
   /*
    * Optional lightweight elapsed-time UI.
    * The actual timeout is enforced by the backend.
    */
+  const [elapsedTick, setElapsedTick] = useState(0);
+
   const elapsedSeconds =
     startedAt
       ? Math.max(
@@ -570,6 +573,8 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
           ),
         )
       : 0;
+  // Keep elapsedTick referenced so React re-renders while processing.
+  void elapsedTick;
 
   useEffect(() => {
     if (status !== "processing") {
@@ -577,8 +582,8 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
     }
 
     const timer = window.setInterval(() => {
-      // Trigger a harmless state update through elapsed time.
-      setStartedAt((value) => value);
+      // Re-render once per second so elapsedSeconds stays live.
+      setElapsedTick((value) => value + 1);
     }, 1000);
 
     return () => {
@@ -3227,6 +3232,8 @@ export const ProjectDetailView: React.FC<
                       ? "Cleaning up your audio..."
                       : isAutoSfxRunning
                       ? "Adding sound effects..."
+                      : autoSfxFailed
+                      ? "Sound effects could not be added."
                       : isSpeechOnlyMode
                       ? "Your source is ready for speech enhancement"
                       : isFullVideoMode
