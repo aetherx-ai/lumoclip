@@ -1164,20 +1164,45 @@ async function rememberProcessingConfig(
 ): Promise<void> {
   processingConfigs.set(projectId, config);
 
-  const { error } = await supabase
+  const fullConfigUpdate = {
+    processing_mode: config.mode,
+    caption_style: config.captionStyle,
+    reframe_config: config.reframe,
+    speech_settings: config.speechSettings,
+    clip_settings: config.clipSettings,
+  };
+
+  let { error } = await supabase
     .from("projects")
-    .update({
-      processing_mode: config.mode,
-      caption_style: config.captionStyle,
-      reframe_config: config.reframe,
-      speech_settings: config.speechSettings,
-      clip_settings: config.clipSettings,
-    })
+    .update(fullConfigUpdate)
     .eq("id", projectId);
 
+  // Older Supabase schemas may not have clip_settings yet. Retry without
+  // that optional column so the rest of the processing configuration is
+  // still durable across worker/server restarts.
+  if (error && /clip_settings.*schema cache|Could not find the 'clip_settings' column/i.test(error.message || "")) {
+    const fallback = await supabase
+      .from("projects")
+      .update({
+        processing_mode: config.mode,
+        caption_style: config.captionStyle,
+        reframe_config: config.reframe,
+        speech_settings: config.speechSettings,
+      })
+      .eq("id", projectId);
+
+    error = fallback.error;
+
+    if (!error) {
+      console.warn(
+        "Project processing config persisted without optional clip_settings column.",
+      );
+    }
+  }
+
   if (error) {
-    // These columns are optional for backward compatibility with the current
-    // schema. The in-memory config remains the fallback.
+    // The in-memory config remains the fallback if the remaining columns are
+    // also unavailable or the database update is otherwise rejected.
     console.warn(
       "Project processing config was not persisted; using in-memory config:",
       error.message,
@@ -1209,11 +1234,23 @@ async function getProcessingConfig(
 
   // Optional metadata columns are intentionally best-effort for backward
   // compatibility with existing LumoClip databases.
-  const { data: metadata, error: metadataError } = await supabase
+  let { data: metadata, error: metadataError } = await supabase
     .from("projects")
     .select("processing_mode, caption_style, reframe_config, speech_settings, clip_settings")
     .eq("id", projectId)
     .maybeSingle();
+
+  // Backward-compatible read for databases that predate clip_settings.
+  if (metadataError && /clip_settings.*schema cache|Could not find the 'clip_settings' column/i.test(metadataError.message || "")) {
+    const fallback = await supabase
+      .from("projects")
+      .select("processing_mode, caption_style, reframe_config, speech_settings")
+      .eq("id", projectId)
+      .maybeSingle();
+
+    metadata = fallback.data as typeof metadata;
+    metadataError = fallback.error;
+  }
 
   // The worker queue marker is authoritative for speech-only jobs.
   // This prevents a stale/default processing_mode="clips" from turning
@@ -4339,11 +4376,18 @@ async function updateProject(
   status?: string,
   totalClips?: number,
 ) {
+  // Supabase/Postgres `projects.progress` is an INTEGER column.
+  // FFmpeg reports fractional percentages, so always persist a finite,
+  // clamped whole number instead of sending values like 70.8597.
+  const safeProgress = Number.isFinite(progress)
+    ? Math.min(100, Math.max(0, Math.round(progress)))
+    : 0;
+
   const update: Record<
     string,
     unknown
   > = {
-    progress,
+    progress: safeProgress,
     current_step: currentStep,
   };
 
