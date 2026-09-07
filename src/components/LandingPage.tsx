@@ -100,20 +100,23 @@ const SITE_URL = "https://lumo-clip.com";
 const SITE_NAME = "LumoClip";
 
 const SEO_TITLE =
-  "LumoClip – AI Video Clipper | Turn Long Videos Into Shorts";
+  "LumoClip | AI Video Editor, Clipper & Shorts Generator";
 
 const SEO_DESCRIPTION =
-  "LumoClip is an AI video clipper that finds the best moments in long videos and turns them into engaging short-form content for YouTube Shorts, TikTok, and Instagram.";
+  "LumoClip is an AI video editor and clipper that turns long videos into engaging shorts, captions and platform-ready content for YouTube, TikTok and Instagram.";
 
 const SEO_KEYWORDS = [
   "LumoClip",
   "Lumo Clip",
+  "AI video editor",
   "AI video clipper",
   "AI video clipping",
   "AI clip generator",
   "long video to shorts",
   "video to shorts",
   "AI shorts generator",
+  "AI caption generator",
+  "video repurposing tool",
   "YouTube Shorts maker",
   "TikTok clip generator",
   "Instagram Reels maker",
@@ -200,6 +203,18 @@ const faqs = [
   {
     q: "Can LumoClip generate captions and hooks?",
     a: "Yes. LumoClip can generate titles, hooks, captions, descriptions and content directions alongside generated short-form content.",
+  },
+  {
+    q: "Is LumoClip an AI video editor?",
+    a: "Yes. LumoClip combines AI video clipping with editing-focused tools such as captions, automatic reframing, speech enhancement and smart editing workflows.",
+  },
+  {
+    q: "Can LumoClip turn a long video into Shorts?",
+    a: "Yes. LumoClip is designed to identify strong moments in long-form videos and turn them into short-form clips for platforms such as YouTube Shorts, TikTok and Instagram Reels.",
+  },
+  {
+    q: "What can I create from one video?",
+    a: "You can create short-form clips, hooks, titles, captions, descriptions and other content directions from a single source video.",
   },
 ];
 
@@ -1717,8 +1732,19 @@ export function LandingPage({
       operatingSystem: "Web",
       url: `${SITE_URL}/`,
       description:
-        "LumoClip is an AI video clipper that turns long-form videos into engaging short-form content.",
+        "LumoClip is an AI video editor and clipper that turns long-form videos into short-form content, captions and platform-ready assets.",
       image: `${SITE_URL}/logo.png`,
+      keywords: SEO_KEYWORDS,
+      featureList: [
+        "AI video clipping",
+        "Long video to shorts",
+        "AI captions",
+        "AI hooks and titles",
+        "Automatic video reframing",
+        "Speech enhancement",
+        "AI video dubbing",
+        "Dead air removal",
+      ],
       publisher: {
         "@id": `${SITE_URL}/#organization`,
       },
@@ -2830,6 +2856,63 @@ export function LandingPage({
                   </article>
                 </Reveal>
               ))}
+            </div>
+          </div>
+        </section>
+
+        {/* ==================================================================
+            SEO CONTENT — AI VIDEO EDITOR / REPURPOSING
+        ================================================================== */}
+
+        <section
+          aria-labelledby="ai-video-editor-title"
+          className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
+          style={lazySectionStyle}
+        >
+          <div className="mx-auto max-w-[1200px] px-5 sm:px-6 lg:px-8">
+            <Reveal>
+              <div className="mx-auto max-w-3xl text-center">
+                <SectionLabel icon={Scissors}>
+                  AI video editor & repurposing
+                </SectionLabel>
+                <h2
+                  id="ai-video-editor-title"
+                  className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
+                >
+                  An AI video editor built
+                  <br />
+                  <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
+                    for long-form content.
+                  </span>
+                </h2>
+                <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-700">
+                  LumoClip helps creators turn long videos into short-form content without starting every edit from scratch. Use AI to find strong moments, generate clips and captions, reframe content for different platforms, enhance speech and organize the assets you want to publish.
+                </p>
+              </div>
+            </Reveal>
+
+            <div className="mt-12 grid gap-4 md:grid-cols-3">
+              {[
+                [Scissors, "AI video clipper", "Find compelling moments in long videos and turn them into short-form clips.", "/long-video-to-shorts"],
+                [Subtitles, "AI captions", "Create caption-ready content that is easier to review and publish across social platforms.", "/ai-captions"],
+                [Mic2, "Enhance speech", "Improve spoken audio with LumoClip's AI speech enhancement workflow.", "/ai-speech-enhancer"],
+                [Film, "AI video reframe", "Adapt video composition for vertical, square and landscape formats.", "/ai-video-reframe"],
+                [Sparkles, "Auto SFX", "Add sound effects through LumoClip's automatic SFX workflow.", "/ai-sound-effects"],
+              ].map(([Icon, title, text, href], index) => {
+                const I = Icon as React.ElementType;
+                return (
+                  <Reveal key={String(title)} delay={index * 70}>
+                    <a href={String(href)} className="group block h-full rounded-[27px] border border-white/[0.06] bg-white/[0.012] p-6 transition-all duration-500 hover:-translate-y-1 hover:border-violet-300/15 hover:bg-white/[0.025]">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-violet-300/10 bg-violet-400/[0.06]">
+                        <I className="h-5 w-5 text-violet-300 transition group-hover:scale-110" />
+                      </div>
+                      <h3 className="mt-6 text-sm font-bold text-white">{String(title)}</h3>
+                      <p className="mt-2 text-xs leading-6 text-zinc-700">{String(text)}</p>
+                      <span className="mt-5 inline-flex items-center gap-1.5 text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-700 transition group-hover:text-violet-300">Explore tool <ArrowRight className="h-3 w-3" /></span>
+                    </a>
+                  </Reveal>
+                );
+              })}
             </div>
           </div>
         </section>
