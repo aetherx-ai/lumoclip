@@ -2612,7 +2612,7 @@ export const NewProjectModal: React.FC<
       if (sourceType === "podcast") {
         if (!finalUrl) {
           setError(
-            "Please enter a podcast URL.",
+            "Please enter a direct audio/video file link.",
           );
           return;
         }
@@ -2621,7 +2621,7 @@ export const NewProjectModal: React.FC<
           !isValidHttpUrl(finalUrl)
         ) {
           setError(
-            "Please enter a valid podcast URL.",
+            "Please enter a valid direct audio/video file link.",
           );
           return;
         }
@@ -2986,11 +2986,11 @@ export const NewProjectModal: React.FC<
                   </div>
                   <p className="text-xl font-semibold tracking-tight text-white sm:text-2xl">Start with your video</p>
                   <p className="mx-auto mt-2 max-w-md text-[10px] leading-5 text-zinc-500 sm:text-[11px]">
-                    Paste a video link or upload an MP4. We’ll take you to your AI settings next.
+                    Paste a YouTube link, a direct audio/video file link, or upload an MP4. We’ll take you to your AI settings next.
                   </p>
                 </div>
 
-                <div className={`relative overflow-hidden rounded-[24px] border transition-all duration-300 ${sourceType === "youtube" && youtubeValid ? "border-emerald-500/25 bg-emerald-500/[0.035]" : "border-white/[0.08] bg-white/[0.02] hover:border-violet-500/25"}`}>
+                <div className={`relative overflow-hidden rounded-[24px] border transition-all duration-300 ${(sourceType === "youtube" && youtubeValid) || (sourceType === "podcast" && podcastValid) ? "border-emerald-500/25 bg-emerald-500/[0.035]" : "border-white/[0.08] bg-white/[0.02] hover:border-violet-500/25"}`}>
                   <div className="pointer-events-none absolute -right-16 -top-16 h-36 w-36 rounded-full bg-violet-500/[0.08] blur-3xl" />
                   <div className="relative p-5 sm:p-6">
                     <div className="mb-4 flex items-center gap-3">
@@ -2999,9 +2999,13 @@ export const NewProjectModal: React.FC<
                       </div>
                       <div>
                         <p className="text-[11px] font-bold text-white">Paste a video link</p>
-                        <p className="mt-0.5 text-[8px] text-zinc-600">YouTube video, Shorts or Live</p>
+                        <p className="mt-0.5 text-[8px] text-zinc-600">
+                          {sourceType === "podcast"
+                            ? "Direct audio/video file link detected"
+                            : "YouTube video, Shorts or Live \u00b7 or a direct .mp3/.mp4 link"}
+                        </p>
                       </div>
-                      {youtubeValid && <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-400" />}
+                      {(youtubeValid || (sourceType === "podcast" && podcastValid)) && <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-400" />}
                     </div>
                     <div className={`relative rounded-[18px] border ${isFocused ? "border-violet-500/45 bg-violet-500/[0.035]" : "border-white/[0.08] bg-black/20"}`}>
                       <Link2 className={`absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 ${isFocused ? "text-violet-400" : "text-zinc-600"}`} />
@@ -3014,21 +3018,34 @@ export const NewProjectModal: React.FC<
                         onFocus={() => setIsFocused(true)}
                         onBlur={() => setIsFocused(false)}
                         onChange={(event) => {
-                          setYoutubeUrl(event.target.value);
-                          if (event.target.value.trim()) setSourceType("youtube");
+                          const value = event.target.value;
+                          setYoutubeUrl(value);
+                          // Direct audio/video links ("podcast" source) share this
+                          // same input with YouTube — detect which one this is so
+                          // the right sourceType reaches the backend. A YouTube URL
+                          // always wins the YouTube branch; any other http(s) URL is
+                          // treated as a direct-link import instead of silently
+                          // being sent as sourceType "youtube" (which the backend
+                          // would then reject as an invalid YouTube URL).
+                          if (value.trim()) {
+                            setSourceType(isValidYouTubeUrl(value) ? "youtube" : "podcast");
+                          }
                           if (error) setError("");
                         }}
                         onKeyDown={(event) => {
-                          if (event.key === "Enter" && youtubeValid && !loading) {
+                          if (event.key === "Enter" && (youtubeValid || (sourceType === "podcast" && podcastValid)) && !loading) {
                             event.preventDefault();
                             handleContinueToSettings();
                           }
                         }}
                         disabled={loading}
-                        placeholder="Paste a YouTube URL..."
+                        placeholder="Paste a YouTube URL or direct .mp3/.mp4 link..."
                         className="w-full rounded-[18px] bg-transparent py-4 pl-11 pr-11 text-[11px] font-medium text-white outline-none placeholder:text-zinc-700"
                       />
                     </div>
+                    {sourceType === "podcast" && youtubeUrl.trim() && !podcastValid && (
+                      <p className="px-1 pb-1 pt-2 text-[8px] text-amber-400/90">That doesn't look like a valid URL yet.</p>
+                    )}
                   </div>
                 </div>
 

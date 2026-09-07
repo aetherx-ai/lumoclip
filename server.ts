@@ -8,6 +8,8 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { execFile, spawn } from "node:child_process";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createClient } from "@supabase/supabase-js";
 import {
   GoogleGenAI,
@@ -890,12 +892,18 @@ interface ReframeConfig {
   mode: "auto" | "speaker" | "center";
   tracking: "smooth" | "fast";
   addCaptions: boolean;
-  // autoLayout beyond "fill" (split/screenshare/gameplay/three/four) and
-  // cropRatio are accepted and persisted here, but createAIReframedVideo()
-  // only renders a single tracked crop box today — multi-pane composition
-  // isn't wired up yet. Capturing them now stops the client's selection
-  // from being silently dropped, ready for the renderer to catch up.
+  // "fill": single tracked crop filling the whole canvas (original behavior).
+  // "fit": whole frame letterboxed/pillarboxed into the canvas; cropRatio
+  //   optionally pre-crops the source (tracked) before the fit.
+  // "split": tracked speaker crop on top, full frame letterboxed on bottom.
+  // "screenshare" / "gameplay": full frame filling the canvas as a
+  //   background, with a small tracked speaker bubble overlaid (PiP).
+  // "three" / "four" (multi-speaker grid) are NOT implemented yet — that
+  // needs Gemini to return multiple per-speaker tracked regions, which the
+  // current single-subject tracking pipeline does not produce. Requests
+  // for these fall back to "fill" (see createAIReframedVideo()).
   autoLayout: "fill" | "fit" | "split" | "screenshare" | "gameplay" | "three" | "four";
+  // Only used when autoLayout === "fit". "original" skips the pre-crop.
   cropRatio: "original" | "4:3" | "1:1";
 }
 
@@ -3580,23 +3588,214 @@ function safeSegment(value: string) {
 function extensionForMime(
   mime: string,
 ) {
-  if (mime === "video/quicktime") {
+  const m = (mime || "").toLowerCase();
+
+  if (m === "video/quicktime") {
     return "mov";
   }
 
-  if (mime === "video/webm") {
+  if (m === "video/webm") {
     return "webm";
   }
 
-  if (mime === "video/x-msvideo") {
+  if (m === "video/x-msvideo") {
     return "avi";
   }
 
-  if (mime === "video/mpeg") {
+  if (m === "video/mpeg") {
     return "mpeg";
   }
 
+  if (m === "video/x-matroska") {
+    return "mkv";
+  }
+
+  // Audio types, added for direct-URL ("podcast") imports — uploads are
+  // still restricted to video by multer's fileFilter, so this only ever
+  // matters for the podcast-import path today.
+  if (m === "audio/mpeg" || m === "audio/mp3") {
+    return "mp3";
+  }
+
+  if (m === "audio/mp4" || m === "audio/x-m4a" || m === "audio/m4a") {
+    return "m4a";
+  }
+
+  if (m === "audio/wav" || m === "audio/x-wav" || m === "audio/wave") {
+    return "wav";
+  }
+
+  if (m === "audio/aac") {
+    return "aac";
+  }
+
+  if (m === "audio/ogg" || m === "application/ogg") {
+    return "ogg";
+  }
+
+  if (m === "audio/flac" || m === "audio/x-flac") {
+    return "flac";
+  }
+
+  if (m === "audio/opus") {
+    return "opus";
+  }
+
+  if (m.startsWith("audio/")) {
+    return "mp3";
+  }
+
   return "mp4";
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+const PODCAST_KNOWN_EXTENSIONS = [
+  "mp3", "m4a", "wav", "aac", "ogg", "oga", "flac", "opus",
+  "mp4", "mov", "webm", "mkv", "avi", "m4v", "mpeg",
+];
+
+// Picks a file extension for a direct-link ("podcast") import: prefer the
+// extension in the URL's path if it's a recognized audio/video type,
+// otherwise fall back to the extension implied by the response's
+// Content-Type. Returns "" if neither source gives a usable answer, which
+// the caller treats as "this doesn't look like a media file".
+function extensionForPodcastSource(
+  sourceUrl: string,
+  contentType: string,
+): string {
+  try {
+    const pathname = new URL(sourceUrl).pathname.toLowerCase();
+    const match = pathname.match(/\.([a-z0-9]+)$/);
+    const extFromUrl = match?.[1];
+    if (extFromUrl && PODCAST_KNOWN_EXTENSIONS.includes(extFromUrl)) {
+      return extFromUrl;
+    }
+  } catch {}
+
+  const mime = (contentType || "").toLowerCase();
+  if (mime.startsWith("audio/") || mime.startsWith("video/") || mime === "application/ogg") {
+    return extensionForMime(mime);
+  }
+
+  return "";
+}
+
+// Downloads a direct audio/video URL (the "podcast" source type) to a temp
+// file. Podcast RSS-feed URLs are intentionally NOT supported — only a
+// direct link to a playable file.
+async function downloadDirectMediaFile(
+  sourceUrl: string,
+): Promise<{ path: string; mimeType: string }> {
+  let response: Response;
+
+  try {
+    response = await fetch(sourceUrl, { redirect: "follow" });
+  } catch (error: any) {
+    throw new Error(
+      `Could not reach that URL (${error?.message || "network error"}).`,
+    );
+  }
+
+  if (!response.ok || !response.body) {
+    throw new Error(
+      `Could not download the linked file (HTTP ${response.status}).`,
+    );
+  }
+
+  const contentType = (response.headers.get("content-type") || "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+
+  const maxBytes = MAX_UPLOAD_MB * 1024 * 1024;
+
+  const contentLengthHeader = response.headers.get("content-length");
+  if (contentLengthHeader) {
+    const declaredLength = Number(contentLengthHeader);
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+      throw new Error(
+        `The linked file is too large. Maximum size is ${MAX_UPLOAD_MB}MB.`,
+      );
+    }
+  }
+
+  const extension = extensionForPodcastSource(sourceUrl, contentType);
+  if (!extension) {
+    throw new Error(
+      "That link doesn't look like a direct audio/video file. Please link directly to a file such as .mp3, .m4a, .wav, or .mp4 — podcast feed (RSS) URLs aren't supported.",
+    );
+  }
+
+  fs.mkdirSync(tempDir, { recursive: true });
+  const destPath = path.join(
+    tempDir,
+    `${generateId()}-podcast.${extension}`,
+  );
+
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body as any),
+      fs.createWriteStream(destPath),
+    );
+  } catch (error: any) {
+    try { fs.unlinkSync(destPath); } catch {}
+    throw new Error(
+      `Download failed partway through (${error?.message || "stream error"}).`,
+    );
+  }
+
+  const stat = fs.statSync(destPath);
+
+  if (stat.size <= 0) {
+    try { fs.unlinkSync(destPath); } catch {}
+    throw new Error("The linked file was empty or could not be downloaded.");
+  }
+
+  // Content-Length isn't always sent — re-check against the actual bytes
+  // written, since a streamed download can't be capped mid-flight as
+  // cleanly as multer's upload limit is.
+  if (stat.size > maxBytes) {
+    try { fs.unlinkSync(destPath); } catch {}
+    throw new Error(
+      `The linked file is too large. Maximum size is ${MAX_UPLOAD_MB}MB.`,
+    );
+  }
+
+  return {
+    path: destPath,
+    mimeType: contentType || `audio/${extension}`,
+  };
+}
+
+// Like verifyUploadedFileIsVideo, but accepts audio-only files too — a
+// direct-link import may point at a podcast MP3 with no video stream at
+// all, which is fine as long as the requested processing mode doesn't need
+// visual frames (see the needsVideo check in processPodcastImport()).
+function verifyDownloadedMediaIsPlayable(
+  filePath: string,
+): Promise<{ ok: boolean; hasVideo: boolean }> {
+  return new Promise((resolve) => {
+    ffmpeg.ffprobe(filePath, (error, data) => {
+      if (error) {
+        return resolve({ ok: false, hasVideo: false });
+      }
+      const hasVideo = Boolean(
+        data?.streams?.some((s) => s.codec_type === "video"),
+      );
+      const hasAudio = Boolean(
+        data?.streams?.some((s) => s.codec_type === "audio"),
+      );
+      resolve({ ok: hasVideo || hasAudio, hasVideo });
+    });
+  });
 }
 
 function publicMediaUrl(
@@ -5532,19 +5731,15 @@ function getVideoDimensions(inputPath: string): Promise<{ width: number; height:
   });
 }
 
-function getReframeCropSize(
+// Generic version: given a target width/height RATIO (not an enum), find the
+// largest centered crop box of that ratio that fits inside the source frame.
+// Shared by the final-output aspect ratio, per-pane aspect ratios (split's
+// top/bottom panes), and the "fit" layout's optional pre-crop.
+function getCropSizeForRatio(
   sourceWidth: number,
   sourceHeight: number,
-  aspectRatio: ReframeConfig["aspectRatio"],
+  ratio: number,
 ) {
-  const ratio =
-    aspectRatio === "9:16"
-      ? 9 / 16
-      : aspectRatio === "4:5"
-        ? 4 / 5
-        : aspectRatio === "16:9"
-          ? 16 / 9
-          : 1;
   let cropHeight = sourceHeight;
   let cropWidth = Math.round(cropHeight * ratio);
 
@@ -5560,6 +5755,39 @@ function getReframeCropSize(
   if (cropHeight % 2) cropHeight -= 1;
 
   return { cropWidth, cropHeight };
+}
+
+function aspectRatioToNumber(
+  aspectRatio: ReframeConfig["aspectRatio"],
+): number {
+  return aspectRatio === "9:16"
+    ? 9 / 16
+    : aspectRatio === "4:5"
+      ? 4 / 5
+      : aspectRatio === "16:9"
+        ? 16 / 9
+        : 1;
+}
+
+// null means "original" — no secondary pre-crop, only used by "fit".
+function cropRatioToNumber(
+  cropRatio: ReframeConfig["cropRatio"],
+): number | null {
+  if (cropRatio === "4:3") return 4 / 3;
+  if (cropRatio === "1:1") return 1;
+  return null;
+}
+
+function getReframeCropSize(
+  sourceWidth: number,
+  sourceHeight: number,
+  aspectRatio: ReframeConfig["aspectRatio"],
+) {
+  return getCropSizeForRatio(
+    sourceWidth,
+    sourceHeight,
+    aspectRatioToNumber(aspectRatio),
+  );
 }
 
 const MAX_REFRAME_POINTS = Math.max(20, Number(process.env.MAX_REFRAME_POINTS || 240));
@@ -5663,6 +5891,143 @@ function buildReframeXExpression(
   return `min(${maxX.toFixed(2)},max(0,${terms.join("+")}))`;
 }
 
+// FFmpeg's filtergraph parser splits on unescaped top-level commas to
+// separate chained filters (e.g. "crop=...,scale=..."), and it does NOT
+// track parenthesis nesting while doing so. Our tracking expression uses
+// between(t,a,b)-style function calls, whose internal commas are otherwise
+// indistinguishable from filter separators to that parser — causing errors
+// like "No such filter: 'max(0'" once the expression contains any commas at
+// all. Escaping them with a backslash tells FFmpeg to treat them as literal
+// characters.
+function escapeFilterExprCommas(expr: string): string {
+  return expr.replace(/,/g, "\\,");
+}
+
+function buildTrackedCropXExpr(
+  points: ReframePoint[] | undefined,
+  sourceWidth: number,
+  cropWidth: number,
+  duration: number,
+  config: Pick<ReframeConfig, "mode" | "tracking">,
+): string {
+  const expr = config.mode === "center"
+    ? "(iw-ow)/2"
+    : buildReframeXExpression(points, sourceWidth, cropWidth, duration, config.tracking);
+  return escapeFilterExprCommas(expr);
+}
+
+type ReframeFilterPlan =
+  | { kind: "simple"; filters: string[] }
+  | { kind: "complex"; graph: string; outLabel: string };
+
+// Builds the ffmpeg filter graph for one AI Reframe render. "fill"/"fit" are
+// a single crop-in/crop-out chain (cheap, "-vf"-style). "split" and
+// "screenshare"/"gameplay" combine more than one crop of the source into one
+// canvas, so they need a "-filter_complex" graph with a named output pad.
+function buildReframeFilterPlan(
+  sourceWidth: number,
+  sourceHeight: number,
+  duration: number,
+  points: ReframePoint[] | undefined,
+  config: ReframeConfig,
+): ReframeFilterPlan {
+  const { outputWidth, outputHeight } = config;
+
+  // "three"/"four" (multi-speaker grid) need per-speaker regions that
+  // Gemini's tracking prompt doesn't produce yet — see the ReframeConfig
+  // comment above. Fall back to "fill" instead of failing the render.
+  const layout: Exclude<ReframeConfig["autoLayout"], "three" | "four"> =
+    config.autoLayout === "three" || config.autoLayout === "four"
+      ? "fill"
+      : config.autoLayout;
+
+  if (layout === "fit") {
+    const filters: string[] = [];
+    const cropRatioNum = cropRatioToNumber(config.cropRatio);
+
+    if (cropRatioNum) {
+      const { cropWidth, cropHeight } = getCropSizeForRatio(sourceWidth, sourceHeight, cropRatioNum);
+      const xExpr = buildTrackedCropXExpr(points, sourceWidth, cropWidth, duration, config);
+      filters.push(`crop=${cropWidth}:${cropHeight}:${xExpr}:(ih-oh)/2`);
+    }
+
+    filters.push(`scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=fast_bilinear`);
+    filters.push(`pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2`);
+    return { kind: "simple", filters };
+  }
+
+  if (layout === "split") {
+    // Top pane: tracked speaker crop. Bottom pane: full frame, letterboxed.
+    let topHeight = Math.round(outputHeight / 2);
+    if (topHeight % 2) topHeight -= 1;
+    const bottomHeight = outputHeight - topHeight;
+
+    const topRatio = outputWidth / topHeight;
+    const { cropWidth: topCropW, cropHeight: topCropH } = getCropSizeForRatio(sourceWidth, sourceHeight, topRatio);
+    const topXExpr = buildTrackedCropXExpr(points, sourceWidth, topCropW, duration, config);
+
+    const graph = [
+      `[0:v]crop=${topCropW}:${topCropH}:${topXExpr}:(ih-oh)/2,` +
+        `scale=${outputWidth}:${topHeight}:force_original_aspect_ratio=decrease:flags=fast_bilinear,` +
+        `pad=${outputWidth}:${topHeight}:(ow-iw)/2:(oh-ih)/2[reframe_top]`,
+      `[0:v]scale=${outputWidth}:${bottomHeight}:force_original_aspect_ratio=decrease:flags=fast_bilinear,` +
+        `pad=${outputWidth}:${bottomHeight}:(ow-iw)/2:(oh-ih)/2[reframe_bottom]`,
+      `[reframe_top][reframe_bottom]vstack=inputs=2[reframe_stack]`,
+    ].join(";");
+
+    return { kind: "complex", graph, outLabel: "[reframe_stack]" };
+  }
+
+  if (layout === "screenshare" || layout === "gameplay") {
+    // No per-region detection exists yet to tell "screen" from "camera"
+    // pixels, so this approximates the layout: the full frame fills the
+    // canvas as a stable (untracked — panning a screen/gameplay background
+    // would look wrong) backdrop, with a small tracked square bubble of the
+    // speaker overlaid like a webcam facecam.
+    const { cropWidth: bgCropW, cropHeight: bgCropH } = getReframeCropSize(sourceWidth, sourceHeight, config.aspectRatio);
+
+    const pip = layout === "screenshare"
+      ? { widthPct: 0.3, corner: "bottom-right" as const }
+      : { widthPct: 0.34, corner: "bottom-left" as const };
+
+    let pipWidth = Math.round(outputWidth * pip.widthPct);
+    if (pipWidth % 2) pipWidth -= 1;
+    const pipHeight = pipWidth; // square bubble
+
+    const { cropWidth: pipCropW, cropHeight: pipCropH } = getCropSizeForRatio(sourceWidth, sourceHeight, 1);
+    const pipXExpr = buildTrackedCropXExpr(points, sourceWidth, pipCropW, duration, config);
+
+    const margin = Math.max(2, Math.round(outputWidth * 0.03));
+    const overlayX = pip.corner === "bottom-right"
+      ? `${outputWidth - pipWidth - margin}`
+      : `${margin}`;
+    const overlayY = `${outputHeight - pipHeight - margin}`;
+
+    const graph = [
+      `[0:v]crop=${bgCropW}:${bgCropH}:(iw-ow)/2:(ih-oh)/2,` +
+        `scale=${outputWidth}:${outputHeight}:flags=fast_bilinear[reframe_bg]`,
+      `[0:v]crop=${pipCropW}:${pipCropH}:${pipXExpr}:(ih-oh)/2,` +
+        `scale=${pipWidth}:${pipHeight}:flags=fast_bilinear[reframe_pip]`,
+      `[reframe_bg][reframe_pip]overlay=${overlayX}:${overlayY}[reframe_stack]`,
+    ].join(";");
+
+    return { kind: "complex", graph, outLabel: "[reframe_stack]" };
+  }
+
+  // "fill" — single tracked crop filling the whole canvas.
+  const { cropWidth, cropHeight } = getReframeCropSize(sourceWidth, sourceHeight, config.aspectRatio);
+  const xExpr = buildTrackedCropXExpr(points, sourceWidth, cropWidth, duration, config);
+
+  return {
+    kind: "simple",
+    filters: [
+      `crop=${cropWidth}:${cropHeight}:${xExpr}:(ih-oh)/2`,
+      `scale=${outputWidth}:${outputHeight}:force_original_aspect_ratio=decrease:flags=fast_bilinear`,
+      `pad=${outputWidth}:${outputHeight}:(ow-iw)/2:(oh-ih)/2`,
+    ],
+  };
+}
+
 function createAIReframedVideo(
   inputPath: string,
   outputPath: string,
@@ -5695,42 +6060,46 @@ function createAIReframedVideo(
       if (!fs.existsSync(absoluteInputPath)) return finish(new Error("AI Reframe input video was not found."));
 
       const { width: sourceWidth, height: sourceHeight } = await getVideoDimensions(absoluteInputPath);
-      const { cropWidth, cropHeight } = getReframeCropSize(sourceWidth, sourceHeight, config.aspectRatio);
-      const xExpression = config.mode === "center"
-        ? "(iw-ow)/2"
-        : buildReframeXExpression(points, sourceWidth, cropWidth, duration, config.tracking);
+      const plan = buildReframeFilterPlan(sourceWidth, sourceHeight, duration, points, config);
 
-      // FFmpeg's filtergraph parser splits on unescaped top-level commas to
-      // separate chained filters (e.g. "crop=...,scale=..."), and it does
-      // NOT track parenthesis nesting while doing so. Our tracking
-      // expression uses between(t,a,b)-style function calls, whose internal
-      // commas are otherwise indistinguishable from filter separators to
-      // that parser — causing errors like "No such filter: 'max(0'" once
-      // the expression contains any commas at all. Escaping them with a
-      // backslash tells FFmpeg to treat them as literal characters.
-      const escapedXExpression = xExpression.replace(/,/g, "\\,");
+      const wantsCaptions = Boolean(
+        config.addCaptions && captionStyle.enabled && captionSegments.length,
+      );
 
-      const filters: string[] = [
-        `crop=${cropWidth}:${cropHeight}:${escapedXExpression}:(ih-oh)/2`,
-        `scale=${config.outputWidth}:${config.outputHeight}:force_original_aspect_ratio=decrease:flags=fast_bilinear`,
-        `pad=${config.outputWidth}:${config.outputHeight}:(ow-iw)/2:(oh-ih)/2`,
-      ];
-
-      if (config.addCaptions && captionStyle.enabled && captionSegments.length) {
+      let subtitleFilter = "";
+      if (wantsCaptions) {
         const assContent = buildKaraokeAss(captionSegments, captionStyle, config.outputWidth, config.outputHeight);
         assFilePath = path.join(tempDir, `${generateId()}-reframe.ass`);
         fs.writeFileSync(assFilePath, assContent, "utf8");
-        filters.push(`subtitles=${escapeFfmpegFilterPath(assFilePath)}`);
+        subtitleFilter = `subtitles=${escapeFfmpegFilterPath(assFilePath)}`;
+      }
+
+      let outputMapLabel = "0:v:0";
+
+      if (plan.kind === "simple") {
+        const filters = [...plan.filters];
+        if (subtitleFilter) filters.push(subtitleFilter);
+        command = ffmpeg(absoluteInputPath).videoFilters(filters);
+      } else {
+        let graph = plan.graph;
+        let outLabel = plan.outLabel;
+        if (subtitleFilter) {
+          const nextLabel = "[reframe_out]";
+          graph = `${graph};${outLabel}${subtitleFilter}${nextLabel}`;
+          outLabel = nextLabel;
+        }
+        outputMapLabel = outLabel;
+        command = ffmpeg(absoluteInputPath).complexFilter(graph);
       }
 
       console.log(
-        `AI Reframe: source=${sourceWidth}x${sourceHeight}, crop=${cropWidth}x${cropHeight}, output=${config.outputWidth}x${config.outputHeight}, points=${sanitizeReframePoints(points, duration).length}, mode=${config.mode}, tracking=${config.tracking}`,
+        `AI Reframe: source=${sourceWidth}x${sourceHeight}, layout=${config.autoLayout}, output=${config.outputWidth}x${config.outputHeight}, points=${sanitizeReframePoints(points, duration).length}, mode=${config.mode}, tracking=${config.tracking}`,
       );
 
-      command = ffmpeg(absoluteInputPath)
+      command
         .outputOptions([
           "-y",
-          "-map", "0:v:0",
+          "-map", outputMapLabel,
           "-map", "0:a:0?",
           "-c:v", "libx264",
           "-preset", process.env.REFRAME_FFMPEG_PRESET?.trim() || FFMPEG_PRESET,
@@ -5743,7 +6112,6 @@ function createAIReframedVideo(
           "-b:a", "128k",
           "-movflags", "+faststart",
         ])
-        .videoFilters(filters)
         .on("start", (commandLine) => {
           console.log("AI Reframe encoding started:");
           console.log(commandLine);
@@ -6743,6 +7111,88 @@ async function processVideo(
 
     throw error;
   }
+}
+
+/* =========================================================
+   PODCAST / DIRECT-LINK IMPORT
+
+   Only a direct link to a playable audio/video file is supported (e.g. a
+   podcast host's raw episode .mp3 URL). Podcast RSS feed URLs are not
+   parsed — the feed XML itself isn't a media file, so it would fail the
+   same probe a bad link would.
+========================================================= */
+
+async function processPodcastImport(
+  projectId: string,
+  userId: string,
+  sourceUrl: string,
+  requestedConfig: ProcessingConfig,
+): Promise<void> {
+  let downloadedPath = "";
+  let mimeType = "";
+
+  try {
+    await updateProject(projectId, 8, "Downloading source file", "processing");
+
+    const downloaded = await downloadDirectMediaFile(sourceUrl);
+    downloadedPath = downloaded.path;
+    mimeType = downloaded.mimeType;
+
+    const { ok, hasVideo } = await verifyDownloadedMediaIsPlayable(downloadedPath);
+
+    if (!ok) {
+      throw new Error(
+        "The linked file isn't a readable audio or video file. Please check the link and try again.",
+      );
+    }
+
+    const needsVideo =
+      requestedConfig.mode === "clips" ||
+      requestedConfig.mode === "full_video_caption" ||
+      requestedConfig.mode === "reframe";
+
+    if (needsVideo && !hasVideo) {
+      throw new Error(
+        "That link is audio-only. Audio-only sources only support Enhance Speech — pick that mode, or link a video file instead.",
+      );
+    }
+  } catch (error) {
+    // Everything up to here happens before processVideo() takes over, so
+    // this catch is responsible for marking the project failed + notifying
+    // the user itself — processVideo() (called below, outside this block)
+    // already does that for anything that goes wrong after this point.
+    if (downloadedPath) {
+      try { fs.unlinkSync(downloadedPath); } catch {}
+    }
+
+    const message =
+      error instanceof Error ? error.message : "Could not download the linked file.";
+
+    await updateProject(projectId, 0, message, "failed");
+
+    await createNotification({
+      userId,
+      type: "project_failed",
+      title: "Project processing failed",
+      message,
+      projectId,
+    });
+
+    throw error instanceof Error ? error : new Error(message);
+  }
+
+  await processVideo(
+    projectId,
+    userId,
+    downloadedPath,
+    mimeType,
+    sourceUrl,
+    requestedConfig.mode,
+    requestedConfig.captionStyle,
+    requestedConfig.reframe,
+    requestedConfig.speechSettings,
+    requestedConfig.clipSettings,
+  );
 }
 
 /* =========================================================
@@ -8464,30 +8914,12 @@ app.post(
           ? req.body.sourceUrl.trim()
           : "";
 
-      // The client's "podcast" source option accepts any HTTP(S) URL, but
-      // there is no podcast downloader anywhere in this pipeline — only
-      // downloadYouTubeVideo() exists. Rather than let a valid podcast URL
-      // fall through to the YouTube-only check below and come back as a
-      // confusing "invalid YouTube URL", fail clearly and immediately.
-      // TODO: implement real podcast ingestion (feed/direct-audio download)
-      // before enabling this path end-to-end.
-      if (req.body?.sourceType === "podcast") {
-        return res.status(400).json({
-          error:
-            "Podcast URL import isn't supported yet. Please use a YouTube link or upload a file instead.",
-        });
-      }
-
-      if (!sourceUrl || !isYouTubeUrl(sourceUrl)) {
-        return res.status(400).json({
-          error: "Please provide a valid YouTube URL.",
-        });
-      }
-
       const projectName =
         typeof req.body?.name === "string" && req.body.name.trim()
           ? req.body.name.trim()
-          : "YouTube Project";
+          : req.body?.sourceType === "podcast"
+            ? "Podcast Project"
+            : "YouTube Project";
 
       const requestedConfig = getProcessingConfigFromRequest(
         req.body?.captionStyle,
@@ -8496,6 +8928,82 @@ app.post(
         req.body?.speechSettings,
         req.body?.clipSettings,
       );
+
+      /* =================================================
+         PODCAST / DIRECT-LINK IMPORT
+
+         Unlike YouTube, a direct file link isn't blocked by
+         anti-bot measures, so Render can download it itself —
+         no PC worker hop needed. The download + probe happen
+         in the background; this only validates the URL shape
+         and creates the project.
+      ================================================= */
+      if (req.body?.sourceType === "podcast") {
+        if (!sourceUrl || !isHttpUrl(sourceUrl)) {
+          return res.status(400).json({
+            error: "Please provide a valid http(s) URL to an audio or video file.",
+          });
+        }
+
+        const { profile, project, newCredits } =
+          await createProjectAndCharge(
+            user.id,
+            projectName,
+            "podcast",
+            sourceUrl,
+          );
+
+        projectId = project.id;
+        creditsCharged = true;
+
+        await rememberProcessingConfig(projectId, requestedConfig);
+
+        const startMessage = "Downloading source file";
+        await updateProject(projectId, 5, startMessage, "processing");
+
+        void processPodcastImport(
+          projectId,
+          user.id,
+          sourceUrl,
+          requestedConfig,
+        ).catch(async (error) => {
+          console.error("Podcast import background processing failed:", error);
+          await refundCredits(user.id, projectId);
+        });
+
+        return res.json({
+          success: true,
+          project: {
+            ...project,
+            status: "processing",
+            progress: 5,
+            current_step: startMessage,
+          },
+          clips: [],
+          user: {
+            id: user.id,
+            name: profile.name,
+            email: profile.email,
+            credits: newCredits,
+            plan: profile.plan,
+          },
+          worker: {
+            enabled: WORKER_ENABLED,
+          },
+          processing: {
+            mode: requestedConfig.mode,
+            captionStyle: requestedConfig.captionStyle,
+            reframe: requestedConfig.reframe,
+          },
+          message: "Podcast import started.",
+        });
+      }
+
+      if (!sourceUrl || !isYouTubeUrl(sourceUrl)) {
+        return res.status(400).json({
+          error: "Please provide a valid YouTube URL.",
+        });
+      }
 
       const { profile, project, newCredits } =
         await createProjectAndCharge(
