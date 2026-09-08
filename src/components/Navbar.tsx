@@ -21,7 +21,6 @@ import {
   Video,
   X,
   Zap,
-  LayoutDashboard,
   ArrowUpRight,
   Command,
   Circle,
@@ -30,7 +29,7 @@ import {
 
 import type { User } from "../types.js";
 
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 
 import {
   fetchNotifications,
@@ -398,6 +397,16 @@ export const Navbar: React.FC<
 
     let active = true;
 
+    // Populated once the lazily-loaded Supabase client resolves, so the
+    // cleanup function below can safely unsubscribe/remove the channel.
+    let supabaseClient: Awaited<
+      ReturnType<typeof getSupabase>
+    > | null = null;
+
+    let channel: ReturnType<
+      Awaited<ReturnType<typeof getSupabase>>["channel"]
+    > | null = null;
+
     const loadNotifications =
       async () => {
         try {
@@ -427,29 +436,42 @@ export const Navbar: React.FC<
 
     void loadNotifications();
 
-    const channel = supabase
-      .channel(
-        `lumoclip-notifications:${user.id}`
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          void loadNotifications();
-        }
-      )
-      .subscribe();
+    (async () => {
+      const supabase = await getSupabase();
+
+      if (!active) {
+        return;
+      }
+
+      supabaseClient = supabase;
+
+      channel = supabase
+        .channel(
+          `lumoclip-notifications:${user.id}`
+        )
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "notifications",
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            void loadNotifications();
+          }
+        )
+        .subscribe();
+    })();
 
     return () => {
       active = false;
-      void supabase.removeChannel(
-        channel
-      );
+
+      if (supabaseClient && channel) {
+        void supabaseClient.removeChannel(
+          channel
+        );
+      }
     };
   }, [user?.id]);
 
