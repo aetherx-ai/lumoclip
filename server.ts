@@ -4417,6 +4417,34 @@ async function updateProject(
   }
 }
 
+// Auto SFX runs as a background step on a project that may already be
+// "processing" for the wider pipeline, so it needs its own status/progress
+// columns (auto_sfx_status, auto_sfx_progress) instead of overloading the
+// generic `status`/`progress` columns. The frontend's Auto SFX panel reads
+// exclusively from these two columns — without this, the UI falls back to
+// the generic clip-pipeline view while Auto SFX is running.
+async function updateAutoSfxState(
+  projectId: string,
+  progress: number,
+  currentStep: string,
+  sfxStatus: "queued" | "processing" | "completed" | "failed",
+) {
+  await updateProject(projectId, progress, currentStep, "processing", 0);
+
+  const safeProgress = Number.isFinite(progress)
+    ? Math.min(100, Math.max(0, Math.round(progress)))
+    : 0;
+
+  const { error } = await supabase
+    .from("projects")
+    .update({ auto_sfx_status: sfxStatus, auto_sfx_progress: safeProgress })
+    .eq("id", projectId);
+
+  if (error) {
+    console.error("Auto SFX status update failed:", error);
+  }
+}
+
 async function updateProjectMedia(
   projectId: string,
   sourceMediaUrl: string,
@@ -6839,19 +6867,19 @@ async function processVideo(
     }
 
     if (mode === "auto_sfx") {
-      await updateProject(projectId, 30, "Auto SFX: analyzing the full video", "processing", 0);
+      await updateAutoSfxState(projectId, 30, "Auto SFX: analyzing the full video", "processing");
       const sfxAnalysis = await analyzeAutoSfx(sourcePath, duration);
-      await updateProject(projectId, 52, `Auto SFX: ${sfxAnalysis.events.length} moments detected`, "processing", 0);
+      await updateAutoSfxState(projectId, 52, `Auto SFX: ${sfxAnalysis.events.length} moments detected`, "processing");
 
-      await updateProject(projectId, 62, "Auto SFX: preparing sound effects", "processing", 0);
+      await updateAutoSfxState(projectId, 62, "Auto SFX: preparing sound effects", "processing");
       const assets = await ensureAutoSfxAssets();
       const sfxDir = path.join(projectDir, "sfx");
       fs.mkdirSync(sfxDir, { recursive: true });
       const outputPath = path.join(sfxDir, "auto-sfx.mp4");
 
-      await updateProject(projectId, 70, "Auto SFX: mixing sound effects", "processing", sfxAnalysis.events.length);
+      await updateAutoSfxState(projectId, 70, "Auto SFX: mixing sound effects", "processing");
       await applyAutoSfxMix(sourcePath, outputPath, sfxAnalysis.events, assets, true, async (percent) => {
-        try { await updateProject(projectId, percent, `Auto SFX: rendering audio mix (${Math.round(percent)}%)`, "processing", sfxAnalysis.events.length); } catch {}
+        try { await updateAutoSfxState(projectId, percent, `Auto SFX: rendering audio mix (${Math.round(percent)}%)`, "processing"); } catch {}
       });
 
       const outputUrl = publicMediaUrl(projectId, "sfx/auto-sfx.mp4");
@@ -6862,6 +6890,8 @@ async function processVideo(
         current_step: `Auto SFX ready — ${sfxAnalysis.events.length} effects added`,
         status: "completed",
         total_clips: 0,
+        auto_sfx_status: "completed",
+        auto_sfx_progress: 100,
       };
       const completionUpdate = await supabase
         .from("projects")
@@ -7452,6 +7482,16 @@ async function processVideo(
       failureMessage,
       "failed",
     );
+
+    if (mode === "auto_sfx") {
+      const { error: sfxFailError } = await supabase
+        .from("projects")
+        .update({ auto_sfx_status: "failed" })
+        .eq("id", projectId);
+      if (sfxFailError) {
+        console.error("Auto SFX failure status update failed:", sfxFailError);
+      }
+    }
 
     await createNotification({
       userId,
