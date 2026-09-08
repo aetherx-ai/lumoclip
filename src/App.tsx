@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { Sparkles } from "lucide-react";
-import { supabase } from "./lib/supabase";
+import { getSupabase } from "./lib/supabase";
 
 import type {
   User,
@@ -907,9 +907,20 @@ function App() {
 
   useEffect(() => {
     let mounted = true;
+    let unsubscribeAuth: (() => void) | undefined;
 
     // Warm secondary chunks in the background. Dashboard itself is eager-loaded.
     preloadSecondaryChunks();
+
+    (async () => {
+    // Supabase is dynamically imported so its ~55KB (gzip) chunk never
+    // blocks the initial paint of the landing page. It's still fetched
+    // immediately on mount, just in parallel with (not before) render.
+    const supabase = await getSupabase();
+
+    if (!mounted) {
+      return;
+    }
 
     const initializeApp =
       async () => {
@@ -1137,12 +1148,15 @@ function App() {
         },
       );
 
+    unsubscribeAuth = () => authSubscription.unsubscribe();
+    })();
+
     return () => {
       mounted = false;
 
       stopAllPolling();
 
-      authSubscription.unsubscribe();
+      unsubscribeAuth?.();
     };
   }, []);
 
@@ -1237,6 +1251,8 @@ function App() {
     async () => {
       try {
         stopAllPolling();
+
+        const supabase = await getSupabase();
 
         const { error } =
           await supabase.auth.signOut();
