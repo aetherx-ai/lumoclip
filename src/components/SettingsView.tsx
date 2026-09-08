@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { User, UsageLog } from '../types.js';
-import { supabase } from '../lib/supabase';
+import { getSupabase } from "../lib/supabase";
 import {
   fetchUsageLogs,
   updateProfileApi,
@@ -100,32 +100,6 @@ const AvatarFallback: React.FC<{
 /* =========================================================
    TOGGLE
 ========================================================= */
-
-const Toggle: React.FC<{
-  checked: boolean;
-  disabled?: boolean;
-  onChange?: (value: boolean) => void;
-}> = ({ checked, disabled, onChange }) => {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange?.(!checked)}
-      disabled={disabled}
-      className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition-all duration-300 disabled:cursor-not-allowed disabled:opacity-50 ${
-        checked
-          ? 'bg-violet-600 shadow-lg shadow-violet-600/30'
-          : 'bg-zinc-700'
-      }`}
-      aria-pressed={checked}
-    >
-      <span
-        className={`block h-5 w-5 rounded-full bg-white shadow-md transition-transform duration-300 ${
-          checked ? 'translate-x-5' : 'translate-x-0'
-        }`}
-      />
-    </button>
-  );
-};
 
 /* =========================================================
    STAT CARD
@@ -247,7 +221,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   ======================================================= */
 
   const {
-    preferences,
     language,
     appearance,
     loading: prefsLoading,
@@ -580,6 +553,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     try {
       await deleteAccountApi();
+      const supabase = await getSupabase();
       await supabase.auth.signOut();
 
       window.location.href = '/';

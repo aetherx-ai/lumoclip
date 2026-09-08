@@ -43,7 +43,7 @@ import {
   Zap,
 } from "lucide-react";
 
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 
 /* =========================================================
    OPUS-STYLE FEATURE STEP 2 — FINAL
@@ -2662,7 +2662,7 @@ export const NewProjectModal: React.FC<
         const {
           data: { session },
         } =
-          await supabase.auth.getSession();
+          await (await getSupabase()).auth.getSession();
 
         if (!session) {
           throw new Error(

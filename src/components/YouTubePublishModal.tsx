@@ -18,7 +18,7 @@ import {
   Youtube,
 } from "lucide-react";
 
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 
 /* =========================================================
    TYPES
@@ -69,6 +69,7 @@ type PublishState =
 ========================================================= */
 
 async function getAccessToken(): Promise<string> {
+  const supabase = await getSupabase();
   const {
     data: { session },
   } = await supabase.auth.getSession();

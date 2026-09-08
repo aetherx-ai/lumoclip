@@ -7,7 +7,7 @@ import React, {
   useState,
 } from "react";
 
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 import {
   fetchPreferencesApi,
   updatePreferencesApi,
@@ -212,25 +212,32 @@ export const AppPreferencesProvider: React.FC<{
   useEffect(() => {
     let mounted = true;
 
-    void supabase.auth.getSession().then(({ data }) => {
+    let subscription: { unsubscribe: () => void } | undefined;
+
+    const initializeAuth = async () => {
+      const supabase = await getSupabase();
+      const { data } = await supabase.auth.getSession();
+
       if (mounted) {
         setAuthenticated(Boolean(data.session?.user));
       }
-    });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      subscription = supabase.auth.onAuthStateChange((_event, session) => {
         if (mounted) {
           setAuthenticated(Boolean(session?.user));
         }
-      },
-    );
+      }).data.subscription;
+
+      if (!mounted) {
+        subscription.unsubscribe();
+      }
+    };
+
+    void initializeAuth();
 
     return () => {
       mounted = false;
-      subscription.unsubscribe();
+      subscription?.unsubscribe();
     };
   }, []);
 

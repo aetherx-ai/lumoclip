@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 import {
   X,
   Sparkles,
@@ -37,7 +37,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleSubmit = async (
-    e: React.FormEvent
+    e: React.SyntheticEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
 
@@ -45,6 +45,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError("");
 
     try {
+      const supabase = await getSupabase();
+
       if (isSignUp) {
         const { error } =
           await supabase.auth.signUp({
@@ -93,13 +95,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setError("");
 
     try {
+      const supabase = await getSupabase();
+
       const { error } =
-  await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      redirectTo: "https://lumo-clip.com",
-    },
-  });
+        await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: {
+            redirectTo: "https://lumo-clip.com",
+          },
+        });
 
       if (error) throw error;
     } catch (err: any) {

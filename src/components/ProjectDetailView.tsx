@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import YouTubePublishModal from "./YouTubePublishModal.js";
-import { supabase } from "../lib/supabase.ts";
+import { getSupabase } from "../lib/supabase";
 import {
   AlertCircle,
   Crown,
@@ -504,6 +504,8 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
   status,
   onStatusChange: setStatus,
 }) => {
+  const supabase = getSupabase();
+
   const [outputUrl, setOutputUrl] =
     useState("");
 
@@ -618,10 +620,11 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
       setOutputUrl("");
       setStartedAt(Date.now());
 
+      const supabaseClient = await supabase;
       const {
         data: sessionData,
         error: sessionError,
-      } = await supabase.auth.getSession();
+      } = await supabaseClient.auth.getSession();
 
       if (sessionError) {
         throw new Error(
