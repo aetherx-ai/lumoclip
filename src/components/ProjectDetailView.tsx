@@ -734,7 +734,7 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
   };
 
   return (
-    <section className="mt-4">
+    <section className="mt-5">
       <Surface className="overflow-hidden">
         {/* Header */}
         <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
@@ -1047,7 +1047,7 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
                       return (
                         <div
                           key={label as string}
-                          className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.01] px-3 py-2.5"
+                          className="flex items-center gap-2 rounded-xl border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] bg-white/[0.01] px-3 py-2.5"
                         >
                           <FeatureIcon className="h-3 w-3 text-cyan-400/70" />
 
@@ -1240,7 +1240,7 @@ const AIReframeVideoResult: React.FC<{
 
   return (
     <section className="mt-8">
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div className="relative mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="flex items-center gap-2">
             <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-violet-400/10 bg-violet-500/[0.07]">
@@ -1536,7 +1536,7 @@ const AIInsightPanel: React.FC<{
             return (
               <div
                 key={label as string}
-                className="flex items-center gap-2 rounded-xl border border-white/[0.05] px-3 py-2.5"
+                className="flex items-center gap-2 rounded-xl border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] px-3 py-2.5"
               >
                 <ItemIcon className="h-3 w-3 text-zinc-600" />
 
@@ -2496,7 +2496,7 @@ const ClipsSection: React.FC<{
               (_, index) => (
                 <div
                   key={`loading-${index}`}
-                  className="overflow-hidden rounded-2xl border border-white/[0.06] bg-[#09090d]"
+                  className="overflow-hidden rounded-2xl border border-white/[0.07] shadow-[0_18px_60px_rgba(0,0,0,0.18)] bg-[#09090d]"
                 >
                   <div className="relative aspect-[9/14] animate-pulse bg-white/[0.02]">
                     <div className="absolute inset-0 flex items-center justify-center">
@@ -2521,7 +2521,7 @@ const ClipsSection: React.FC<{
         </div>
       ) : (
         <div className="rounded-2xl border border-dashed border-white/[0.08] bg-[#09090d] px-6 py-16 text-center">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.02]">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border border-white/[0.07] shadow-[0_18px_60px_rgba(0,0,0,0.18)] bg-white/[0.02]">
             {processing ? (
               <Loader2 className="h-6 w-6 animate-spin text-violet-400" />
             ) : (
@@ -2670,7 +2670,7 @@ const CompletedOverview: React.FC<{
             return (
               <div
                 key={label as string}
-                className="flex items-center gap-2 rounded-xl border border-white/[0.05] px-3 py-2.5"
+                className="flex items-center gap-2 rounded-xl border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] px-3 py-2.5"
               >
                 <ItemIcon className="h-3 w-3 text-violet-400/70" />
 
@@ -2682,7 +2682,7 @@ const CompletedOverview: React.FC<{
           })}
         </div>
 
-        <div className="mt-4 flex items-center justify-between rounded-xl border border-white/[0.05] bg-white/[0.015] px-3 py-3">
+        <div className="mt-4 flex items-center justify-between rounded-xl border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] bg-white/[0.015] px-3 py-3">
           <span className="text-[8px] font-bold uppercase tracking-wider text-zinc-600">
             Average AI score
           </span>
@@ -3034,8 +3034,8 @@ export const ProjectDetailView: React.FC<
 
         {isProcessing && (
           <>
-            <div className="grid gap-4 xl:grid-cols-12">
-              <div className="xl:col-span-7">
+            <div className="grid gap-5 xl:grid-cols-12">
+              <div className="xl:col-span-7 min-w-0">
                 <HeroVideo
                   project={project}
                   progress={progress}
@@ -3046,7 +3046,7 @@ export const ProjectDetailView: React.FC<
                 />
               </div>
 
-              <div className="xl:col-span-5">
+              <div className="xl:col-span-5 min-w-0">
                 {isEnhancingSpeech ? (
                   <SpeechPipeline />
                 ) : isAutoSfxRunning ? (
@@ -3067,14 +3067,14 @@ export const ProjectDetailView: React.FC<
               !isReframeMode &&
               !isSpeechOnlyMode && (
               <>
-                <div className="mt-4">
+                <div className="mt-5">
                   <PremiumStats
                     project={project}
                     clips={safeClips}
                   />
                 </div>
 
-                <div className="mt-4">
+                <div className="mt-5">
                   <AIInsightPanel
                     project={project}
                     clips={safeClips}
@@ -3102,8 +3102,8 @@ export const ProjectDetailView: React.FC<
 
         {isFailed && (
           <>
-            <div className="grid gap-4 xl:grid-cols-12">
-              <div className="xl:col-span-7">
+            <div className="grid gap-5 xl:grid-cols-12">
+              <div className="xl:col-span-7 min-w-0">
                 <HeroVideo
                   project={project}
                   progress={progress}
@@ -3112,7 +3112,7 @@ export const ProjectDetailView: React.FC<
                 />
               </div>
 
-              <div className="xl:col-span-5">
+              <div className="xl:col-span-5 min-w-0">
                 <Surface className="flex h-full flex-col justify-between border-red-500/10 bg-gradient-to-b from-red-500/[0.04] to-[#09090d] p-6">
                   <div>
                     <div className="flex h-11 w-11 items-center justify-center rounded-xl border border-red-400/10 bg-red-500/[0.07]">
@@ -3136,7 +3136,7 @@ export const ProjectDetailView: React.FC<
                   <div className="mt-8">
                     <button
                       type="button"
-                      className="flex w-full items-center justify-center gap-2 min-h-11 touch-manipulation rounded-xl bg-white px-5 py-3 text-[10px] font-bold text-black transition hover:bg-zinc-200"
+                      className="flex w-full items-center justify-center gap-2 min-h-11 touch-manipulation rounded-xl bg-white px-5 py-3 text-[10px] font-bold text-black shadow-[0_10px_30px_rgba(255,255,255,0.08)] transition duration-200 hover:-translate-y-0.5 hover:bg-zinc-100 hover:shadow-[0_14px_34px_rgba(255,255,255,0.12)] active:translate-y-0"
                     >
                       <RefreshCw className="h-4 w-4" />
                       Try again
@@ -3145,7 +3145,7 @@ export const ProjectDetailView: React.FC<
                     <button
                       type="button"
                       onClick={onBack}
-                      className="mt-2 w-full rounded-xl border border-white/[0.07] bg-white/[0.02] px-5 py-3 text-[10px] font-medium text-zinc-500 transition hover:bg-white/[0.04] hover:text-white"
+                      className="mt-2 w-full rounded-xl border border-white/[0.08] bg-white/[0.025] px-5 py-3 text-[10px] font-medium shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] text-zinc-500 transition hover:bg-white/[0.04] hover:text-white"
                     >
                       Back to projects
                     </button>
@@ -3264,7 +3264,7 @@ export const ProjectDetailView: React.FC<
 
             {isReframeMode ? (
               <>
-                <div className="grid gap-4 xl:grid-cols-12">
+                <div className="grid gap-5 xl:grid-cols-12">
                   <div
                     className={
                       isEnhancingSpeech || isAutoSfxRunning
@@ -3283,13 +3283,13 @@ export const ProjectDetailView: React.FC<
                   </div>
 
                   {isEnhancingSpeech && (
-                    <div className="xl:col-span-5">
+                    <div className="xl:col-span-5 min-w-0">
                       <SpeechPipeline />
                     </div>
                   )}
 
                   {isAutoSfxRunning && !isEnhancingSpeech && (
-                    <div className="xl:col-span-5">
+                    <div className="xl:col-span-5 min-w-0">
                       <AutoSfxPipeline
                         progress={autoSfxProgress}
                         failed={autoSfxFailed}
@@ -3298,7 +3298,7 @@ export const ProjectDetailView: React.FC<
                   )}
                 </div>
 
-                <div className="mt-4">
+                <div className="mt-5">
                   <PremiumStats
                     project={project}
                     clips={[]}
@@ -3313,7 +3313,7 @@ export const ProjectDetailView: React.FC<
               </>
             ) : isFullVideoMode ? (
               <>
-                <div className="grid gap-4 xl:grid-cols-12">
+                <div className="grid gap-5 xl:grid-cols-12">
                   <div
                     className={
                       isEnhancingSpeech || isAutoSfxRunning
@@ -3332,13 +3332,13 @@ export const ProjectDetailView: React.FC<
                   </div>
 
                   {isEnhancingSpeech && (
-                    <div className="xl:col-span-5">
+                    <div className="xl:col-span-5 min-w-0">
                       <SpeechPipeline />
                     </div>
                   )}
 
                   {isAutoSfxRunning && !isEnhancingSpeech && (
-                    <div className="xl:col-span-5">
+                    <div className="xl:col-span-5 min-w-0">
                       <AutoSfxPipeline
                         progress={autoSfxProgress}
                         failed={autoSfxFailed}
@@ -3347,7 +3347,7 @@ export const ProjectDetailView: React.FC<
                   )}
                 </div>
 
-                <div className="mt-4">
+                <div className="mt-5">
                   <PremiumStats
                     project={project}
                     clips={[]}
@@ -3362,7 +3362,7 @@ export const ProjectDetailView: React.FC<
               </>
             ) : (
               <>
-                <div className="grid gap-4 xl:grid-cols-12">
+                <div className="grid gap-5 xl:grid-cols-12">
                   <div
                     className={
                       isEnhancingSpeech
@@ -3375,7 +3375,7 @@ export const ProjectDetailView: React.FC<
                     />
                   </div>
 
-                  <div className="xl:col-span-5">
+                  <div className="xl:col-span-5 min-w-0">
                     {isEnhancingSpeech ? (
                       <SpeechPipeline />
                     ) : isAutoSfxRunning ? (
@@ -3406,7 +3406,7 @@ export const ProjectDetailView: React.FC<
                           ].map(([label, Icon]) => {
                             const FeatureIcon = Icon as React.ElementType;
                             return (
-                              <div key={label as string} className="flex items-center gap-2 rounded-xl border border-white/[0.05] bg-white/[0.015] px-3 py-2.5">
+                              <div key={label as string} className="flex items-center gap-2 rounded-xl border border-white/[0.07] shadow-[inset_0_1px_0_rgba(255,255,255,0.025)] bg-white/[0.015] px-3 py-2.5">
                                 <FeatureIcon className="h-3 w-3 text-cyan-400/70" />
                                 <span className="text-[8px] font-medium text-zinc-500">{label as string}</span>
                               </div>
@@ -3424,7 +3424,7 @@ export const ProjectDetailView: React.FC<
                 </div>
 
                 {!isSpeechOnlyMode && (
-                  <div className="mt-4">
+                  <div className="mt-5">
                     <PremiumStats
                       project={project}
                       clips={safeClips}
@@ -3433,7 +3433,7 @@ export const ProjectDetailView: React.FC<
                 )}
 
                 {!isSpeechOnlyMode && (
-                  <div className="mt-4">
+                  <div className="mt-5">
                     <AIInsightPanel
                       project={project}
                       clips={safeClips}
@@ -3477,8 +3477,8 @@ export const ProjectDetailView: React.FC<
           !isCompleted &&
           !isFailed && (
             <>
-              <div className="grid gap-4 xl:grid-cols-12">
-                <div className="xl:col-span-7">
+              <div className="grid gap-5 xl:grid-cols-12">
+                <div className="xl:col-span-7 min-w-0">
                   <HeroVideo
                     project={project}
                     progress={progress}
@@ -3487,7 +3487,7 @@ export const ProjectDetailView: React.FC<
                   />
                 </div>
 
-                <div className="xl:col-span-5">
+                <div className="xl:col-span-5 min-w-0">
                   <Pipeline
                     project={project}
                     progress={progress}
@@ -3499,14 +3499,14 @@ export const ProjectDetailView: React.FC<
                 !isReframeMode &&
                 !isSpeechOnlyMode && (
                 <>
-                  <div className="mt-4">
+                  <div className="mt-5">
                     <PremiumStats
                       project={project}
                       clips={safeClips}
                     />
                   </div>
 
-                  <div className="mt-4">
+                  <div className="mt-5">
                     <AIInsightPanel
                       project={project}
                       clips={safeClips}
