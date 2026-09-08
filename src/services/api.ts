@@ -1,4 +1,4 @@
-import { supabase } from "../lib/supabase";
+import { getSupabase } from "../lib/supabase";
 
 import {
   User,
@@ -496,6 +496,8 @@ function normalizeClip(
 // ======================================================
 
 async function getAccessToken(): Promise<string> {
+  const supabase = await getSupabase();
+
   const {
     data: { session },
   } =
@@ -594,6 +596,8 @@ export async function fetchMe(): Promise<{
   user: User;
   subscription?: Subscription;
 } | null> {
+  const supabase = await getSupabase();
+
   const {
     data: { session },
   } =
@@ -929,6 +933,8 @@ export async function processVideoApi(
   project: Project;
   user: User;
 }> {
+  const supabase = await getSupabase();
+
   const {
     data: { session },
   } =
@@ -1001,6 +1007,8 @@ export async function processVideoApi(
 }
 
 export async function createCheckoutSession() {
+  const supabase = await getSupabase();
+
   const session =
     await supabase.auth.getSession();
 
