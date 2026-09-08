@@ -9439,6 +9439,16 @@ app.post(
 
       await updateProject(projectId, 5, waitingMessage, "processing");
 
+      if (requestedConfig.mode === "auto_sfx") {
+        const { error: sfxQueueError } = await supabase
+          .from("projects")
+          .update({ auto_sfx_status: "queued", auto_sfx_progress: 5 })
+          .eq("id", projectId);
+        if (sfxQueueError) {
+          console.error("Auto SFX queue status update failed:", sfxQueueError);
+        }
+      }
+
       return res.json({
         success: true,
         project: {
@@ -9543,7 +9553,7 @@ app.post("/api/worker/claim", async (req, res) => {
     const { data: queuedProject, error: selectError } =
       await supabase
         .from("projects")
-        .select("id, user_id, name, source_type, source_url, status, current_step")
+        .select("id, user_id, name, source_type, source_url, status, current_step, processing_mode")
         .eq("source_type", "youtube")
         .eq("status", "processing")
         .in("current_step", [
@@ -9561,16 +9571,27 @@ app.post("/api/worker/claim", async (req, res) => {
       return res.json({ success: true, job: null });
     }
 
+    const claimUpdate: Record<string, unknown> = {
+      status: "worker_downloading",
+      progress: 8,
+      current_step: String(queuedProject.current_step || "").includes("speech enhancement source")
+        ? "Worker is downloading YouTube video (speech enhancement source)"
+        : "Worker is downloading YouTube video",
+    };
+
+    // Auto SFX projects can be claimed while still in the YouTube-download
+    // phase, before processVideo() ever runs. Without this, the frontend's
+    // Auto SFX panel stays hidden (auto_sfx_status never set) for the whole
+    // download period and shows the generic clip-pipeline instead.
+    if (queuedProject.processing_mode === "auto_sfx") {
+      claimUpdate.auto_sfx_status = "queued";
+      claimUpdate.auto_sfx_progress = 8;
+    }
+
     const { data: claimed, error: claimError } =
       await supabase
         .from("projects")
-        .update({
-          status: "worker_downloading",
-          progress: 8,
-          current_step: String(queuedProject.current_step || "").includes("speech enhancement source")
-            ? "Worker is downloading YouTube video (speech enhancement source)"
-            : "Worker is downloading YouTube video",
-        })
+        .update(claimUpdate)
         .eq("id", queuedProject.id)
         .eq("status", "processing")
         .in("current_step", [
@@ -9689,6 +9710,9 @@ app.post(
           progress: 10,
           current_step: downloadedStep,
           status: "processing",
+          ...(effectiveProcessingConfig.mode === "auto_sfx"
+            ? { auto_sfx_status: "processing", auto_sfx_progress: 10 }
+            : {}),
         })
         .eq("id", projectId);
 
@@ -9772,7 +9796,7 @@ app.post("/api/worker/projects/:projectId/fail", async (req, res) => {
   try {
     const { data: project, error } = await supabase
       .from("projects")
-      .select("id, user_id, status, current_step")
+      .select("id, user_id, status, current_step, processing_mode")
       .eq("id", projectId)
       .eq("source_type", "youtube")
       .eq("status", "worker_downloading")
@@ -9788,6 +9812,17 @@ app.post("/api/worker/projects/:projectId/fail", async (req, res) => {
     }
 
     await updateProject(projectId, 0, reason, "failed");
+
+    if ((project as any).processing_mode === "auto_sfx") {
+      const { error: sfxFailError } = await supabase
+        .from("projects")
+        .update({ auto_sfx_status: "failed" })
+        .eq("id", projectId);
+      if (sfxFailError) {
+        console.error("Auto SFX failure status update failed:", sfxFailError);
+      }
+    }
+
     await refundCredits(project.user_id, projectId);
 
     return res.json({
