@@ -31,12 +31,6 @@ export default defineConfig(() => {
       },
     },
 
-    /**
-     * Vite dependency pre-bundling
-     *
-     * Keep this list small.
-     * Over-including dependencies can increase dev startup work.
-     */
     optimizeDeps: {
       include: [
         "react",
@@ -46,44 +40,23 @@ export default defineConfig(() => {
 
       exclude: [
         "framer-motion",
+        "@supabase/supabase-js",
       ],
     },
 
     build: {
-      /**
-       * Don't generate production source maps.
-       * This keeps the final build smaller.
-       */
       sourcemap: false,
 
-      /**
-       * Keep CSS split between async chunks.
-       */
       cssCodeSplit: true,
 
-      /**
-       * Modern browsers don't need the preload polyfill.
-       * Removing it saves a small amount of JS.
-       */
       modulePreload: {
         polyfill: false,
       },
 
-      /**
-       * Production target.
-       *
-       * If you need very old browsers, use "es2019".
-       */
       target: "es2020",
 
-      /**
-       * Minification.
-       */
       minify: "esbuild",
 
-      /**
-       * Better tree-shaking.
-       */
       rollupOptions: {
         treeshake: {
           preset: "recommended",
@@ -91,19 +64,17 @@ export default defineConfig(() => {
         },
 
         output: {
-          /**
-           * Stable and predictable chunking.
-           */
           manualChunks(id) {
             if (!id.includes("node_modules")) {
               return;
             }
 
-            /**
-             * ------------------------------------------------
-             * React
-             * ------------------------------------------------
+            /*
+             * ==================================================
+             * REACT CORE
+             * ==================================================
              */
+
             if (
               id.includes("/react/") ||
               id.includes("/react-dom/") ||
@@ -112,16 +83,17 @@ export default defineConfig(() => {
               return "react-vendor";
             }
 
-            /**
-             * ------------------------------------------------
-             * Supabase
-             * ------------------------------------------------
+            /*
+             * ==================================================
+             * SUPABASE
+             * ==================================================
              *
-             * Keep Supabase isolated because it is relatively
-             * large and shouldn't block unrelated UI chunks.
+             * Supabase is kept isolated.
+             * It should not be mixed into the normal vendor chunk.
              */
+
             if (
-              id.includes("@supabase/") ||
+              id.includes("/@supabase/") ||
               id.includes("/supabase-js/") ||
               id.includes("/auth-js/") ||
               id.includes("/realtime-js/") ||
@@ -132,20 +104,12 @@ export default defineConfig(() => {
               return "supabase";
             }
 
-            /**
-             * ------------------------------------------------
-             * Lucide
-             * ------------------------------------------------
+            /*
+             * ==================================================
+             * MOTION
+             * ==================================================
              */
-            if (id.includes("/lucide-react/")) {
-              return "icons";
-            }
 
-            /**
-             * ------------------------------------------------
-             * Motion
-             * ------------------------------------------------
-             */
             if (
               id.includes("/framer-motion/") ||
               id.includes("/motion/")
@@ -153,59 +117,85 @@ export default defineConfig(() => {
               return "motion";
             }
 
-            /**
-             * ------------------------------------------------
-             * Stripe
-             * ------------------------------------------------
+            /*
+             * ==================================================
+             * WAVESURFER
+             * ==================================================
+             *
+             * Project editor dependency.
+             * Keeping it isolated prevents it from contaminating
+             * the normal vendor chunk.
              */
+
+            if (id.includes("/wavesurfer.js/")) {
+              return "wavesurfer";
+            }
+
+            /*
+             * ==================================================
+             * GOOGLE / AI CLIENTS
+             * ==================================================
+             *
+             * These should ideally remain backend-only.
+             * If any accidentally reaches the frontend, keeping
+             * it isolated makes the problem obvious in the report.
+             */
+
+            if (
+              id.includes("/@google/genai/") ||
+              id.includes("/googleapis/")
+            ) {
+              return "google-api";
+            }
+
+            /*
+             * ==================================================
+             * STRIPE
+             * ==================================================
+             */
+
             if (
               id.includes("/stripe/") ||
-              id.includes("@stripe/")
+              id.includes("/@stripe/")
             ) {
               return "stripe";
             }
 
-            /**
-             * ------------------------------------------------
-             * Everything else
-             * ------------------------------------------------
+            /*
+             * ==================================================
+             * ICONS
+             * ==================================================
              *
-             * Don't create hundreds of tiny chunks.
+             * Keep Lucide separate so it doesn't inflate the
+             * generic vendor chunk.
              */
+
+            if (id.includes("/lucide-react/")) {
+              return "icons";
+            }
+
+            /*
+             * ==================================================
+             * EVERYTHING ELSE
+             * ==================================================
+             */
+
             return "vendor";
           },
 
-          /**
-           * More readable asset names.
-           */
           assetFileNames: "assets/[name]-[hash][extname]",
 
-          /**
-           * JS chunks.
-           */
           chunkFileNames: "assets/[name]-[hash].js",
 
-          /**
-           * Entry files.
-           */
           entryFileNames: "assets/[name]-[hash].js",
         },
       },
 
-      /**
-       * Only warn when a chunk gets really large.
-       */
       chunkSizeWarningLimit: 350,
 
-      /**
-       * Clean output directory before every build.
-       */
       emptyOutDir: true,
     },
 
-    /**
-     * Development server.
-     */
     server: {
       port: 5173,
 
@@ -219,11 +209,6 @@ export default defineConfig(() => {
         },
       },
 
-      /**
-       * HMR can be disabled with:
-       *
-       * $env:DISABLE_HMR="true"
-       */
       hmr: process.env.DISABLE_HMR !== "true",
 
       watch: {
@@ -237,9 +222,6 @@ export default defineConfig(() => {
       },
     },
 
-    /**
-     * Preview server.
-     */
     preview: {
       port: 4173,
       strictPort: false,

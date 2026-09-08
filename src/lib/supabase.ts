@@ -26,6 +26,7 @@ export const getSupabase = (): Promise<SupabaseClient> => {
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
+            flowType: "pkce",
           },
         });
       }
