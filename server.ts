@@ -6747,11 +6747,20 @@ async function processVideo(
     ? { ...normalizedReframeConfig, addCaptions: false }
     : normalizedReframeConfig;
   try {
-    await updateProject(
-      projectId,
-      10,
-      "Reading video",
-    );
+    // For Auto SFX, mark auto_sfx_status/auto_sfx_progress from the very
+    // first step. Without this, the 0-30% "reading/preparing source" phase
+    // only touches the generic progress/status columns, so the frontend
+    // still shows the generic clip-pipeline panel until the first
+    // Auto-SFX-specific update lands later on.
+    if (mode === "auto_sfx") {
+      await updateAutoSfxState(projectId, 10, "Auto SFX: reading video", "processing");
+    } else {
+      await updateProject(
+        projectId,
+        10,
+        "Reading video",
+      );
+    }
 
     const duration =
       await getVideoDuration(
@@ -6774,11 +6783,15 @@ async function processVideo(
       );
     }
 
-    await updateProject(
-      projectId,
-      20,
-      "Preparing source video",
-    );
+    if (mode === "auto_sfx") {
+      await updateAutoSfxState(projectId, 20, "Auto SFX: preparing source video", "processing");
+    } else {
+      await updateProject(
+        projectId,
+        20,
+        "Preparing source video",
+      );
+    }
 
     const extension =
       extensionForMime(
