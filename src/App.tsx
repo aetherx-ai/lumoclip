@@ -608,7 +608,7 @@ function App() {
   ======================================================= */
 
   const loadAuthenticatedUser =
-    async (): Promise<boolean> => {
+    async (): Promise<Project[] | null> => {
       try {
         const authRes =
           await fetchMe();
@@ -621,34 +621,29 @@ function App() {
           setSelectedClips([]);
           setActiveTab("landing");
 
-          return false;
+          return null;
         }
 
         setUser(authRes.user);
-
         setSubscription(
           authRes.subscription ?? null,
         );
 
-        try {
-          const list =
-            await fetchProjects();
+        let loadedProjects: Project[] = [];
 
-          setProjects(
-            Array.isArray(list)
-              ? list
-              : [],
-          );
+        try {
+          const list = await fetchProjects();
+          loadedProjects = Array.isArray(list) ? list : [];
+          setProjects(loadedProjects);
         } catch (error) {
           console.error(
             "Failed to load projects:",
             error,
           );
-
           setProjects([]);
         }
 
-        return true;
+        return loadedProjects;
       } catch (error) {
         console.error(
           "Failed to load authenticated user:",
@@ -662,7 +657,7 @@ function App() {
         setSelectedClips([]);
         setActiveTab("landing");
 
-        return false;
+        return null;
       }
     };
 
@@ -905,69 +900,38 @@ function App() {
   useEffect(() => {
     let mounted = true;
     let unsubscribeAuth: (() => void) | undefined;
+    let idleTimer: number | undefined;
 
-    (async () => {
-    // Supabase is dynamically imported so its ~55KB (gzip) chunk never
-    // blocks the initial paint of the landing page. It's still fetched
-    // immediately on mount, just in parallel with (not before) render.
-    const supabase = await getSupabase();
+    const startAuth = async () => {
+      const supabase = await getSupabase();
 
-    if (!mounted) {
-      return;
-    }
+      if (!mounted) return;
 
-    const initializeApp =
-      async () => {
+      const initializeApp = async () => {
         try {
           const {
             data: { session },
-          } =
-            await supabase.auth.getSession();
+          } = await supabase.auth.getSession();
 
-          if (!mounted) {
-            return;
-          }
+          if (!mounted) return;
 
           if (session?.user) {
-            await loadAuthenticatedUser();
+            const loadedProjects = await loadAuthenticatedUser();
 
-            if (!mounted) {
-              return;
+            if (!mounted) return;
+
+            if (Array.isArray(loadedProjects)) {
+              loadedProjects
+                .filter(
+                  (project) =>
+                    String(project.status) === "processing",
+                )
+                .forEach((project) => {
+                  pollProjectProcessing(project.id);
+                });
             }
 
             setActiveTab("landing");
-
-            try {
-              const list =
-                await fetchProjects();
-
-              if (
-                mounted &&
-                Array.isArray(list)
-              ) {
-                setProjects(list);
-
-                list
-                  .filter(
-                    (project) =>
-                      String(
-                        project.status,
-                      ) === "processing",
-                  )
-                  .forEach(
-                    (project) => {
-                      pollProjectProcessing(
-                        project.id,
-                      );
-                    },
-                  );
-              }
-            } catch (error) {
-              console.warn(
-                "Failed to check processing projects:",
-                error,
-              );
-            }
           } else {
             setUser(null);
             setSubscription(null);
@@ -977,10 +941,7 @@ function App() {
             setActiveTab("landing");
           }
         } catch (error) {
-          console.error(
-            "Initial app load failed:",
-            error,
-          );
+          console.error("Initial app load failed:", error);
 
           if (mounted) {
             setUser(null);
@@ -992,164 +953,120 @@ function App() {
           }
         } finally {
           if (mounted) {
-            appInitialized.current =
-              true;
+            appInitialized.current = true;
           }
         }
       };
 
-    initializeApp();
+      // Read the existing session first. The auth listener then handles
+      // subsequent sign-in/sign-out events without a second initial fetch.
+      await initializeApp();
 
-    const {
-      data: {
-        subscription:
-          authSubscription,
-      },
-    } =
-      supabase.auth.onAuthStateChange(
-        async (
-          event,
-          session,
-        ) => {
-          if (!mounted) {
+      if (!mounted) return;
+
+      const {
+        data: { subscription: authSubscription },
+      } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (!mounted) return;
+
+        if (event === "SIGNED_IN" && session?.user) {
+          const wasInitialized = appInitialized.current;
+          const loadedProjects = await loadAuthenticatedUser();
+
+          if (!mounted || loadedProjects === null) return;
+
+          setIsAuthModalOpen(false);
+
+          const pendingFile = pendingProjectFileRef.current;
+          if (pendingFile) {
+            setNewProjectInitialFile(pendingFile);
+            setIsNewProjectModalOpen(true);
+            pendingProjectFileRef.current = null;
             return;
           }
 
-          /* -----------------------------------------
-             SIGNED IN
-          ----------------------------------------- */
-
-          if (
-            event === "SIGNED_IN" &&
-            session?.user
-          ) {
-            const wasInitialized =
-              appInitialized.current;
-
-            const userLoaded =
-              await loadAuthenticatedUser();
-
-            if (!mounted) {
-              return;
-            }
-
-            if (!userLoaded) {
-              return;
-            }
-
-            setIsAuthModalOpen(false);
-
-            const pendingFile =
-              pendingProjectFileRef.current;
-
-            if (pendingFile) {
-              setNewProjectInitialFile(
-                pendingFile,
-              );
-
-              setIsNewProjectModalOpen(
-                true,
-              );
-
-              pendingProjectFileRef.current =
-                null;
-
-              return;
-            }
-
-            const pendingUrl =
-              pendingProjectUrlRef.current;
-
-            if (pendingUrl) {
-              setNewProjectInitialUrl(
-                pendingUrl,
-              );
-
-              setIsNewProjectModalOpen(
-                true,
-              );
-
-              pendingProjectUrlRef.current =
-                "";
-
-              return;
-            }
-
-            if (!wasInitialized) {
-              setActiveTab("landing");
-            }
-
+          const pendingUrl = pendingProjectUrlRef.current;
+          if (pendingUrl) {
+            setNewProjectInitialUrl(pendingUrl);
+            setIsNewProjectModalOpen(true);
+            pendingProjectUrlRef.current = "";
             return;
           }
 
-          /* -----------------------------------------
-             INITIAL SESSION
-          ----------------------------------------- */
-
-          if (
-            event ===
-            "INITIAL_SESSION"
-          ) {
-            return;
-          }
-
-          /* -----------------------------------------
-             TOKEN REFRESH
-          ----------------------------------------- */
-
-          if (
-            event ===
-              "TOKEN_REFRESHED" &&
-            session?.user
-          ) {
-            return;
-          }
-
-          /* -----------------------------------------
-             SIGNED OUT
-          ----------------------------------------- */
-
-          if (
-            event === "SIGNED_OUT"
-          ) {
-            stopAllPolling();
-
-            setUser(null);
-            setSubscription(null);
-            setProjects([]);
-            setSelectedProject(null);
-            setSelectedClips([]);
+          if (!wasInitialized) {
             setActiveTab("landing");
-
-            setIsNewProjectModalOpen(
-              false,
-            );
-
-            setIsAuthModalOpen(false);
-
-            setNewProjectInitialUrl("");
-
-            setNewProjectInitialFile(null);
-
-            setNewProjectIntent("default");
-
-            pendingProjectUrlRef.current =
-              "";
-
-            pendingProjectFileRef.current =
-              null;
           }
-        },
-      );
 
-    unsubscribeAuth = () => authSubscription.unsubscribe();
-    })();
+          return;
+        }
+
+        if (event === "INITIAL_SESSION") return;
+        if (event === "TOKEN_REFRESHED" && session?.user) return;
+
+        if (event === "SIGNED_OUT") {
+          stopAllPolling();
+          setUser(null);
+          setSubscription(null);
+          setProjects([]);
+          setSelectedProject(null);
+          setSelectedClips([]);
+          setActiveTab("landing");
+          setIsNewProjectModalOpen(false);
+          setIsAuthModalOpen(false);
+          setNewProjectInitialUrl("");
+          setNewProjectInitialFile(null);
+          setNewProjectIntent("default");
+          setNewProjectMode(undefined);
+          pendingProjectUrlRef.current = "";
+          pendingProjectFileRef.current = null;
+        }
+      });
+
+      unsubscribeAuth = () => authSubscription.unsubscribe();
+    };
+
+    // Landing is public. Defer Supabase until the browser is idle so its
+    // ~55KB gzip chunk is not requested on the critical landing path.
+    // OAuth callback URLs initialize immediately so the redirect flow remains safe.
+    const callbackUrl = `${window.location.search}${window.location.hash}`;
+    const isAuthCallback = /(?:^|[?&#])(code|access_token|error|error_code)=/i.test(
+      callbackUrl,
+    );
+
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: IdleRequestCallback,
+        options?: IdleRequestOptions,
+      ) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+
+    if (isAuthCallback) {
+      void startAuth();
+    } else if (typeof idleWindow.requestIdleCallback === "function") {
+      idleTimer = idleWindow.requestIdleCallback(
+        () => void startAuth(),
+        { timeout: 2000 },
+      );
+    } else {
+      idleTimer = window.setTimeout(
+        () => void startAuth(),
+        1200,
+      );
+    }
 
     return () => {
       mounted = false;
 
-      stopAllPolling();
+      if (idleTimer !== undefined) {
+        if (typeof idleWindow.cancelIdleCallback === "function") {
+          idleWindow.cancelIdleCallback(idleTimer);
+        } else {
+          window.clearTimeout(idleTimer);
+        }
+      }
 
+      stopAllPolling();
       unsubscribeAuth?.();
     };
   }, []);

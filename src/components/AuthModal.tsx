@@ -91,35 +91,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setError("");
+  setLoading(true);
+  setError("");
 
-    try {
-      const supabase = await getSupabase();
+  try {
+    const supabase = await getSupabase();
 
-      const { error } =
-        await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo: "https://lumo-clip.com",
-          },
-        });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/`,
+      },
+    });
 
-      if (error) throw error;
-    } catch (err: any) {
-      console.error(
-        "Google Sign In Error:",
-        err
-      );
+    if (error) throw error;
+  } catch (err: any) {
+    console.error("Google Sign In Error:", err);
 
-      setError(
-        err?.message ||
-          "Google Sign In failed."
-      );
+    setError(
+      err?.message ||
+        "Google Sign In failed."
+    );
 
-      setLoading(false);
-    }
-  };
+    setLoading(false);
+  }
+};
 
   const toggleMode = () => {
     setIsSignUp((value) => !value);

@@ -1467,6 +1467,8 @@ export function LandingPage({
   const [isDragging, setIsDragging] = useState(false);
   const [fileError, setFileError] = useState("");
   const [activePremiumMetric, setActivePremiumMetric] = useState(0);
+  const [premiumPreviewVisible, setPremiumPreviewVisible] = useState(false);
+  const premiumPreviewRef = useRef<HTMLElement | null>(null);
 
   const captionStyle = DEFAULT_CAPTION_STYLE;
   const captionMode: CaptionProcessingMode = "clips";
@@ -1491,12 +1493,30 @@ export function LandingPage({
     [url]
   );
 
+  // Keep the animated dashboard preview alive only while it is near the
+  // viewport. This avoids an unnecessary timer/re-render loop on page load.
   useEffect(() => {
+    const node = premiumPreviewRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => setPremiumPreviewVisible(entry.isIntersecting),
+      { rootMargin: "200px 0px", threshold: 0 },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!premiumPreviewVisible) return;
+
     const id = window.setInterval(() => {
       setActivePremiumMetric((value) => (value + 1) % 4);
     }, 2400);
+
     return () => window.clearInterval(id);
-  }, []);
+  }, [premiumPreviewVisible]);
 
   const acceptVideoFile = (file: File) => {
     if (!file.type.startsWith("video/") && !/\.(mp4|mov|webm|mkv|avi)$/i.test(file.name)) {
@@ -2436,6 +2456,7 @@ export function LandingPage({
         ================================================================== */}
 
         <section
+          ref={premiumPreviewRef}
           aria-labelledby="premium-preview-title"
           className="relative overflow-hidden border-y border-white/[0.045] py-24 sm:py-32"
           style={lazySectionStyle}
