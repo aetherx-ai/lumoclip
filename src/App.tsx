@@ -37,7 +37,11 @@ import ChunkErrorBoundary from "./components/ChunkErrorBoundary.tsx";
 // Dashboard is used immediately when the user opens Workspace.
 // Keep it eager so the Workspace does not sit on a Suspense spinner
 // while waiting for a separate JS chunk to download.
-import { DashboardView } from "./components/DashboardView.js";
+const DashboardView = lazy(() =>
+  import("./components/DashboardView.js").then((m) => ({
+    default: m.DashboardView,
+  })),
+);
 
 const ProjectDetailView = lazy(() =>
   import("./components/ProjectDetailView.js").then((m) => ({
@@ -69,13 +73,6 @@ const NewProjectModal = lazy(() =>
   })),
 );
 
-// Preload secondary workspace pages in the background. This keeps navigation
-// to Projects, Pricing and Settings fast without blocking the first render.
-const preloadSecondaryChunks = () => {
-  void import("./components/ProjectDetailView.js");
-  void import("./components/PricingView.js");
-  void import("./components/SettingsView.js");
-};
 
 /* =========================================================
    NEW PROJECT MODAL TYPE
@@ -908,9 +905,6 @@ function App() {
   useEffect(() => {
     let mounted = true;
     let unsubscribeAuth: (() => void) | undefined;
-
-    // Warm secondary chunks in the background. Dashboard itself is eager-loaded.
-    preloadSecondaryChunks();
 
     (async () => {
     // Supabase is dynamically imported so its ~55KB (gzip) chunk never
