@@ -2778,7 +2778,8 @@ export const ProjectDetailView: React.FC<
     status === "processing" ||
     status === "pending" ||
     status === "queued" ||
-    status === "analyzing";
+    status === "analyzing" ||
+    status === "worker_downloading";
 
   const isCompleted =
     status === "completed" ||
