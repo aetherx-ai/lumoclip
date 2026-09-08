@@ -93,7 +93,11 @@ const NewProjectModalWithInitialUrl =
 // grid can pre-select. Kept as a local alias (rather than importing the
 // type from NewProjectModal, which is lazy-loaded) so this file has no
 // extra runtime dependency on that chunk.
-type NewProjectMode = "clips" | "reframe" | "full_video_caption";
+type NewProjectMode =
+  | "clips"
+  | "reframe"
+  | "full_video_caption"
+  | "auto_sfx";
 
 /* =========================================================
    ACTIVE TAB
