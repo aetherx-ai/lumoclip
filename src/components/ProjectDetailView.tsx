@@ -1212,6 +1212,14 @@ const VideoDebuggerPanel: React.FC<VideoDebuggerPanelProps> = ({
     setSelectedClipId("");
   }, [project.id]);
 
+  const projectSourceUrl = String(
+    (project as any).source_media_url ||
+      (project as any).sourceMediaUrl ||
+      "",
+  ).trim();
+
+  const autoScanStartedRef = React.useRef<string>("");
+
   const selectedClip = useMemo(
     () =>
       clips.find(
@@ -1330,7 +1338,11 @@ const VideoDebuggerPanel: React.FC<VideoDebuggerPanelProps> = ({
         );
       }
 
-      if (data.report) {
+      if (repair) {
+        // Backend returns the pre-repair diagnostic as `before` and the
+        // validated repaired diagnostic as `report`.
+        setReport(data.before || data.report || null);
+      } else if (data.report) {
         setReport(data.report);
       }
 
@@ -1354,6 +1366,7 @@ const VideoDebuggerPanel: React.FC<VideoDebuggerPanelProps> = ({
         setRepairedReport(
           data.repairedReport ||
             data.after ||
+            data.report ||
             null,
         );
         setStatus("completed");
@@ -1380,7 +1393,36 @@ const VideoDebuggerPanel: React.FC<VideoDebuggerPanelProps> = ({
     status === "repairing";
   const needsRepair =
     Boolean(report?.repairRecommended) ||
+    report?.healthy === false ||
     issues.length > 0;
+
+  useEffect(() => {
+    const mode = getProcessingMode(project);
+    const currentStep = String(
+      (project as any).current_step ||
+        (project as any).currentStep ||
+        "",
+    ).toLowerCase();
+
+    const debuggerProject =
+      mode === "video_debugger" ||
+      currentStep.includes("video ready for debugging") ||
+      currentStep.includes("debugging video") ||
+      currentStep.includes("repairing video") ||
+      currentStep.includes("video debugging");
+
+    if (
+      !debuggerProject ||
+      !projectSourceUrl ||
+      status !== "idle" ||
+      autoScanStartedRef.current === String(project.id)
+    ) {
+      return;
+    }
+
+    autoScanStartedRef.current = String(project.id);
+    void debugVideo(false);
+  }, [project.id, projectSourceUrl, status]);
 
   const sourceLabel =
     inputType === "source"
@@ -3520,8 +3562,18 @@ export const ProjectDetailView: React.FC<
   const isSpeechOnlyMode =
     isSpeechOnlyProject(project);
 
+  const projectCurrentStep = String(
+    (project as any).current_step ||
+      (project as any).currentStep ||
+      "",
+  ).toLowerCase();
+
   const isVideoDebuggerMode =
-    getProcessingMode(project) === "video_debugger";
+    getProcessingMode(project) === "video_debugger" ||
+    projectCurrentStep.includes("video ready for debugging") ||
+    projectCurrentStep.includes("debugging video") ||
+    projectCurrentStep.includes("repairing video") ||
+    projectCurrentStep.includes("video debugging");
 
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
