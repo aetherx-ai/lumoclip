@@ -4121,6 +4121,12 @@ function publicMediaUrl(
       .join("/")}`;
   }
 
+  if (parts[0] === "debugged") {
+    return `/api/media/${encodedProject}/debugged/${parts
+      .slice(1)
+      .join("/")}`;
+  }
+
   return `/api/media/${encodedProject}/source/${parts.join("/")}`;
 }
 
@@ -10642,6 +10648,313 @@ app.get(
   (req, res) =>
     sendProjectMedia(req, res, "reframed"),
 );
+
+// Video Debugger / repaired-video output.
+app.get(
+  "/api/media/:projectId/debugged/:filename",
+  (req, res) =>
+    sendProjectMedia(req, res, "debugged"),
+);
+
+/* =========================================================
+   VIDEO DEBUGGER
+
+   Diagnoses common video problems and creates a repaired MP4.
+   No Gemini call is used: repair is deterministic FFmpeg processing.
+========================================================= */
+
+type VideoDebugStream = {
+  index: number;
+  type: string;
+  codec: string;
+  codecLongName?: string;
+  profile?: string;
+  width?: number;
+  height?: number;
+  fps?: number;
+  bitrate?: number;
+  sampleRate?: number;
+  channels?: number;
+  duration?: number;
+};
+
+type VideoDebugReport = {
+  healthy: boolean;
+  repairRecommended: boolean;
+  repaired: boolean;
+  repairMode: "none" | "remux" | "transcode";
+  duration: number | null;
+  format: string;
+  formatLongName?: string;
+  sizeBytes: number;
+  bitrate: number | null;
+  hasVideo: boolean;
+  hasAudio: boolean;
+  videoCodec: string | null;
+  audioCodec: string | null;
+  streams: VideoDebugStream[];
+  issues: string[];
+  fixes: string[];
+  message: string;
+};
+
+function parseDebugFps(value: unknown): number | undefined {
+  const raw = String(value || "");
+  if (!raw || raw === "0/0") return undefined;
+  const [a, b] = raw.split("/");
+  const numerator = Number(a);
+  const denominator = Number(b ?? 1);
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) return undefined;
+  const fps = numerator / denominator;
+  return Number.isFinite(fps) && fps > 0 ? Number(fps.toFixed(3)) : undefined;
+}
+
+function probeVideoDebug(filePath: string): Promise<VideoDebugReport> {
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(filePath, (error, data) => {
+      if (error) {
+        return reject(new Error("FFprobe could not read this video. The container or media streams may be corrupted."));
+      }
+
+      const streams: VideoDebugStream[] = (data?.streams || []).map((stream: any) => ({
+        index: Number(stream.index ?? 0),
+        type: String(stream.codec_type || "unknown"),
+        codec: String(stream.codec_name || "unknown"),
+        codecLongName: stream.codec_long_name || undefined,
+        profile: stream.profile || undefined,
+        width: Number.isFinite(Number(stream.width)) ? Number(stream.width) : undefined,
+        height: Number.isFinite(Number(stream.height)) ? Number(stream.height) : undefined,
+        fps: parseDebugFps(stream.avg_frame_rate || stream.r_frame_rate),
+        bitrate: Number.isFinite(Number(stream.bit_rate)) ? Number(stream.bit_rate) : undefined,
+        sampleRate: Number.isFinite(Number(stream.sample_rate)) ? Number(stream.sample_rate) : undefined,
+        channels: Number.isFinite(Number(stream.channels)) ? Number(stream.channels) : undefined,
+        duration: Number.isFinite(Number(stream.duration)) ? Number(stream.duration) : undefined,
+      }));
+
+      const format = String(data?.format?.format_name || "unknown");
+      const durationRaw = Number(data?.format?.duration);
+      const sizeRaw = Number(data?.format?.size);
+      const bitrateRaw = Number(data?.format?.bit_rate);
+      const duration = Number.isFinite(durationRaw) && durationRaw > 0 ? durationRaw : null;
+      const video = streams.filter((s) => s.type === "video");
+      const audio = streams.filter((s) => s.type === "audio");
+      const issues: string[] = [];
+      const fixes: string[] = [];
+
+      if (!video.length) issues.push("No video stream was detected.");
+      if (video.length > 1) issues.push("Multiple video streams were detected; the repaired file keeps the first video stream.");
+      if (!audio.length) issues.push("No audio stream was detected.");
+      if (duration === null) issues.push("The video has no valid duration.");
+      if (video[0]?.codec && video[0].codec !== "h264") {
+        issues.push(`Video codec is ${video[0].codec}; H.264 is preferred for maximum browser compatibility.`);
+        fixes.push("The repaired output uses H.264 video when transcoding is needed.");
+      }
+      if (audio[0]?.codec && audio[0].codec !== "aac") {
+        issues.push(`Audio codec is ${audio[0].codec}; AAC is preferred for maximum browser compatibility.`);
+        fixes.push("The repaired output uses AAC audio when transcoding is needed.");
+      }
+      if (format !== "mov,mp4,m4a,3gp,3g2,mj2") {
+        issues.push(`Container is ${format}; MP4 is preferred for web playback.`);
+        fixes.push("The repaired output is written as MP4 with fast-start metadata.");
+      }
+
+      const sizeBytes = Number.isFinite(sizeRaw) && sizeRaw >= 0
+        ? sizeRaw
+        : (fs.existsSync(filePath) ? fs.statSync(filePath).size : 0);
+      const repairRecommended = issues.length > 0 || !video.length || duration === null;
+
+      resolve({
+        healthy: issues.length === 0,
+        repairRecommended,
+        repaired: false,
+        repairMode: "none",
+        duration,
+        format,
+        formatLongName: data?.format?.format_long_name || undefined,
+        sizeBytes,
+        bitrate: Number.isFinite(bitrateRaw) ? bitrateRaw : null,
+        hasVideo: video.length > 0,
+        hasAudio: audio.length > 0,
+        videoCodec: video[0]?.codec || null,
+        audioCodec: audio[0]?.codec || null,
+        streams,
+        issues,
+        fixes,
+        message: issues.length
+          ? "Video diagnostics found one or more compatibility or media-structure issues."
+          : "Video looks healthy and is ready for browser/social processing.",
+      });
+    });
+  });
+}
+
+function runVideoDebugRepair(
+  inputPath: string,
+  outputPath: string,
+  mode: "remux" | "transcode",
+  onProgress?: (percent: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+    let settled = false;
+    const finish = (error?: Error) => {
+      if (settled) return;
+      settled = true;
+      error ? reject(error) : resolve();
+    };
+
+    const command = ffmpeg(inputPath)
+      .outputOptions(
+        mode === "remux"
+          ? [
+              "-y", "-map", "0:v:0?", "-map", "0:a:0?",
+              "-c", "copy", "-fflags", "+genpts",
+              "-avoid_negative_ts", "make_zero", "-movflags", "+faststart",
+            ]
+          : [
+              "-y", "-map", "0:v:0?", "-map", "0:a:0?",
+              "-c:v", "libx264", "-preset", FFMPEG_PRESET,
+              "-crf", FFMPEG_CRF, "-threads", String(FFMPEG_THREADS_PER_CLIP),
+              "-pix_fmt", "yuv420p", "-c:a", "aac",
+              "-b:a", SPEECH_ENHANCE_AUDIO_BITRATE, "-ar", "48000", "-ac", "2",
+              "-fflags", "+genpts", "-avoid_negative_ts", "make_zero",
+              "-movflags", "+faststart",
+            ],
+      )
+      .on("start", (commandLine) => console.log(`Video Debugger ${mode}:`, commandLine))
+      .on("progress", (progress) => {
+        if (Number.isFinite(progress?.percent)) onProgress?.(Math.min(98, Math.max(5, Number(progress.percent))));
+      })
+      .on("end", () => {
+        if (!fs.existsSync(outputPath) || fs.statSync(outputPath).size <= 0) {
+          return finish(new Error("Video Debugger did not create an output file."));
+        }
+        finish();
+      })
+      .on("error", (error, _stdout, stderr) => {
+        if (stderr) console.error(`Video Debugger ${mode} stderr:\n`, stderr);
+        finish(error instanceof Error ? error : new Error(String(error)));
+      });
+
+    const timer = setTimeout(() => {
+      console.error(`Video Debugger ${mode} timed out after ${FFMPEG_TIMEOUT_MS}ms.`);
+      try { command.kill("SIGKILL"); } catch {}
+      finish(new Error(`Video repair timed out after ${Math.round(FFMPEG_TIMEOUT_MS / 1000)} seconds.`));
+    }, FFMPEG_TIMEOUT_MS);
+    timer.unref?.();
+    command.once("end", () => clearTimeout(timer));
+    command.once("error", () => clearTimeout(timer));
+    command.save(outputPath);
+  });
+}
+
+const videoDebugLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Video Debugger limit reached. Please try again later." },
+});
+
+app.post("/api/projects/:projectId/debug-video", videoDebugLimiter, async (req, res) => {
+  const projectId = String(req.params.projectId || "").trim();
+  let userId = "";
+  let outputPath = "";
+
+  try {
+    if (!projectId) return res.status(400).json({ error: "Project ID is required." });
+    const user = await getAuthenticatedUser(req);
+    userId = user.id;
+
+    const inputType = req.body?.inputType === "clip" ? "clip" : "source";
+    const clipId = typeof req.body?.clipId === "string" ? req.body.clipId.trim() : "";
+    const repair = req.body?.repair !== false;
+
+    const { data: project, error: projectError } = await supabase
+      .from("projects")
+      .select("id, user_id, name")
+      .eq("id", projectId)
+      .eq("user_id", user.id)
+      .single();
+    if (projectError || !project) return res.status(404).json({ error: "Project not found." });
+
+    let inputPath = "";
+    if (inputType === "clip") {
+      if (!clipId) return res.status(400).json({ error: "clipId is required when inputType is clip." });
+      const { data: clip, error: clipError } = await supabase
+        .from("clips")
+        .select("id, project_id, user_id, video_url")
+        .eq("id", clipId)
+        .eq("project_id", projectId)
+        .eq("user_id", user.id)
+        .single();
+      if (clipError || !clip) return res.status(404).json({ error: "Clip not found." });
+      inputPath = resolveClipPathFromUrl(projectId, String(clip.video_url || ""));
+    } else {
+      inputPath = resolveProjectSourcePath(projectId);
+    }
+
+    if (!fs.existsSync(inputPath) || !fs.statSync(inputPath).isFile()) {
+      return res.status(404).json({ error: "The selected video file is not available on the server." });
+    }
+
+    const before = await probeVideoDebug(inputPath);
+    if (!repair) {
+      return res.json({ success: true, projectId, inputType, clipId: clipId || null, report: before, outputUrl: null });
+    }
+    if (!before.hasVideo) {
+      return res.status(400).json({ error: "Video Debugger cannot repair a file with no video stream.", report: before });
+    }
+
+    const debugDir = path.join(mediaDir, safeSegment(projectId), "debugged");
+    const outputName = `debugged-${generateId()}.mp4`;
+    outputPath = path.join(debugDir, outputName);
+    await supabase.from("projects").update({ current_step: "Debugging video (5%)" }).eq("id", projectId).eq("user_id", user.id);
+
+    let repairMode: "remux" | "transcode" = "remux";
+    try {
+      await runVideoDebugRepair(inputPath, outputPath, "remux", (percent) => {
+        void supabase.from("projects").update({ current_step: `Debugging video (${Math.round(percent)}%)` }).eq("id", projectId).eq("user_id", user.id);
+      });
+    } catch (remuxError) {
+      console.warn("Video Debugger remux failed; using H.264/AAC transcode:", remuxError);
+      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
+      repairMode = "transcode";
+      await runVideoDebugRepair(inputPath, outputPath, "transcode", (percent) => {
+        void supabase.from("projects").update({ current_step: `Repairing video (${Math.round(percent)}%)` }).eq("id", projectId).eq("user_id", user.id);
+      });
+    }
+
+    const after = await probeVideoDebug(outputPath);
+    if (!after.hasVideo || after.duration === null) throw new Error("The repaired output still has an invalid video structure. The source may be severely corrupted.");
+
+    const outputUrl = publicMediaUrl(projectId, `debugged/${outputName}`);
+    const report: VideoDebugReport = {
+      ...after,
+      repaired: true,
+      repairMode,
+      repairRecommended: false,
+      message: repairMode === "remux"
+        ? "Video repaired successfully with a fast container/timestamp repair."
+        : "Video repaired successfully by converting it to H.264 + AAC MP4.",
+    };
+
+    await supabase.from("projects").update({ current_step: "Video debugging complete" }).eq("id", projectId).eq("user_id", user.id);
+    await supabase.from("usage_logs").insert({ user_id: user.id, action: `Video Debugger (${repairMode}): ${project.name || projectId}`, credits_used: 0 });
+
+    return res.json({ success: true, projectId, inputType, clipId: clipId || null, outputUrl, filename: outputName, repairMode, before, report, message: report.message });
+  } catch (error: any) {
+    console.error("Video Debugger endpoint failed:", error);
+    if (outputPath) { try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {} }
+    if (userId && projectId) {
+      try {
+        await supabase.from("projects").update({ current_step: `Video debugging failed: ${String(error?.message || "Unknown error").slice(0, 300)}` }).eq("id", projectId).eq("user_id", userId);
+      } catch {}
+    }
+    if (error?.message === "UNAUTHORIZED") return res.status(401).json({ error: "Unauthorized." });
+    return res.status(error?.statusCode || 500).json({ error: error?.message || "Video debugging failed." });
+  }
+});
 
 /* =========================================================
    ENHANCE SPEECH

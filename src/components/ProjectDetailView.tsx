@@ -33,6 +33,10 @@ import {
   Volume2,
   VolumeX,
   AudioWaveform,
+  Bug,
+  ShieldCheck,
+  Wrench,
+  AlertTriangle,
 } from "lucide-react";
 
 import { Project, Clip } from "../types.js";
@@ -1099,6 +1103,719 @@ const EnhanceSpeechPanel: React.FC<EnhanceSpeechPanelProps> = ({
 
                 <p className="text-[8px] leading-5 text-amber-300/60">
                   The original source video is not currently available for enhancement.
+                </p>
+              </div>
+            )}
+        </div>
+      </Surface>
+    </section>
+  );
+};
+
+
+/* =========================================================
+   VIDEO DEBUGGER
+========================================================= */
+
+type VideoDebugStatus =
+  | "idle"
+  | "scanning"
+  | "repairing"
+  | "completed"
+  | "error";
+
+interface VideoDebugReport {
+  healthy?: boolean;
+  repairRecommended?: boolean;
+  repaired?: boolean;
+  repairMode?: string | null;
+  duration?: number | null;
+  format?: string | null;
+  size?: number | null;
+  bitrate?: number | null;
+  hasVideo?: boolean;
+  hasAudio?: boolean;
+  videoCodec?: string | null;
+  audioCodec?: string | null;
+  streams?: Array<{
+    index?: number;
+    type?: string;
+    codec?: string;
+    codecName?: string;
+    codecType?: string;
+    width?: number;
+    height?: number;
+    fps?: number;
+    sampleRate?: number;
+    channels?: number;
+  }>;
+  issues?: string[];
+  fixes?: string[];
+  message?: string;
+}
+
+interface VideoDebuggerPanelProps {
+  project: Project;
+  clips: Clip[];
+}
+
+function formatBytes(value?: number | null) {
+  const bytes = Number(value ?? 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+function formatBitrate(value?: number | null) {
+  const bitrate = Number(value ?? 0);
+  if (!Number.isFinite(bitrate) || bitrate <= 0) return "—";
+  if (bitrate >= 1_000_000) {
+    return `${(bitrate / 1_000_000).toFixed(1)} Mbps`;
+  }
+  return `${Math.round(bitrate / 1000)} kbps`;
+}
+
+function getDebugReportIssues(report?: VideoDebugReport | null) {
+  return Array.isArray(report?.issues) ? report.issues : [];
+}
+
+const VideoDebuggerPanel: React.FC<VideoDebuggerPanelProps> = ({
+  project,
+  clips,
+}) => {
+  const supabase = getSupabase();
+
+  const [status, setStatus] =
+    useState<VideoDebugStatus>("idle");
+  const [report, setReport] =
+    useState<VideoDebugReport | null>(null);
+  const [repairedReport, setRepairedReport] =
+    useState<VideoDebugReport | null>(null);
+  const [outputUrl, setOutputUrl] = useState("");
+  const [repairMode, setRepairMode] = useState("");
+  const [error, setError] = useState("");
+  const [inputType, setInputType] =
+    useState<"source" | "clip">("source");
+  const [selectedClipId, setSelectedClipId] = useState("");
+
+  useEffect(() => {
+    setStatus("idle");
+    setReport(null);
+    setRepairedReport(null);
+    setOutputUrl("");
+    setRepairMode("");
+    setError("");
+    setInputType("source");
+    setSelectedClipId("");
+  }, [project.id]);
+
+  const selectedClip = useMemo(
+    () =>
+      clips.find(
+        (clip) =>
+          String(clip.id) ===
+          String(selectedClipId),
+      ),
+    [clips, selectedClipId],
+  );
+
+  const getAccessToken = async () => {
+    const client = await supabase;
+    const {
+      data: sessionData,
+      error: sessionError,
+    } = await client.auth.getSession();
+
+    if (sessionError) {
+      throw new Error(
+        sessionError.message ||
+          "Unable to get your login session.",
+      );
+    }
+
+    const token =
+      sessionData.session?.access_token;
+
+    if (!token) {
+      throw new Error(
+        "Your login session has expired. Please sign in again.",
+      );
+    }
+
+    return token;
+  };
+
+  const debugVideo = async (repair: boolean) => {
+    if (status === "scanning" || status === "repairing") {
+      return;
+    }
+
+    if (
+      inputType === "clip" &&
+      !selectedClipId
+    ) {
+      setError("Please select a clip first.");
+      setStatus("error");
+      return;
+    }
+
+    try {
+      setError("");
+      setStatus(
+        repair ? "repairing" : "scanning",
+      );
+
+      if (!repair) {
+        setRepairedReport(null);
+        setOutputUrl("");
+        setRepairMode("");
+      }
+
+      const accessToken =
+        await getAccessToken();
+
+      const body: {
+        inputType: "source" | "clip";
+        clipId?: string;
+        repair: boolean;
+      } = {
+        inputType,
+        repair,
+      };
+
+      if (
+        inputType === "clip" &&
+        selectedClipId
+      ) {
+        body.clipId = selectedClipId;
+      }
+
+      const response = await fetch(
+        `/api/projects/${encodeURIComponent(
+          project.id,
+        )}/debug-video`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify(body),
+        },
+      );
+
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            `Video debugging failed (${response.status}).`,
+        );
+      }
+
+      if (!data?.success) {
+        throw new Error(
+          data?.error ||
+            data?.message ||
+            "Video debugging failed.",
+        );
+      }
+
+      if (data.report) {
+        setReport(data.report);
+      }
+
+      if (repair) {
+        const url =
+          data.outputUrl ||
+          data.output_url ||
+          data.url ||
+          "";
+
+        if (!url) {
+          throw new Error(
+            "Repair completed, but no repaired video URL was returned.",
+          );
+        }
+
+        setOutputUrl(String(url));
+        setRepairMode(
+          String(data.repairMode || ""),
+        );
+        setRepairedReport(
+          data.repairedReport ||
+            data.after ||
+            null,
+        );
+        setStatus("completed");
+      } else {
+        setStatus("completed");
+      }
+    } catch (err) {
+      console.error(
+        "LumoClip: video debugger failed",
+        err,
+      );
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong while checking the video.",
+      );
+      setStatus("error");
+    }
+  };
+
+  const issues = getDebugReportIssues(report);
+  const isBusy =
+    status === "scanning" ||
+    status === "repairing";
+  const needsRepair =
+    Boolean(report?.repairRecommended) ||
+    issues.length > 0;
+
+  const sourceLabel =
+    inputType === "source"
+      ? "Full source video"
+      : selectedClip
+      ? getClipTitle(selectedClip)
+      : "Selected clip";
+
+  return (
+    <section className="mt-5">
+      <Surface className="overflow-hidden">
+        <div className="border-b border-white/[0.06] px-5 py-4 sm:px-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <div className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-amber-400/10 bg-amber-500/[0.07]">
+                {isBusy ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
+                ) : status === "completed" &&
+                  report?.healthy &&
+                  !needsRepair ? (
+                  <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                ) : (
+                  <Bug className="h-4 w-4 text-amber-400" />
+                )}
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-amber-400">
+                    Video diagnostics
+                  </p>
+
+                  <span className="rounded-full border border-emerald-400/15 bg-emerald-500/[0.08] px-2 py-0.5 text-[7px] font-bold uppercase tracking-wider text-emerald-300">
+                    Free
+                  </span>
+                </div>
+
+                <h2 className="mt-1 text-base font-semibold text-white">
+                  Video Debugger
+                </h2>
+
+                <p className="mt-1 text-[9px] text-zinc-600">
+                  Detect broken containers, missing streams and playback issues, then repair the file safely.
+                </p>
+              </div>
+            </div>
+
+            {status === "completed" &&
+              report &&
+              (report.healthy &&
+              !needsRepair ? (
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-emerald-400/10 bg-emerald-500/[0.07] px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-emerald-300">
+                  <Check className="h-3 w-3" />
+                  Healthy
+                </span>
+              ) : (
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-400/10 bg-amber-500/[0.07] px-2.5 py-1.5 text-[8px] font-bold uppercase tracking-wider text-amber-300">
+                  <AlertTriangle className="h-3 w-3" />
+                  Issues found
+                </span>
+              ))}
+          </div>
+        </div>
+
+        <div className="p-5 sm:p-6">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => {
+                setInputType("source");
+                setError("");
+              }}
+              className={[
+                "rounded-xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+                inputType === "source"
+                  ? "border-amber-400/20 bg-amber-500/[0.055]"
+                  : "border-white/[0.06] bg-white/[0.015] hover:border-white/[0.11]",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+                  <FileVideo className="h-3.5 w-3.5 text-zinc-400" />
+                </div>
+
+                {inputType === "source" && (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-amber-400" />
+                )}
+              </div>
+
+              <p className="mt-3 text-[10px] font-semibold text-white">
+                Full source video
+              </p>
+
+              <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                Check the original uploaded video before editing or exporting.
+              </p>
+            </button>
+
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => {
+                setInputType("clip");
+                setError("");
+              }}
+              className={[
+                "rounded-xl border p-4 text-left transition disabled:cursor-not-allowed disabled:opacity-60",
+                inputType === "clip"
+                  ? "border-amber-400/20 bg-amber-500/[0.055]"
+                  : "border-white/[0.06] bg-white/[0.015] hover:border-white/[0.11]",
+              ].join(" ")}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/[0.04]">
+                  <Scissors className="h-3.5 w-3.5 text-zinc-400" />
+                </div>
+
+                {inputType === "clip" && (
+                  <CheckCircle2 className="h-3.5 w-3.5 text-amber-400" />
+                )}
+              </div>
+
+              <p className="mt-3 text-[10px] font-semibold text-white">
+                Generated clip
+              </p>
+
+              <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                Diagnose one generated short without touching the original source.
+              </p>
+            </button>
+          </div>
+
+          {inputType === "clip" && (
+            <div className="mt-3">
+              <label className="mb-2 block text-[8px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                Select clip
+              </label>
+
+              <select
+                value={selectedClipId}
+                disabled={isBusy}
+                onChange={(event) =>
+                  setSelectedClipId(
+                    event.target.value,
+                  )
+                }
+                className="h-11 w-full rounded-xl border border-white/[0.07] bg-[#060608] px-3 text-[10px] text-white outline-none transition focus:border-amber-400/25 disabled:opacity-60"
+              >
+                <option value="">
+                  Choose a clip...
+                </option>
+
+                {clips.map(
+                  (clip, index) => (
+                    <option
+                      key={clip.id}
+                      value={String(clip.id)}
+                    >
+                      {String(index + 1).padStart(
+                        2,
+                        "0",
+                      )}{" "}
+                      — {getClipTitle(clip)}
+                    </option>
+                  ),
+                )}
+              </select>
+            </div>
+          )}
+
+          {status === "scanning" && (
+            <div className="mt-4 rounded-xl border border-amber-400/10 bg-amber-500/[0.035] p-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
+                <div>
+                  <p className="text-[10px] font-semibold text-white">
+                    Scanning {sourceLabel}...
+                  </p>
+                  <p className="mt-1 text-[8px] text-zinc-600">
+                    Checking the container, streams, codecs and timestamps.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/[0.05]">
+                <div className="h-full w-1/2 animate-pulse rounded-full bg-amber-400/60" />
+              </div>
+            </div>
+          )}
+
+          {status === "repairing" && (
+            <div className="mt-4 rounded-xl border border-violet-400/10 bg-violet-500/[0.035] p-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-4 w-4 animate-spin text-violet-400" />
+                <div>
+                  <p className="text-[10px] font-semibold text-white">
+                    Repairing {sourceLabel}...
+                  </p>
+                  <p className="mt-1 text-[8px] text-zinc-600">
+                    LumoClip is rebuilding the video container and validating the repaired output.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 h-1 overflow-hidden rounded-full bg-white/[0.05]">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-violet-400/60" />
+              </div>
+            </div>
+          )}
+
+          {report && status === "completed" && (
+            <div className="mt-4 space-y-3">
+              <div
+                className={[
+                  "rounded-xl border p-4",
+                  needsRepair
+                    ? "border-amber-400/10 bg-amber-500/[0.035]"
+                    : "border-emerald-400/10 bg-emerald-500/[0.035]",
+                ].join(" ")}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={[
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
+                      needsRepair
+                        ? "bg-amber-500/[0.08]"
+                        : "bg-emerald-500/[0.08]",
+                    ].join(" ")}
+                  >
+                    {needsRepair ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-400" />
+                    ) : (
+                      <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                    )}
+                  </div>
+
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold text-white">
+                      {needsRepair
+                        ? "Potential video issues detected"
+                        : "Video looks healthy"}
+                    </p>
+
+                    <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                      {report.message ||
+                        (needsRepair
+                          ? "A repair is recommended before further processing."
+                          : "Container and media streams passed the diagnostic checks.")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {[
+                    ["Format", report.format || "—"],
+                    ["Duration", formatDuration(report.duration)],
+                    ["Video", report.videoCodec || (report.hasVideo ? "Present" : "Missing")],
+                    ["Audio", report.audioCodec || (report.hasAudio ? "Present" : "Missing")],
+                    ["Size", formatBytes(report.size)],
+                    ["Bitrate", formatBitrate(report.bitrate)],
+                    ["Streams", String(report.streams?.length ?? 0)],
+                    ["Repair", report.repairMode || "Not needed"],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-xl border border-white/[0.06] bg-black/20 px-3 py-2.5"
+                    >
+                      <p className="text-[7px] font-bold uppercase tracking-wider text-zinc-700">
+                        {label}
+                      </p>
+                      <p className="mt-1 truncate text-[9px] font-medium text-zinc-300">
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {issues.length > 0 && (
+                <div className="rounded-xl border border-red-400/10 bg-red-500/[0.025] p-4">
+                  <p className="text-[8px] font-bold uppercase tracking-[0.14em] text-red-400">
+                    Detected issues
+                  </p>
+
+                  <div className="mt-2 space-y-2">
+                    {issues.map(
+                      (issue, index) => (
+                        <div
+                          key={`${issue}-${index}`}
+                          className="flex items-start gap-2"
+                        >
+                          <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-400/70" />
+                          <p className="text-[9px] leading-5 text-red-300/70">
+                            {issue}
+                          </p>
+                        </div>
+                      ),
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {outputUrl && (
+                <div className="overflow-hidden rounded-xl border border-emerald-400/10 bg-black">
+                  <div className="flex items-center gap-2 border-b border-white/[0.05] bg-emerald-500/[0.025] px-4 py-3">
+                    <Wrench className="h-3.5 w-3.5 text-emerald-400" />
+                    <div>
+                      <p className="text-[9px] font-semibold text-white">
+                        Repaired video ready
+                      </p>
+                      <p className="mt-0.5 text-[7px] text-zinc-600">
+                        {repairMode
+                          ? `Repair mode: ${repairMode}`
+                          : "Validated repaired output"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <video
+                    src={outputUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="max-h-[600px] min-h-[220px] w-full object-contain"
+                  />
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-[8px] text-zinc-700">
+                  Debugging does not use AI credits. Your original video stays unchanged.
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {needsRepair && !outputUrl && (
+                    <button
+                      type="button"
+                      onClick={() => debugVideo(true)}
+                      disabled={isBusy}
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-[9px] font-bold uppercase tracking-[0.1em] text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_10px_30px_rgba(245,158,11,0.16)] transition hover:from-amber-400 hover:to-orange-400 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Wrench className="h-3.5 w-3.5" />
+                      Repair Video
+                    </button>
+                  )}
+
+                  {outputUrl && (
+                    <a
+                      href={outputUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      download
+                      className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-white to-zinc-100 px-5 py-2.5 text-[9px] font-bold text-black shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      Download repaired
+                    </a>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => debugVideo(false)}
+                    disabled={isBusy}
+                    className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] px-5 py-2.5 text-[9px] font-bold uppercase tracking-[0.1em] text-zinc-400 transition hover:bg-white/[0.05] hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Scan again
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="mt-4 rounded-xl border border-red-400/10 bg-red-500/[0.035] p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" />
+                <div>
+                  <p className="text-[10px] font-semibold text-red-200">
+                    Video debugging failed
+                  </p>
+                  <p className="mt-1 text-[9px] leading-5 text-red-300/60">
+                    {error ||
+                      "Something went wrong while checking the video."}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => debugVideo(false)}
+                className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] px-3 py-2 text-[8px] font-bold uppercase tracking-wider text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+              >
+                <RefreshCw className="h-3 w-3" />
+                Try again
+              </button>
+            </div>
+          )}
+
+          {status === "idle" && (
+            <div className="mt-4 flex flex-col gap-3 rounded-xl border border-white/[0.06] bg-white/[0.015] p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[10px] font-semibold text-white">
+                  Ready to inspect {sourceLabel}
+                </p>
+                <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                  Scan first. LumoClip only repairs the video when a problem is detected or you explicitly request a repair.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => debugVideo(false)}
+                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-5 py-2.5 text-[9px] font-bold uppercase tracking-[0.1em] text-white shadow-[0_1px_0_rgba(255,255,255,0.25)_inset,0_10px_30px_rgba(245,158,11,0.16)] transition hover:from-amber-400 hover:to-orange-400 active:scale-[0.98]"
+              >
+                <Bug className="h-3.5 w-3.5" />
+                Scan Video
+              </button>
+            </div>
+          )}
+
+          {status === "completed" &&
+            repairedReport && (
+              <div className="mt-3 rounded-xl border border-emerald-400/10 bg-emerald-500/[0.025] p-4">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
+                  <p className="text-[9px] font-semibold text-emerald-200">
+                    Repair validation passed
+                  </p>
+                </div>
+                <p className="mt-1 text-[8px] leading-5 text-zinc-600">
+                  {formatDuration(repairedReport.duration)} output •{" "}
+                  {repairedReport.videoCodec || "video stream"} •{" "}
+                  {repairedReport.audioCodec || "audio stream"}
                 </p>
               </div>
             )}
@@ -3313,6 +4030,11 @@ export const ProjectDetailView: React.FC<
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
                 />
+
+                <VideoDebuggerPanel
+                  project={project}
+                  clips={safeClips}
+                />
               </>
             ) : isFullVideoMode ? (
               <>
@@ -3361,6 +4083,11 @@ export const ProjectDetailView: React.FC<
                   project={project}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
+                />
+
+                <VideoDebuggerPanel
+                  project={project}
+                  clips={safeClips}
                 />
               </>
             ) : (
@@ -3454,6 +4181,11 @@ export const ProjectDetailView: React.FC<
                   project={project}
                   status={speechStatus}
                   onStatusChange={setSpeechStatus}
+                />
+
+                <VideoDebuggerPanel
+                  project={project}
+                  clips={safeClips}
                 />
 
                 {!isSpeechOnlyMode && (
