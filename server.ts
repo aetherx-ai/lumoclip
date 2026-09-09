@@ -3826,8 +3826,26 @@ async function generateGeminiWithRetry(
           }
 
           if (attempt >= attempts) {
+            // Don't give up on this model just because the CURRENT key hit
+            // transient 503/429s — the outer keyLoop exists precisely to
+            // try every configured key before moving on. Rotate first;
+            // only fall through to the next model once every key has been
+            // tried for this one.
+            const rotated = rotateGeminiKey();
+
+            if (rotated) {
+              console.warn(
+                `Gemini model=${model} exhausted after ${attempts} transient attempt(s) on key #${geminiKeyIndex}. Retrying same model on key #${geminiKeyIndex + 1}.`,
+              );
+
+              // Rebuild params (e.g. re-upload the video file) under the
+              // new key, same as the quota-exceeded path above.
+              params = await buildParams();
+              continue keyLoop;
+            }
+
             console.warn(
-              `Gemini model=${model} exhausted after ${attempts} transient attempt(s).${
+              `Gemini model=${model} exhausted after ${attempts} transient attempt(s) on all configured API key(s).${
                 modelIndex < modelsToTry.length - 1
                   ? " Moving to the next fallback model."
                   : " No Gemini models remain."
