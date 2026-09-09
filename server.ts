@@ -76,8 +76,13 @@ Sitemap: https://lumo-clip.com/sitemap.xml`);
 
 const PORT = Number(process.env.PORT || 3000);
 
+const GEMINI_MODEL_RAW =
+  process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
+
 const GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-3.6-flash";
+  /^gemini-2\.0-flash$/i.test(GEMINI_MODEL_RAW)
+    ? "gemini-3.6-flash"
+    : GEMINI_MODEL_RAW;
 
 // Backend-enforced billing rules.
 // Do not trust frontend values or environment overrides for these limits.
@@ -176,13 +181,17 @@ const GEMINI_REQUEST_TIMEOUT_MS = Number(
 // Ordered strongest-first so a quota-exhausted primary model degrades
 // as gracefully as possible. flash-lite is the weakest fallback, so it
 // goes last rather than first.
+// Gemini model fallbacks. Removed retired models (notably gemini-2.0-flash).
+// Keep a defensive filter here so an old Render environment variable cannot
+// reintroduce a retired model into the retry chain.
 const GEMINI_FALLBACK_MODELS = (
   process.env.GEMINI_FALLBACK_MODELS ||
-  "gemini-2.5-flash,gemini-2.0-flash,gemini-3.1-flash-lite"
+  "gemini-2.5-flash,gemini-3.1-flash-lite"
 )
   .split(",")
   .map((m) => m.trim())
-  .filter(Boolean);
+  .filter(Boolean)
+  .filter((m) => !/^gemini-2\.0-flash$/i.test(m));
 
 // The client's clipSettings.clipModel ("ClipBasic" | "ClipPro") lets the
 // user trade quality for speed/cost. "ClipPro" uses GEMINI_MODEL (the
@@ -193,10 +202,15 @@ const GEMINI_FALLBACK_MODELS = (
 // quota/error fallback cascade in generateGeminiWithRetry(): here we're
 // just choosing which model to try FIRST, and the existing fallback list
 // still applies after it for resilience either way.
-const GEMINI_MODEL_BASIC =
+const GEMINI_MODEL_BASIC_RAW =
   process.env.GEMINI_MODEL_BASIC?.trim() ||
   GEMINI_FALLBACK_MODELS[GEMINI_FALLBACK_MODELS.length - 1] ||
   GEMINI_MODEL;
+
+const GEMINI_MODEL_BASIC =
+  /^gemini-2\.0-flash$/i.test(GEMINI_MODEL_BASIC_RAW)
+    ? "gemini-3.1-flash-lite"
+    : GEMINI_MODEL_BASIC_RAW;
 
 // Retry policy is deliberately different by failure class:
 // - Daily/model quota exhaustion (429 + quota) => never retry that model.
