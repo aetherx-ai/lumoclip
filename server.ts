@@ -186,12 +186,14 @@ const GEMINI_REQUEST_TIMEOUT_MS = Number(
 // reintroduce a retired model into the retry chain.
 const GEMINI_FALLBACK_MODELS = (
   process.env.GEMINI_FALLBACK_MODELS ||
-  "gemini-2.5-flash,gemini-3.1-flash-lite"
+  "gemini-3.1-flash-lite"
 )
   .split(",")
   .map((m) => m.trim())
   .filter(Boolean)
-  .filter((m) => !/^gemini-2\.0-flash$/i.test(m));
+  // Retired models must never enter the retry chain, even if an old
+  // Render environment variable still contains them.
+  .filter((m) => !/^(gemini-2\.0-flash|gemini-2\.5-flash)$/i.test(m));
 
 // The client's clipSettings.clipModel ("ClipBasic" | "ClipPro") lets the
 // user trade quality for speed/cost. "ClipPro" uses GEMINI_MODEL (the
@@ -1178,50 +1180,67 @@ async function rememberProcessingConfig(
 ): Promise<void> {
   processingConfigs.set(projectId, config);
 
-  const fullConfigUpdate = {
-    processing_mode: config.mode,
-    caption_style: config.captionStyle,
-    reframe_config: config.reframe,
-    speech_settings: config.speechSettings,
-    clip_settings: config.clipSettings,
-  };
+  // Persist only columns that exist in the current Supabase schema. Older
+  // LumoClip databases may not have the optional speech_settings and/or
+  // clip_settings columns yet. The processing mode itself remains durable.
+  const candidates: Array<Record<string, unknown>> = [
+    {
+      processing_mode: config.mode,
+      caption_style: config.captionStyle,
+      reframe_config: config.reframe,
+      speech_settings: config.speechSettings,
+      clip_settings: config.clipSettings,
+    },
+    {
+      processing_mode: config.mode,
+      caption_style: config.captionStyle,
+      reframe_config: config.reframe,
+      clip_settings: config.clipSettings,
+    },
+    {
+      processing_mode: config.mode,
+      caption_style: config.captionStyle,
+      reframe_config: config.reframe,
+    },
+    {
+      processing_mode: config.mode,
+      caption_style: config.captionStyle,
+    },
+    {
+      processing_mode: config.mode,
+    },
+  ];
 
-  let { error } = await supabase
-    .from("projects")
-    .update(fullConfigUpdate)
-    .eq("id", projectId);
+  let lastError: any = null;
 
-  // Older Supabase schemas may not have clip_settings yet. Retry without
-  // that optional column so the rest of the processing configuration is
-  // still durable across worker/server restarts.
-  if (error && /clip_settings.*schema cache|Could not find the 'clip_settings' column/i.test(error.message || "")) {
-    const fallback = await supabase
+  for (const update of candidates) {
+    const { error } = await supabase
       .from("projects")
-      .update({
-        processing_mode: config.mode,
-        caption_style: config.captionStyle,
-        reframe_config: config.reframe,
-        speech_settings: config.speechSettings,
-      })
+      .update(update)
       .eq("id", projectId);
 
-    error = fallback.error;
-
     if (!error) {
-      console.warn(
-        "Project processing config persisted without optional clip_settings column.",
-      );
+      if (Object.keys(update).length < 5) {
+        console.warn(
+          `Project processing config persisted with available columns only: ${Object.keys(update).join(", ")}`,
+        );
+      }
+      return;
+    }
+
+    lastError = error;
+
+    // Keep trying narrower payloads only for missing-column/schema-cache
+    // errors. Real DB/RLS errors should be surfaced immediately.
+    if (!/Could not find the '.*' column of 'projects' in the schema cache|column .* does not exist/i.test(error.message || "")) {
+      break;
     }
   }
 
-  if (error) {
-    // The in-memory config remains the fallback if the remaining columns are
-    // also unavailable or the database update is otherwise rejected.
-    console.warn(
-      "Project processing config was not persisted; using in-memory config:",
-      error.message,
-    );
-  }
+  console.warn(
+    "Project processing config was not persisted; using in-memory config:",
+    lastError?.message || "unknown error",
+  );
 }
 
 async function getProcessingConfig(
@@ -1247,23 +1266,36 @@ async function getProcessingConfig(
   );
 
   // Optional metadata columns are intentionally best-effort for backward
-  // compatibility with existing LumoClip databases.
-  let { data: metadata, error: metadataError } = await supabase
-    .from("projects")
-    .select("processing_mode, caption_style, reframe_config, speech_settings, clip_settings")
-    .eq("id", projectId)
-    .maybeSingle();
+  // compatibility with existing LumoClip databases. Try the newest schema
+  // first, then progressively remove optional columns that do not exist.
+  const metadataSelects = [
+    "processing_mode, caption_style, reframe_config, speech_settings, clip_settings",
+    "processing_mode, caption_style, reframe_config, clip_settings",
+    "processing_mode, caption_style, reframe_config",
+    "processing_mode, caption_style",
+    "processing_mode",
+  ];
 
-  // Backward-compatible read for databases that predate clip_settings.
-  if (metadataError && /clip_settings.*schema cache|Could not find the 'clip_settings' column/i.test(metadataError.message || "")) {
-    const fallback = await supabase
+  let metadata: any = null;
+  let metadataError: any = null;
+
+  for (const select of metadataSelects) {
+    const result = await supabase
       .from("projects")
-      .select("processing_mode, caption_style, reframe_config, speech_settings")
+      .select(select)
       .eq("id", projectId)
       .maybeSingle();
 
-    metadata = fallback.data as typeof metadata;
-    metadataError = fallback.error;
+    if (!result.error) {
+      metadata = result.data;
+      metadataError = null;
+      break;
+    }
+
+    metadataError = result.error;
+    if (!/Could not find the '.*' column of 'projects' in the schema cache|column .* does not exist/i.test(result.error.message || "")) {
+      break;
+    }
   }
 
   // The worker queue marker is authoritative for speech-only jobs.
