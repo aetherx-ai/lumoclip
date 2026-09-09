@@ -11094,7 +11094,9 @@ app.use(
    REACT ROUTER SPA FALLBACK
 ========================================================= */
 
-app.get("*", (req, res, next) => {
+// Express 5 (path-to-regexp v8) no longer accepts a bare "*" wildcard —
+// it now requires a named wildcard segment like "/*splat".
+app.get("/*splat", (req, res, next) => {
   // Never send index.html for API routes
   if (req.path.startsWith("/api/")) {
     return next();
