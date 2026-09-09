@@ -1441,7 +1441,7 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
-type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe" | "auto_sfx";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe" | "auto_sfx" | "video_debugger";
 
 interface SubtitleStyle {
   enabled: boolean;
@@ -6742,6 +6742,9 @@ async function processVideo(
   clipSettings: ClipSettings = normalizeClipSettings(undefined),
 ) {
   const mode = normalizeProcessingMode(processingMode);
+  if (mode === "video_debugger") {
+    throw new Error("Video Debugger uses the dedicated debug-video endpoint and must not enter the AI processing pipeline.");
+  }
   const safeCaptionStyle = normalizeCaptionStyle(captionStyle);
   const normalizedReframeConfig = normalizeReframeConfig(reframeConfig);
   const safeClipSettings = normalizeClipSettings(clipSettings);
@@ -7560,7 +7563,8 @@ async function processPodcastImport(
     const needsVideo =
       requestedConfig.mode === "clips" ||
       requestedConfig.mode === "full_video_caption" ||
-      requestedConfig.mode === "reframe";
+      requestedConfig.mode === "reframe" ||
+      requestedConfig.mode === "video_debugger";
 
     if (needsVideo && !hasVideo) {
       throw new Error(
@@ -7590,6 +7594,29 @@ async function processPodcastImport(
     });
 
     throw error instanceof Error ? error : new Error(message);
+  }
+
+  if (requestedConfig.mode === "video_debugger") {
+    const projectDir = path.join(mediaDir, safeSegment(projectId));
+    fs.mkdirSync(projectDir, { recursive: true });
+    const extension = extensionForMime(mimeType) || "mp4";
+    const sourceName = `source.${extension}`;
+    const sourcePath = path.join(projectDir, sourceName);
+    fs.copyFileSync(downloadedPath, sourcePath);
+    try { fs.unlinkSync(downloadedPath); } catch {}
+    const sourceMediaUrl = publicMediaUrl(projectId, sourceName);
+    await supabase.from("projects").update({
+      source_media_url: sourceMediaUrl,
+      progress: 10,
+      current_step: "Video ready for debugging",
+      status: "processing",
+    }).eq("id", projectId).eq("user_id", userId);
+    await supabase.from("usage_logs").insert({
+      user_id: userId,
+      action: `Video Debugger: ${projectId}`,
+      credits_used: 0,
+    });
+    return;
   }
 
   await processVideo(
@@ -7694,6 +7721,7 @@ async function createProjectAndCharge(
   name: string,
   sourceType: string,
   sourceUrl: string,
+  chargeCost: number = VIDEO_COST,
 ) {
   // Get profile only for the response/UI metadata.
   // Credit enforcement is performed atomically in Supabase.
@@ -7702,22 +7730,25 @@ async function createProjectAndCharge(
 
   // =========================================================
   // ATOMIC CREDIT CHARGE
-  // 10 credits / video
-  // 150 credits / Dhaka day
-  // concurrency-safe
+  // Normal processing costs VIDEO_COST. Video Debugger is free and
+  // passes chargeCost=0, so no credit RPC is executed for that mode.
   // =========================================================
 
-  const {
-    data: chargeResult,
-    error: chargeError,
-  } = await supabase.rpc(
-    "charge_video_credits",
-    {
-      p_user_id: userId,
-      p_cost: VIDEO_COST,
-      p_daily_limit: DAILY_CREDIT_LIMIT,
-    },
-  );
+  let chargeResult: any = { credits: profile.credits };
+  let chargeError: any = null;
+
+  if (chargeCost > 0) {
+    const result = await supabase.rpc(
+      "charge_video_credits",
+      {
+        p_user_id: userId,
+        p_cost: chargeCost,
+        p_daily_limit: DAILY_CREDIT_LIMIT,
+      },
+    );
+    chargeResult = result.data;
+    chargeError = result.error;
+  }
 
   if (chargeError) {
     console.error(
@@ -7736,7 +7767,7 @@ async function createProjectAndCharge(
     ) {
       const error: any =
         new Error(
-          `You need ${VIDEO_COST} credits.`,
+          `You need ${chargeCost} credits.`,
         );
 
       error.statusCode = 402;
@@ -7799,15 +7830,17 @@ async function createProjectAndCharge(
       projectError,
     );
 
-    try {
-      await refundCreditsDirect(
-        userId,
-      );
-    } catch (refundError) {
-      console.error(
-        "Automatic project-creation refund failed:",
-        refundError,
-      );
+    if (chargeCost > 0) {
+      try {
+        await refundCreditsDirect(
+          userId,
+        );
+      } catch (refundError) {
+        console.error(
+          "Automatic project-creation refund failed:",
+          refundError,
+        );
+      }
     }
 
     throw new Error(
@@ -7832,7 +7865,7 @@ async function createProjectAndCharge(
             ? "YouTube"
             : "Project"
         } Repurpose: ${name}`,
-      credits_used: VIDEO_COST,
+      credits_used: chargeCost,
     });
 
   if (usageError) {
@@ -7861,7 +7894,7 @@ async function createProjectAndCharge(
       metadata: {
         sourceType,
         creditsCharged:
-          VIDEO_COST,
+          chargeCost,
       },
     });
   } catch (notificationError) {
@@ -7875,7 +7908,7 @@ async function createProjectAndCharge(
     profile,
     project,
     newCredits,
-    creditsCharged: VIDEO_COST,
+    creditsCharged: chargeCost,
     dailyLimit: DAILY_CREDIT_LIMIT,
   };
 }
@@ -9086,6 +9119,7 @@ app.post(
           projectName,
           "upload",
           "",
+          requestedConfig.mode === "video_debugger" ? 0 : VIDEO_COST,
         );
 
       projectId =
@@ -9163,32 +9197,45 @@ app.post(
           projectId,
         );
 
-      void processVideo(
-        projectId,
-        user.id,
-        sourcePath,
-        req.file.mimetype,
-        undefined,
-        requestedConfig.mode,
-        requestedConfig.captionStyle,
-        requestedConfig.reframe,
-        requestedConfig.speechSettings,
-        requestedConfig.clipSettings,
-      ).catch(
-        async (
-          error,
-        ) => {
-          console.error(
-            "Upload background processing failed:",
+      if (requestedConfig.mode !== "video_debugger") {
+        void processVideo(
+          projectId,
+          user.id,
+          sourcePath,
+          req.file.mimetype,
+          undefined,
+          requestedConfig.mode,
+          requestedConfig.captionStyle,
+          requestedConfig.reframe,
+          requestedConfig.speechSettings,
+          requestedConfig.clipSettings,
+        ).catch(
+          async (
             error,
-          );
+          ) => {
+            console.error(
+              "Upload background processing failed:",
+              error,
+            );
 
-          await refundCredits(
-            user.id,
-            projectId,
-          );
-        },
-      );
+            await refundCredits(
+              user.id,
+              projectId,
+            );
+          },
+        );
+      } else {
+        await supabase.from("projects").update({
+          current_step: "Video ready for debugging",
+          progress: 10,
+          status: "processing",
+        }).eq("id", projectId).eq("user_id", user.id);
+        await supabase.from("usage_logs").insert({
+          user_id: user.id,
+          action: `Video Debugger: ${projectName}`,
+          credits_used: 0,
+        });
+      }
 
       res.json({
         success:
@@ -9226,7 +9273,9 @@ app.post(
         },
 
         message:
-          "Video processing started.",
+          requestedConfig.mode === "video_debugger"
+            ? "Video uploaded. Starting Video Debugger scan."
+            : "Video processing started.",
       });
     } catch (error: any) {
       console.error(
@@ -9365,10 +9414,11 @@ app.post(
             projectName,
             "podcast",
             sourceUrl,
+            requestedConfig.mode === "video_debugger" ? 0 : VIDEO_COST,
           );
 
         projectId = project.id;
-        creditsCharged = true;
+        creditsCharged = requestedConfig.mode !== "video_debugger";
 
         await rememberProcessingConfig(projectId, requestedConfig);
 
@@ -9382,7 +9432,9 @@ app.post(
           requestedConfig,
         ).catch(async (error) => {
           console.error("Podcast import background processing failed:", error);
-          await refundCredits(user.id, projectId);
+          if (requestedConfig.mode !== "video_debugger") {
+            await refundCredits(user.id, projectId);
+          }
         });
 
         return res.json({
@@ -9428,14 +9480,16 @@ app.post(
         );
 
       projectId = project.id;
-      creditsCharged = true;
+      creditsCharged = requestedConfig.mode !== "video_debugger";
 
       await rememberProcessingConfig(
         projectId,
         requestedConfig,
       );
 
-      const waitingMessage = requestedConfig.mode === "speech_only"
+      const waitingMessage = requestedConfig.mode === "video_debugger"
+        ? "Waiting for LumoClip worker (video debugger)"
+        : requestedConfig.mode === "speech_only"
         ? (WORKER_ENABLED
           ? "Waiting for LumoClip worker (speech enhancement source)"
           : "Worker is not configured. Please start/configure the LumoClip PC worker.")
@@ -9565,6 +9619,7 @@ app.post("/api/worker/claim", async (req, res) => {
         .in("current_step", [
           "Waiting for LumoClip worker",
           "Waiting for LumoClip worker (speech enhancement source)",
+          "Waiting for LumoClip worker (video debugger)",
         ])
         .not("source_url", "is", null)
         .order("created_at", { ascending: true })
@@ -9577,12 +9632,15 @@ app.post("/api/worker/claim", async (req, res) => {
       return res.json({ success: true, job: null });
     }
 
+    const queuedStep = String(queuedProject.current_step || "");
     const claimUpdate: Record<string, unknown> = {
       status: "worker_downloading",
       progress: 8,
-      current_step: String(queuedProject.current_step || "").includes("speech enhancement source")
-        ? "Worker is downloading YouTube video (speech enhancement source)"
-        : "Worker is downloading YouTube video",
+      current_step: queuedStep.includes("video debugger")
+        ? "Worker is downloading YouTube video (video debugger)"
+        : queuedStep.includes("speech enhancement source")
+          ? "Worker is downloading YouTube video (speech enhancement source)"
+          : "Worker is downloading YouTube video",
     };
 
     // Auto SFX projects can be claimed while still in the YouTube-download
@@ -9603,6 +9661,7 @@ app.post("/api/worker/claim", async (req, res) => {
         .in("current_step", [
           "Waiting for LumoClip worker",
           "Waiting for LumoClip worker (speech enhancement source)",
+          "Waiting for LumoClip worker (video debugger)",
         ])
         .select("id, user_id, name, source_type, source_url, status")
         .maybeSingle();
@@ -9664,6 +9723,7 @@ app.post(
           .in("current_step", [
           "Worker is downloading YouTube video",
           "Worker is downloading YouTube video (speech enhancement source)",
+          "Worker is downloading YouTube video (video debugger)",
         ])
           .maybeSingle();
 
@@ -9690,24 +9750,24 @@ app.post(
       // Read the queue marker BEFORE replacing current_step. This is a
       // durable signal that survives worker/server restarts even if the
       // optional processing_mode column is stale or unavailable.
-      const isSpeechOnlyJob =
-        String((project as any).current_step || "").includes(
-          "speech enhancement source",
-        );
+      const workerStep = String((project as any).current_step || "");
+      const isSpeechOnlyJob = workerStep.includes("speech enhancement source");
+      const isVideoDebuggerJob = workerStep.includes("video debugger");
 
       const processingConfig = await getProcessingConfig(projectId);
 
       const effectiveProcessingConfig: ProcessingConfig =
         isSpeechOnlyJob
-          ? {
-              ...processingConfig,
-              mode: "speech_only",
-            }
-          : processingConfig;
+          ? { ...processingConfig, mode: "speech_only" }
+          : isVideoDebuggerJob
+            ? { ...processingConfig, mode: "video_debugger" }
+            : processingConfig;
 
       const downloadedStep = isSpeechOnlyJob
         ? "YouTube video downloaded (speech enhancement source)"
-        : "YouTube video downloaded";
+        : isVideoDebuggerJob
+          ? "YouTube video downloaded (video debugger)"
+          : "YouTube video downloaded";
 
       const { error: updateError } = await supabase
         .from("projects")
@@ -9724,21 +9784,34 @@ app.post(
 
       if (updateError) throw updateError;
 
-      void processVideo(
-        projectId,
-        project.user_id,
-        sourcePath,
-        "video/mp4",
-        project.source_url || undefined,
-        effectiveProcessingConfig.mode,
-        effectiveProcessingConfig.captionStyle,
-        effectiveProcessingConfig.reframe,
-        effectiveProcessingConfig.speechSettings,
-        effectiveProcessingConfig.clipSettings,
-      ).catch(async (error) => {
-        console.error(`Worker-upload processing failed for project ${projectId}:`, error);
-        await refundCredits(project.user_id, projectId);
-      });
+      if (effectiveProcessingConfig.mode !== "video_debugger") {
+        void processVideo(
+          projectId,
+          project.user_id,
+          sourcePath,
+          "video/mp4",
+          project.source_url || undefined,
+          effectiveProcessingConfig.mode,
+          effectiveProcessingConfig.captionStyle,
+          effectiveProcessingConfig.reframe,
+          effectiveProcessingConfig.speechSettings,
+          effectiveProcessingConfig.clipSettings,
+        ).catch(async (error) => {
+          console.error(`Worker-upload processing failed for project ${projectId}:`, error);
+          await refundCredits(project.user_id, projectId);
+        });
+      } else {
+        await supabase.from("projects").update({
+          current_step: "Video ready for debugging",
+          progress: 10,
+          status: "processing",
+        }).eq("id", projectId);
+        await supabase.from("usage_logs").insert({
+          user_id: project.user_id,
+          action: `Video Debugger: ${projectId}`,
+          credits_used: 0,
+        });
+      }
 
       return res.json({
         success: true,

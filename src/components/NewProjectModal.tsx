@@ -10,6 +10,7 @@ import {
   AlertCircle,
   ArrowRight,
   Captions,
+  Bug,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -102,6 +103,12 @@ interface ApiResponse {
   success?: boolean;
   error?: string;
   message?: string;
+  report?: {
+    issues?: unknown[];
+    repairRecommended?: boolean;
+    healthy?: boolean;
+    [key: string]: unknown;
+  };
   [key: string]: unknown;
 }
 
@@ -127,7 +134,8 @@ type ProcessingMode =
   | "full_video_caption"
   | "reframe"
   | "speech_only"
-  | "auto_sfx";
+  | "auto_sfx"
+  | "video_debugger";
 
 interface ReframeConfig {
   enabled: boolean;
@@ -1553,6 +1561,14 @@ const OutputModePicker: React.FC<{
       badge: "NEW",
       accent: "rgba(168,85,247,0.25)",
     },
+    {
+      value: "video_debugger",
+      icon: <Bug className="h-4.5 w-4.5" />,
+      title: "Video Debugger",
+      description: "Scan your video for codec, stream, timestamp, audio, and playback issues",
+      badge: "FREE",
+      accent: "rgba(16,185,129,0.25)",
+    },
   ];
 
   const visibleOptions = lockedMode
@@ -2126,6 +2142,9 @@ export const NewProjectModal: React.FC<
   const isAutoSfxMode =
     processingMode === "auto_sfx";
 
+  const isVideoDebuggerMode =
+    processingMode === "video_debugger";
+
   // Full-video mode has no purpose without captions, so force them on
   // (and keep the toggle locked) whenever this mode is selected.
   useEffect(() => {
@@ -2185,6 +2204,7 @@ export const NewProjectModal: React.FC<
 
   const insufficientCredits =
     intent !== "enhance-speech" &&
+    processingMode !== "video_debugger" &&
     credits < MIN_CREDITS;
 
   const youtubeValid =
@@ -2590,6 +2610,7 @@ export const NewProjectModal: React.FC<
       // below — only paid modes (clips / full video / reframe) require it.
       if (
         intent !== "enhance-speech" &&
+        !isVideoDebuggerMode &&
         credits < MIN_CREDITS
       ) {
         setError(
@@ -2800,6 +2821,124 @@ export const NewProjectModal: React.FC<
         }
 
         /* =================================================
+           VIDEO DEBUGGER
+
+           Debugger creation is deliberately separate from the normal
+           AI pipeline. The backend creates the project/source for free;
+           this client waits for a YouTube/Podcast source to arrive,
+           performs a diagnostic scan, and repairs only when needed.
+        ================================================= */
+
+        if (effectiveProcessingMode === "video_debugger") {
+          const projectId = String(
+            (data as any)?.project?.id || (data as any)?.projectId || "",
+          );
+
+          if (!projectId) {
+            throw new Error("Video Debugger could not create the project.");
+          }
+
+          const authToken = session.access_token;
+          let sourceReadyOnServer = sourceType === "file";
+
+          if (!sourceReadyOnServer) {
+            const maxWaitMs = 5 * 60 * 1000;
+            const startedAt = Date.now();
+
+            while (!sourceReadyOnServer && Date.now() - startedAt < maxWaitMs) {
+              setUploadState({
+                progress: Math.min(35, 10 + Math.round(((Date.now() - startedAt) / maxWaitMs) * 25)),
+                stage: "processing",
+                message: "Waiting for source video…",
+              });
+
+              const projectResponse = await fetch(`/api/projects/${projectId}`, {
+                headers: { Authorization: `Bearer ${authToken}` },
+              });
+              const projectData = await parseResponse(projectResponse);
+
+              if (!projectResponse.ok) {
+                throw new Error(projectData?.error || "Could not check the debugger project.");
+              }
+
+              const project: any = (projectData as any)?.project || projectData;
+              if (project?.source_media_url) {
+                sourceReadyOnServer = true;
+                break;
+              }
+              if (String(project?.status || "").toLowerCase() === "failed") {
+                throw new Error(project?.current_step || "The source video could not be prepared.");
+              }
+
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+          }
+
+          if (!sourceReadyOnServer) {
+            throw new Error("The source video is taking too long to become available. Please open the project and try Video Debugger again.");
+          }
+
+          setUploadState({
+            progress: 45,
+            stage: "processing",
+            message: "Scanning video health…",
+          });
+
+          const scanResponse = await fetch(`/api/projects/${projectId}/debug-video`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({ inputType: "source", repair: false }),
+          });
+          const scanData = await parseResponse(scanResponse);
+
+          if (!scanResponse.ok) {
+            throw new Error(scanData?.error || "Video health scan failed.");
+          }
+
+          const report = scanData?.report || {};
+          const issues = Array.isArray(report?.issues) ? report.issues : [];
+
+          if (report?.repairRecommended || issues.length > 0 || report?.healthy === false) {
+            setUploadState({
+              progress: 70,
+              stage: "processing",
+              message: "Issues found. Repairing video…",
+            });
+
+            const repairResponse = await fetch(`/api/projects/${projectId}/debug-video`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify({ inputType: "source", repair: true }),
+            });
+            const repairData = await parseResponse(repairResponse);
+
+            if (!repairResponse.ok) {
+              throw new Error(repairData?.error || "Video repair failed.");
+            }
+
+            data = { ...(data || {}), videoDebug: repairData };
+            setUploadState({
+              progress: 100,
+              stage: "complete",
+              message: "Video repaired successfully",
+            });
+          } else {
+            data = { ...(data || {}), videoDebug: scanData };
+            setUploadState({
+              progress: 100,
+              stage: "complete",
+              message: "Video scan complete — no repair needed",
+            });
+          }
+        }
+
+        /* =================================================
            SUCCESS
         ================================================= */
 
@@ -2919,7 +3058,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[10px]
@@ -2944,13 +3083,13 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || processingMode === "clips") ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : intent === "enhance-speech" ? "Enhance speech" : "AI Reframe"}</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : "Let AI automatically reframe your content to fit any social platform."}</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : intent === "enhance-speech" ? "Enhance speech" : "AI Reframe"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : "Let AI automatically reframe your content to fit any social platform."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
@@ -3177,7 +3316,39 @@ export const NewProjectModal: React.FC<
                           <button type="button" onClick={handleBackToSource} disabled={loading} aria-label="Back to source" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white disabled:opacity-40"><ChevronLeft className="h-4 w-4" /></button>
                           <span className="text-[8px] font-medium text-zinc-600">Step 2 of 2</span>
                         </div>
-                        {isAutoSfxMode ? (
+                        {isVideoDebuggerMode ? (
+                          <div className="space-y-4">
+                            <div className="flex justify-center">
+                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                                {selectedFile ? (
+                                  <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                                ) : getYouTubeVideoId(youtubeUrl) ? (
+                                  <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-emerald-950/70 to-zinc-950"><Bug className="h-9 w-9 text-emerald-400" /></div>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/85 to-transparent" />
+                                <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
+                                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/20 backdrop-blur"><Bug className="h-3.5 w-3.5 text-emerald-300" /></div>
+                                  <div><p className="text-[8px] font-bold text-white">Video health scan</p><p className="text-[7px] text-zinc-400">Inspect → diagnose → repair</p></div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-[18px] border border-emerald-500/15 bg-emerald-500/[0.045] p-4">
+                              <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10"><ShieldCheck className="h-4 w-4 text-emerald-300" /></div>
+                                <div className="min-w-0 flex-1"><p className="text-[10px] font-bold text-white">Check before you edit</p><p className="mt-1 text-[8px] leading-4 text-zinc-500">LumoClip can detect missing audio/video streams, unsupported codecs, timestamp problems, broken containers, and other playback risks. Repair keeps your original source unchanged.</p></div>
+                              </div>
+                              <div className="mt-4 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+                                {['Codec','Audio','Timestamps','Container'].map((item) => <span key={item} className="rounded-lg border border-white/[0.06] bg-black/20 px-2 py-2 text-center text-[7px] font-bold text-zinc-500">{item}</span>)}
+                              </div>
+                              <div className="mt-3 flex items-center gap-2 rounded-xl border border-white/[0.05] bg-black/20 px-3 py-2.5">
+                                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                                <p className="text-[7px] leading-4 text-zinc-500"><span className="font-bold text-zinc-300">0 AI credits.</span> Video Debugger is a diagnostic/repair tool, not an AI generation job.</p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : isAutoSfxMode ? (
                           <div className="space-y-4">
                             <div className="flex justify-center">
                               <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
@@ -3333,16 +3504,16 @@ export const NewProjectModal: React.FC<
 
         <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
           <div className="flex items-center justify-between gap-3">
-            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode) ? (
+            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isAutoSfxMode ? "Adding Auto SFX..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isAutoSfxMode ? "Add Auto SFX in 1 click" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isAutoSfxMode ? "Adding Auto SFX..." : isVideoDebuggerMode ? "Scanning video..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isAutoSfxMode ? "Add Auto SFX in 1 click" : isVideoDebuggerMode ? "Scan video" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
               <>
                 <div className="hidden items-center gap-2 sm:flex"><div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/[0.025]"><ShieldCheck className="h-3 w-3 text-zinc-600" /></div><div><p className="text-[8px] font-medium text-zinc-600">Secure processing</p><p className="text-[7px] text-zinc-800">Powered by LumoClip AI</p></div></div>
-                <div className="ml-auto flex items-center gap-2"><button type="button" onClick={wizardStep === 2 ? handleBackToSource : handleClose} disabled={loading} className="rounded-xl border border-transparent px-4 py-2.5 text-[9px] font-bold text-zinc-500 transition hover:border-white/[0.06] hover:bg-white/[0.04] hover:text-white disabled:opacity-40">{wizardStep === 2 ? "Back" : "Cancel"}</button><button type="button" onClick={() => wizardStep === 1 ? handleContinueToSettings() : void handleSubmit()} disabled={wizardStep === 1 ? loading : !canSubmit} className="group relative inline-flex min-w-[190px] items-center justify-center gap-2 overflow-hidden rounded-[14px] border border-violet-400/20 bg-gradient-to-r from-violet-600 via-violet-600 to-indigo-600 px-5 py-3 text-[9px] font-bold text-white shadow-[0_10px_35px_rgba(124,58,237,0.25)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-35"><span className="relative flex items-center justify-center gap-2">{loading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="truncate">{uploadState.message || "Starting AI..."}</span></> : wizardStep === 1 ? <><span>Continue</span><ArrowRight className="h-3.5 w-3.5" /></> : insufficientCredits ? <><Zap className="h-3.5 w-3.5" /><span>Not enough credits</span></> : <><Sparkles className="h-3.5 w-3.5" /><span>{processingMode === "reframe" ? "Create AI Reframe" : processingMode === "full_video_caption" ? "Create full video" : processingMode === "auto_sfx" ? "Create Auto SFX" : "Create my clips"}</span><ArrowRight className="h-3.5 w-3.5" /></>}</span></button></div>
+                <div className="ml-auto flex items-center gap-2"><button type="button" onClick={wizardStep === 2 ? handleBackToSource : handleClose} disabled={loading} className="rounded-xl border border-transparent px-4 py-2.5 text-[9px] font-bold text-zinc-500 transition hover:border-white/[0.06] hover:bg-white/[0.04] hover:text-white disabled:opacity-40">{wizardStep === 2 ? "Back" : "Cancel"}</button><button type="button" onClick={() => wizardStep === 1 ? handleContinueToSettings() : void handleSubmit()} disabled={wizardStep === 1 ? loading : !canSubmit} className="group relative inline-flex min-w-[190px] items-center justify-center gap-2 overflow-hidden rounded-[14px] border border-violet-400/20 bg-gradient-to-r from-violet-600 via-violet-600 to-indigo-600 px-5 py-3 text-[9px] font-bold text-white shadow-[0_10px_35px_rgba(124,58,237,0.25)] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-35"><span className="relative flex items-center justify-center gap-2">{loading ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /><span className="truncate">{uploadState.message || "Starting AI..."}</span></> : wizardStep === 1 ? <><span>Continue</span><ArrowRight className="h-3.5 w-3.5" /></> : insufficientCredits ? <><Zap className="h-3.5 w-3.5" /><span>Not enough credits</span></> : <><Sparkles className="h-3.5 w-3.5" /><span>{processingMode === "reframe" ? "Create AI Reframe" : processingMode === "full_video_caption" ? "Create full video" : processingMode === "auto_sfx" ? "Create Auto SFX" : processingMode === "video_debugger" ? "Scan Video" : "Create my clips"}</span><ArrowRight className="h-3.5 w-3.5" /></>}</span></button></div>
               </>
             )}
           </div>
