@@ -73,41 +73,18 @@
 
     <!-- =====================================================
          FAVICON
-         Uses the new LumoClip icon
+         Uses the new LumoClip icon.
+
+         A single "icon" link (no fixed "sizes") lets the browser
+         scale one raster image for every context it needs, instead
+         of fetching the same file five separate times for five
+         declared sizes. Only apple-touch-icon needs its own entry
+         since iOS ignores the generic <link rel="icon">.
     ====================================================== -->
 
     <link
       rel="icon"
       type="image/png"
-      sizes="512x512"
-      href="/lumoclip-icon.png"
-    />
-
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="192x192"
-      href="/lumoclip-icon.png"
-    />
-
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="48x48"
-      href="/lumoclip-icon.png"
-    />
-
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="32x32"
-      href="/lumoclip-icon.png"
-    />
-
-    <link
-      rel="icon"
-      type="image/png"
-      sizes="16x16"
       href="/lumoclip-icon.png"
     />
 
