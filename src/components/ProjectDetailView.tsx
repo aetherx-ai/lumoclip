@@ -3520,6 +3520,9 @@ export const ProjectDetailView: React.FC<
   const isSpeechOnlyMode =
     isSpeechOnlyProject(project);
 
+  const isVideoDebuggerMode =
+    getProcessingMode(project) === "video_debugger";
+
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
@@ -3785,7 +3788,8 @@ export const ProjectDetailView: React.FC<
 
             {!isFullVideoMode &&
               !isReframeMode &&
-              !isSpeechOnlyMode && (
+              !isSpeechOnlyMode &&
+              !isVideoDebuggerMode && (
               <>
                 <div className="mt-5">
                   <PremiumStats
@@ -3875,6 +3879,7 @@ export const ProjectDetailView: React.FC<
             </div>
 
             {!isFullVideoMode &&
+              !isVideoDebuggerMode &&
               safeClips.length > 0 && (
                 <ClipsSection
                   clips={safeClips}
@@ -3982,7 +3987,18 @@ export const ProjectDetailView: React.FC<
               )}
             </div>
 
-            {isReframeMode ? (
+            {isVideoDebuggerMode ? (
+              <>
+                <div className="grid gap-5 xl:grid-cols-12">
+                  <div className="xl:col-span-12 min-w-0">
+                    <VideoDebuggerPanel
+                      project={project}
+                      clips={safeClips}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : isReframeMode ? (
               <>
                 <div className="grid gap-5 xl:grid-cols-12">
                   <div
@@ -4031,10 +4047,6 @@ export const ProjectDetailView: React.FC<
                   onStatusChange={setSpeechStatus}
                 />
 
-                <VideoDebuggerPanel
-                  project={project}
-                  clips={safeClips}
-                />
               </>
             ) : isFullVideoMode ? (
               <>
@@ -4085,10 +4097,6 @@ export const ProjectDetailView: React.FC<
                   onStatusChange={setSpeechStatus}
                 />
 
-                <VideoDebuggerPanel
-                  project={project}
-                  clips={safeClips}
-                />
               </>
             ) : (
               <>
@@ -4183,12 +4191,9 @@ export const ProjectDetailView: React.FC<
                   onStatusChange={setSpeechStatus}
                 />
 
-                <VideoDebuggerPanel
-                  project={project}
-                  clips={safeClips}
-                />
 
-                {!isSpeechOnlyMode && (
+                {!isSpeechOnlyMode &&
+                  !isVideoDebuggerMode && (
                   <ClipsSection
                     clips={safeClips}
                     onPublish={(clip) =>
@@ -4232,7 +4237,8 @@ export const ProjectDetailView: React.FC<
 
               {!isFullVideoMode &&
                 !isReframeMode &&
-                !isSpeechOnlyMode && (
+                !isSpeechOnlyMode &&
+                !isVideoDebuggerMode && (
                 <>
                   <div className="mt-5">
                     <PremiumStats
