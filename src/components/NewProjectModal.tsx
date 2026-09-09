@@ -2831,111 +2831,199 @@ export const NewProjectModal: React.FC<
 
         if (effectiveProcessingMode === "video_debugger") {
           const projectId = String(
-            (data as any)?.project?.id || (data as any)?.projectId || "",
+            (data as any)?.project?.id ||
+              (data as any)?.projectId ||
+              "",
           );
 
           if (!projectId) {
-            throw new Error("Video Debugger could not create the project.");
+            throw new Error(
+              "Video Debugger could not create the project.",
+            );
           }
 
           const authToken = session.access_token;
           let sourceReadyOnServer = sourceType === "file";
 
+          // YouTube/Podcast sources are downloaded asynchronously by the
+          // backend/worker. Wait until source_media_url exists before asking
+          // FFprobe to inspect the file.
           if (!sourceReadyOnServer) {
             const maxWaitMs = 5 * 60 * 1000;
             const startedAt = Date.now();
 
-            while (!sourceReadyOnServer && Date.now() - startedAt < maxWaitMs) {
+            while (
+              !sourceReadyOnServer &&
+              Date.now() - startedAt < maxWaitMs
+            ) {
+              const elapsed = Date.now() - startedAt;
+
               setUploadState({
-                progress: Math.min(35, 10 + Math.round(((Date.now() - startedAt) / maxWaitMs) * 25)),
+                progress: Math.min(35, 10 + Math.round((elapsed / maxWaitMs) * 25)),
                 stage: "processing",
                 message: "Waiting for source video…",
               });
 
-              const projectResponse = await fetch(`/api/projects/${projectId}`, {
-                headers: { Authorization: `Bearer ${authToken}` },
-              });
-              const projectData = await parseResponse(projectResponse);
+              const projectResponse = await fetch(
+                `/api/projects/${projectId}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${authToken}`,
+                  },
+                },
+              );
+
+              const projectData = await parseResponse(
+                projectResponse,
+              );
 
               if (!projectResponse.ok) {
-                throw new Error(projectData?.error || "Could not check the debugger project.");
+                throw new Error(
+                  projectData?.error ||
+                    projectData?.message ||
+                    "Could not check the debugger project.",
+                );
               }
 
-              const project: any = (projectData as any)?.project || projectData;
+              const project: any =
+                (projectData as any)?.project ||
+                projectData;
+
               if (project?.source_media_url) {
                 sourceReadyOnServer = true;
                 break;
               }
-              if (String(project?.status || "").toLowerCase() === "failed") {
-                throw new Error(project?.current_step || "The source video could not be prepared.");
+
+              if (
+                String(project?.status || "").toLowerCase() ===
+                "failed"
+              ) {
+                throw new Error(
+                  project?.current_step ||
+                    "The source video could not be prepared.",
+                );
               }
 
-              await new Promise((resolve) => setTimeout(resolve, 5000));
+              await new Promise((resolve) =>
+                setTimeout(resolve, 5000),
+              );
             }
           }
 
           if (!sourceReadyOnServer) {
-            throw new Error("The source video is taking too long to become available. Please open the project and try Video Debugger again.");
+            throw new Error(
+              "The source video is taking too long to become available. Please open the project and try Video Debugger again.",
+            );
           }
 
+          // -------------------------------------------------------
+          // STEP 1 — Diagnostic scan (read-only)
+          // -------------------------------------------------------
           setUploadState({
             progress: 45,
             stage: "processing",
             message: "Scanning video health…",
           });
 
-          const scanResponse = await fetch(`/api/projects/${projectId}/debug-video`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${authToken}`,
-            },
-            body: JSON.stringify({ inputType: "source", repair: false }),
-          });
-          const scanData = await parseResponse(scanResponse);
-
-          if (!scanResponse.ok) {
-            throw new Error(scanData?.error || "Video health scan failed.");
-          }
-
-          const report = scanData?.report || {};
-          const issues = Array.isArray(report?.issues) ? report.issues : [];
-
-          if (report?.repairRecommended || issues.length > 0 || report?.healthy === false) {
-            setUploadState({
-              progress: 70,
-              stage: "processing",
-              message: "Issues found. Repairing video…",
-            });
-
-            const repairResponse = await fetch(`/api/projects/${projectId}/debug-video`, {
+          const scanResponse = await fetch(
+            `/api/projects/${projectId}/debug-video`,
+            {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${authToken}`,
               },
-              body: JSON.stringify({ inputType: "source", repair: true }),
-            });
-            const repairData = await parseResponse(repairResponse);
+              body: JSON.stringify({
+                inputType: "source",
+                repair: false,
+              }),
+            },
+          );
 
-            if (!repairResponse.ok) {
-              throw new Error(repairData?.error || "Video repair failed.");
-            }
+          const scanData = await parseResponse(
+            scanResponse,
+          );
 
-            data = { ...(data || {}), videoDebug: repairData };
-            setUploadState({
-              progress: 100,
-              stage: "complete",
-              message: "Video repaired successfully",
-            });
-          } else {
-            data = { ...(data || {}), videoDebug: scanData };
-            setUploadState({
-              progress: 100,
-              stage: "complete",
-              message: "Video scan complete — no repair needed",
-            });
+          if (!scanResponse.ok) {
+            throw new Error(
+              scanData?.error ||
+                scanData?.message ||
+                "Video health scan failed.",
+            );
           }
+
+          const scanReport = scanData?.report || {};
+          const scanIssues = Array.isArray(
+            scanReport?.issues,
+          )
+            ? scanReport.issues
+            : [];
+
+          // -------------------------------------------------------
+          // STEP 2 — ALWAYS normalize/repair
+          //
+          // A healthy file can still have a container/timestamp/codec
+          // combination that behaves badly in browsers/editors. The
+          // backend therefore creates a verified MP4 even when the scan
+          // says there are no issues. Remux is the fast path; H.264/AAC
+          // transcode is the fallback.
+          // -------------------------------------------------------
+          const hasDetectedIssues =
+            scanReport?.repairRecommended === true ||
+            scanReport?.healthy === false ||
+            scanIssues.length > 0;
+
+          setUploadState({
+            progress: 65,
+            stage: "processing",
+            message: hasDetectedIssues
+              ? "Issues found. Repairing video…"
+              : "Video looks healthy. Optimizing compatibility…",
+          });
+
+          const repairResponse = await fetch(
+            `/api/projects/${projectId}/debug-video`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${authToken}`,
+              },
+              body: JSON.stringify({
+                inputType: "source",
+                repair: true,
+              }),
+            },
+          );
+
+          const repairData = await parseResponse(
+            repairResponse,
+          );
+
+          if (!repairResponse.ok) {
+            throw new Error(
+              repairData?.error ||
+                repairData?.message ||
+                "Video repair failed.",
+            );
+          }
+
+          data = {
+            ...(data || {}),
+            videoDebug: {
+              ...repairData,
+              scan: scanData,
+            },
+          };
+
+          setUploadState({
+            progress: 100,
+            stage: "complete",
+            message:
+              repairData?.repairMode === "transcode"
+                ? "Video repaired and converted to MP4"
+                : "Video repaired and verified successfully",
+          });
         }
 
         /* =================================================

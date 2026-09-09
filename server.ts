@@ -8683,24 +8683,69 @@ function resolveClipPathFromUrl(projectId: string, videoUrl: string): string {
 }
 
 function resolveProjectSourcePath(projectId: string): string {
-  const projectDir = path.resolve(mediaDir, safeSegment(projectId));
-  if (!fs.existsSync(projectDir)) {
-    throw new Error("Project source video is not available on the server.");
+  const projectDir = path.resolve(
+    mediaDir,
+    safeSegment(projectId),
+  );
+
+  if (
+    !fs.existsSync(projectDir) ||
+    !fs.statSync(projectDir).isDirectory()
+  ) {
+    throw new Error(
+      "Project source video is not available on the server.",
+    );
   }
 
-  const sourcePath = fs.readdirSync(projectDir, { withFileTypes: true })
+  // Always prefer the original source file. This prevents the debugger from
+  // accidentally selecting a generated clip/reframe/caption file when a
+  // project directory contains several videos.
+  const preferredNames = [
+    "source.mp4",
+    "source.mov",
+    "source.m4v",
+    "source.webm",
+    "source.mkv",
+  ];
+
+  for (const name of preferredNames) {
+    const candidate = path.join(projectDir, name);
+
+    if (
+      fs.existsSync(candidate) &&
+      fs.statSync(candidate).isFile()
+    ) {
+      return candidate;
+    }
+  }
+
+  const candidates = fs
+    .readdirSync(projectDir, { withFileTypes: true })
     .filter(
       (entry) =>
-        entry.isFile() && /\.(mp4|mov|m4v|webm|mkv)$/i.test(entry.name),
+        entry.isFile() &&
+        /\.(mp4|mov|m4v|webm|mkv)$/i.test(entry.name),
     )
     .map((entry) => path.join(projectDir, entry.name))
-    .find((candidate) => path.basename(candidate).toLowerCase() !== "full-captioned.mp4");
+    .filter((candidate) => {
+      const name = path.basename(candidate).toLowerCase();
 
-  if (!sourcePath) {
-    throw new Error("Project source video is not available on the server.");
+      return (
+        !name.startsWith("debugged-") &&
+        !name.startsWith("reframed-") &&
+        !name.startsWith("enhanced-") &&
+        !name.startsWith("full-captioned") &&
+        name !== "full-captioned.mp4"
+      );
+    });
+
+  if (!candidates.length) {
+    throw new Error(
+      "Project source video is not available on the server.",
+    );
   }
 
-  return sourcePath;
+  return candidates[0];
 }
 
 async function probeSpeechEnhancementInput(inputPath: string): Promise<{
@@ -10999,105 +11044,333 @@ const videoDebugLimiter = rateLimit({
   message: { error: "Video Debugger limit reached. Please try again later." },
 });
 
-app.post("/api/projects/:projectId/debug-video", videoDebugLimiter, async (req, res) => {
-  const projectId = String(req.params.projectId || "").trim();
-  let userId = "";
-  let outputPath = "";
+app.post(
+  "/api/projects/:projectId/debug-video",
+  videoDebugLimiter,
+  async (req, res) => {
+    const projectId = String(req.params.projectId || "").trim();
+    let userId = "";
+    let outputPath = "";
 
-  try {
-    if (!projectId) return res.status(400).json({ error: "Project ID is required." });
-    const user = await getAuthenticatedUser(req);
-    userId = user.id;
-
-    const inputType = req.body?.inputType === "clip" ? "clip" : "source";
-    const clipId = typeof req.body?.clipId === "string" ? req.body.clipId.trim() : "";
-    const repair = req.body?.repair !== false;
-
-    const { data: project, error: projectError } = await supabase
-      .from("projects")
-      .select("id, user_id, name")
-      .eq("id", projectId)
-      .eq("user_id", user.id)
-      .single();
-    if (projectError || !project) return res.status(404).json({ error: "Project not found." });
-
-    let inputPath = "";
-    if (inputType === "clip") {
-      if (!clipId) return res.status(400).json({ error: "clipId is required when inputType is clip." });
-      const { data: clip, error: clipError } = await supabase
-        .from("clips")
-        .select("id, project_id, user_id, video_url")
-        .eq("id", clipId)
-        .eq("project_id", projectId)
-        .eq("user_id", user.id)
-        .single();
-      if (clipError || !clip) return res.status(404).json({ error: "Clip not found." });
-      inputPath = resolveClipPathFromUrl(projectId, String(clip.video_url || ""));
-    } else {
-      inputPath = resolveProjectSourcePath(projectId);
-    }
-
-    if (!fs.existsSync(inputPath) || !fs.statSync(inputPath).isFile()) {
-      return res.status(404).json({ error: "The selected video file is not available on the server." });
-    }
-
-    const before = await probeVideoDebug(inputPath);
-    if (!repair) {
-      return res.json({ success: true, projectId, inputType, clipId: clipId || null, report: before, outputUrl: null });
-    }
-    if (!before.hasVideo) {
-      return res.status(400).json({ error: "Video Debugger cannot repair a file with no video stream.", report: before });
-    }
-
-    const debugDir = path.join(mediaDir, safeSegment(projectId), "debugged");
-    const outputName = `debugged-${generateId()}.mp4`;
-    outputPath = path.join(debugDir, outputName);
-    await supabase.from("projects").update({ current_step: "Debugging video (5%)" }).eq("id", projectId).eq("user_id", user.id);
-
-    let repairMode: "remux" | "transcode" = "remux";
     try {
-      await runVideoDebugRepair(inputPath, outputPath, "remux", (percent) => {
-        void supabase.from("projects").update({ current_step: `Debugging video (${Math.round(percent)}%)` }).eq("id", projectId).eq("user_id", user.id);
-      });
-    } catch (remuxError) {
-      console.warn("Video Debugger remux failed; using H.264/AAC transcode:", remuxError);
-      try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {}
-      repairMode = "transcode";
-      await runVideoDebugRepair(inputPath, outputPath, "transcode", (percent) => {
-        void supabase.from("projects").update({ current_step: `Repairing video (${Math.round(percent)}%)` }).eq("id", projectId).eq("user_id", user.id);
-      });
-    }
+      if (!projectId) {
+        return res.status(400).json({
+          error: "Project ID is required.",
+        });
+      }
 
-    const after = await probeVideoDebug(outputPath);
-    if (!after.hasVideo || after.duration === null) throw new Error("The repaired output still has an invalid video structure. The source may be severely corrupted.");
+      const user = await getAuthenticatedUser(req);
+      userId = user.id;
 
-    const outputUrl = publicMediaUrl(projectId, `debugged/${outputName}`);
-    const report: VideoDebugReport = {
-      ...after,
-      repaired: true,
-      repairMode,
-      repairRecommended: false,
-      message: repairMode === "remux"
-        ? "Video repaired successfully with a fast container/timestamp repair."
-        : "Video repaired successfully by converting it to H.264 + AAC MP4.",
-    };
+      const inputType =
+        req.body?.inputType === "clip"
+          ? "clip"
+          : "source";
 
-    await supabase.from("projects").update({ current_step: "Video debugging complete" }).eq("id", projectId).eq("user_id", user.id);
-    await supabase.from("usage_logs").insert({ user_id: user.id, action: `Video Debugger (${repairMode}): ${project.name || projectId}`, credits_used: 0 });
+      const clipId =
+        typeof req.body?.clipId === "string"
+          ? req.body.clipId.trim()
+          : "";
 
-    return res.json({ success: true, projectId, inputType, clipId: clipId || null, outputUrl, filename: outputName, repairMode, before, report, message: report.message });
-  } catch (error: any) {
-    console.error("Video Debugger endpoint failed:", error);
-    if (outputPath) { try { if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath); } catch {} }
-    if (userId && projectId) {
+      // repair=true is the default. The frontend first performs a scan and
+      // then deliberately calls this endpoint again with repair=true so a
+      // healthy file is also normalized into a browser/social-safe MP4.
+      const repair = req.body?.repair !== false;
+
+      const { data: project, error: projectError } =
+        await supabase
+          .from("projects")
+          .select("id, user_id, name, source_media_url")
+          .eq("id", projectId)
+          .eq("user_id", user.id)
+          .single();
+
+      if (projectError || !project) {
+        return res.status(404).json({
+          error: "Project not found.",
+        });
+      }
+
+      let inputPath = "";
+
+      if (inputType === "clip") {
+        if (!clipId) {
+          return res.status(400).json({
+            error: "clipId is required when inputType is clip.",
+          });
+        }
+
+        const { data: clip, error: clipError } =
+          await supabase
+            .from("clips")
+            .select("id, project_id, user_id, video_url")
+            .eq("id", clipId)
+            .eq("project_id", projectId)
+            .eq("user_id", user.id)
+            .single();
+
+        if (clipError || !clip) {
+          return res.status(404).json({
+            error: "Clip not found.",
+          });
+        }
+
+        inputPath = resolveClipPathFromUrl(
+          projectId,
+          String(clip.video_url || ""),
+        );
+      } else {
+        inputPath = resolveProjectSourcePath(projectId);
+      }
+
+      if (
+        !fs.existsSync(inputPath) ||
+        !fs.statSync(inputPath).isFile()
+      ) {
+        return res.status(404).json({
+          error:
+            "The selected video file is not available on the server.",
+        });
+      }
+
+      console.log(
+        `[Video Debugger] ${projectId}: scanning ${path.basename(inputPath)}`,
+      );
+
+      const before = await probeVideoDebug(inputPath);
+
+      // Scan-only mode never changes the file.
+      if (!repair) {
+        return res.json({
+          success: true,
+          projectId,
+          inputType,
+          clipId: clipId || null,
+          report: before,
+          outputUrl: null,
+          repairMode: "none",
+        });
+      }
+
+      if (!before.hasVideo) {
+        return res.status(400).json({
+          error:
+            "Video Debugger cannot repair a file with no video stream.",
+          report: before,
+        });
+      }
+
+      const debugDir = path.join(
+        mediaDir,
+        safeSegment(projectId),
+        "debugged",
+      );
+
+      await fs.promises.mkdir(debugDir, { recursive: true });
+
+      const outputName = `debugged-${generateId()}.mp4`;
+      outputPath = path.join(debugDir, outputName);
+
+      await supabase
+        .from("projects")
+        .update({
+          current_step: "Video Debugger: preparing repair (5%)",
+          progress: 5,
+          status: "processing",
+        })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      let repairMode: "remux" | "transcode" = "remux";
+
+      // Fast path: keep the original audio/video streams and only repair the
+      // container/timestamps. This is dramatically faster than re-encoding.
       try {
-        await supabase.from("projects").update({ current_step: `Video debugging failed: ${String(error?.message || "Unknown error").slice(0, 300)}` }).eq("id", projectId).eq("user_id", userId);
-      } catch {}
+        await runVideoDebugRepair(
+          inputPath,
+          outputPath,
+          "remux",
+          (percent) => {
+            const safePercent = Math.min(85, Math.max(5, percent));
+            void supabase
+              .from("projects")
+              .update({
+                current_step: `Video Debugger: repairing (${Math.round(safePercent)}%)`,
+                progress: Math.round(safePercent),
+                status: "processing",
+              })
+              .eq("id", projectId)
+              .eq("user_id", user.id);
+          },
+        );
+      } catch (remuxError) {
+        console.warn(
+          "[Video Debugger] remux failed; falling back to H.264/AAC transcode:",
+          remuxError,
+        );
+
+        try {
+          if (fs.existsSync(outputPath)) {
+            await fs.promises.unlink(outputPath);
+          }
+        } catch {}
+
+        repairMode = "transcode";
+
+        await runVideoDebugRepair(
+          inputPath,
+          outputPath,
+          "transcode",
+          (percent) => {
+            const safePercent = Math.min(95, Math.max(10, percent));
+            void supabase
+              .from("projects")
+              .update({
+                current_step: `Video Debugger: converting (${Math.round(safePercent)}%)`,
+                progress: Math.round(safePercent),
+                status: "processing",
+              })
+              .eq("id", projectId)
+              .eq("user_id", user.id);
+          },
+        );
+      }
+
+      if (
+        !fs.existsSync(outputPath) ||
+        !fs.statSync(outputPath).isFile() ||
+        fs.statSync(outputPath).size < 1024
+      ) {
+        throw new Error(
+          "Video repair finished without producing a valid output file.",
+        );
+      }
+
+      await supabase
+        .from("projects")
+        .update({
+          current_step: "Video Debugger: verifying repaired video (97%)",
+          progress: 97,
+          status: "processing",
+        })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      const after = await probeVideoDebug(outputPath);
+
+      if (
+        !after.hasVideo ||
+        after.duration === null ||
+        after.duration <= 0
+      ) {
+        throw new Error(
+          "The repaired output still has an invalid video structure. The source may be severely corrupted.",
+        );
+      }
+
+      const outputUrl = publicMediaUrl(
+        projectId,
+        `debugged/${outputName}`,
+      );
+
+      const report: VideoDebugReport = {
+        ...after,
+        repaired: true,
+        repairMode,
+        repairRecommended: false,
+        message:
+          repairMode === "remux"
+            ? "Video repaired successfully with a fast container/timestamp repair."
+            : "Video repaired successfully by converting it to H.264 + AAC MP4.",
+      };
+
+      // Keep the repaired output as the project's active media URL.
+      // source.mp4 remains untouched as the original source/backup.
+      const { error: updateError } = await supabase
+        .from("projects")
+        .update({
+          source_media_url: outputUrl,
+          current_step: "Video Debugger: complete",
+          progress: 100,
+          status: "completed",
+        })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      if (updateError) {
+        throw updateError;
+      }
+
+      // Video Debugger is always free.
+      await supabase
+        .from("usage_logs")
+        .insert({
+          user_id: user.id,
+          action: `Video Debugger (${repairMode}): ${project.name || projectId}`,
+          credits_used: 0,
+        });
+
+      console.log(
+        `[Video Debugger] ${projectId}: complete (${repairMode}) -> ${outputName}`,
+      );
+
+      return res.json({
+        success: true,
+        projectId,
+        inputType,
+        clipId: clipId || null,
+        outputUrl,
+        filename: outputName,
+        repairMode,
+        before,
+        report,
+        message: report.message,
+      });
+    } catch (error: any) {
+      console.error(
+        "Video Debugger endpoint failed:",
+        error,
+      );
+
+      if (outputPath) {
+        try {
+          if (fs.existsSync(outputPath)) {
+            await fs.promises.unlink(outputPath);
+          }
+        } catch {}
+      }
+
+      if (userId && projectId) {
+        try {
+          await supabase
+            .from("projects")
+            .update({
+              current_step: `Video Debugger failed: ${String(
+                error?.message || "Unknown error",
+              ).slice(0, 300)}`,
+              status: "failed",
+            })
+            .eq("id", projectId)
+            .eq("user_id", userId);
+        } catch {}
+      }
+
+      if (error?.message === "UNAUTHORIZED") {
+        return res.status(401).json({
+          error: "Unauthorized.",
+        });
+      }
+
+      return res
+        .status(error?.statusCode || 500)
+        .json({
+          error:
+            error?.message ||
+            "Video debugging failed.",
+        });
     }
-    if (error?.message === "UNAUTHORIZED") return res.status(401).json({ error: "Unauthorized." });
-    return res.status(error?.statusCode || 500).json({ error: error?.message || "Video debugging failed." });
-  }
-});
+  },
+);
 
 /* =========================================================
    ENHANCE SPEECH
