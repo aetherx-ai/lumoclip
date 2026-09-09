@@ -1565,6 +1565,12 @@ function normalizeProcessingMode(value: unknown): ProcessingMode {
   if (value === "full_video_caption") return "full_video_caption";
   if (value === "reframe") return "reframe";
   if (value === "auto_sfx") return "auto_sfx";
+  // ProcessingMode also includes "video_debugger" — without this case it
+  // silently fell through to "clips" below, so any request whose mode had
+  // to be re-read from the DB (e.g. in-memory config missing on this
+  // worker) got downgraded into an ordinary clip-generation job instead
+  // of running Video Debugger.
+  if (value === "video_debugger") return "video_debugger";
   return "clips";
 }
 
