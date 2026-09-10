@@ -2138,7 +2138,7 @@ export function LandingPage({
                         onClick={submit}
                         icon
                       >
-                        Start creating
+                        Create clips
                       </PremiumButton>
                     </div>
 
