@@ -101,25 +101,41 @@ const SITE_URL = "https://lumo-clip.com";
 const SITE_NAME = "LumoClip";
 
 const SEO_TITLE =
-  "LumoClip | AI Video Editor, Clipper & Shorts Generator";
+  "LumoClip | AI Video Creation & Editing Platform";
 
 const SEO_DESCRIPTION =
-  "LumoClip is an AI video editor and clipper that turns long videos into engaging shorts, captions and platform-ready content for YouTube, TikTok and Instagram.";
+  "Create, edit and repurpose videos with LumoClip. Use AI video editing, captions, clips, reframe, speech enhancement, dubbing, SFX, B-roll and more in one workspace.";
 
 const SEO_KEYWORDS = [
   "LumoClip",
   "Lumo Clip",
+  "AI video creation platform",
+  "AI video creator",
+  "AI video editing platform",
   "AI video editor",
+  "AI video generator",
+  "AI video maker",
+  "AI video editing software",
+  "AI content creation platform",
+  "video repurposing platform",
+  "AI video repurposing",
   "AI video clipper",
-  "AI video clipping",
   "AI clip generator",
   "long video to shorts",
-  "video to shorts",
   "AI shorts generator",
+  "AI captions",
   "AI caption generator",
-  "video repurposing tool",
-  "YouTube Shorts maker",
-  "TikTok clip generator",
+  "AI video reframe",
+  "AI video dubbing",
+  "AI speech enhancement",
+  "AI audio enhancement",
+  "AI B-roll",
+  "AI sound effects",
+  "script to video",
+  "AI voiceover",
+  "video upscaler",
+  "YouTube video editor",
+  "TikTok video maker",
   "Instagram Reels maker",
 ].join(", ");
 
@@ -187,7 +203,7 @@ const features = [
 const faqs = [
   {
     q: "What is LumoClip?",
-    a: "LumoClip is an AI video clipper and content repurposing workspace designed to transform long-form videos into short-form clips and publishing-ready content.",
+    a: "LumoClip is an AI video creation and editing platform for creating, editing and repurposing videos with AI. Build clips, captions, B-roll, reframes, enhanced audio, dubbed versions and more from one workspace.",
   },
   {
     q: "Can I upload my own video?",
@@ -1635,7 +1651,7 @@ export function LandingPage({
 
     setProperty(
       "og:image:alt",
-      "LumoClip AI Video Clipper"
+      "LumoClip AI Video Creation and Editing Platform"
     );
 
     setProperty(
@@ -1665,7 +1681,7 @@ export function LandingPage({
 
     setMeta(
       "twitter:image:alt",
-      "LumoClip AI Video Clipper"
+      "LumoClip AI Video Creation and Editing Platform"
     );
 
     let canonical =
@@ -1753,18 +1769,28 @@ export function LandingPage({
       operatingSystem: "Web",
       url: `${SITE_URL}/`,
       description:
-        "LumoClip is an AI video editor and clipper that turns long-form videos into short-form content, captions and platform-ready assets.",
+        "LumoClip is an AI video creation and editing platform for creating, editing and repurposing videos, captions, audio and social content.",
       image: `${SITE_URL}/logo.png`,
       keywords: SEO_KEYWORDS,
       featureList: [
+        "AI video creation",
+        "AI video editing",
+        "AI video generation",
         "AI video clipping",
         "Long video to shorts",
         "AI captions",
         "AI hooks and titles",
+        "AI B-roll",
         "Automatic video reframing",
         "Speech enhancement",
+        "Audio enhancement",
         "AI video dubbing",
+        "Auto SFX",
+        "Voiceover",
+        "Script to video",
+        "Video upscaling",
         "Dead air removal",
+        "Video repurposing",
       ],
       publisher: {
         "@id": `${SITE_URL}/#organization`,
@@ -2016,7 +2042,7 @@ export function LandingPage({
             <div className="mx-auto max-w-5xl text-center">
               <Reveal immediate>
                 <SectionLabel>
-                  AI VIDEO CLIPPER
+                  AI VIDEO CREATION PLATFORM
                 </SectionLabel>
               </Reveal>
 
@@ -2026,14 +2052,14 @@ export function LandingPage({
                   className="mt-7 text-[52px] font-black leading-[0.9] tracking-[-0.07em] drop-shadow-[0_8px_35px_rgba(0,0,0,.35)] sm:text-[78px] lg:text-[104px]"
                 >
                   <span className="sr-only">
-                    LumoClip: AI Video Clipper.{" "}
+                    LumoClip: AI video creation and editing platform.{" "}
                   </span>
 
-                  Turn Long Videos Into
+                  Create, Edit & Repurpose
                   <br />
 
                   <span className="relative inline-block bg-gradient-to-r from-violet-100 via-violet-300 to-fuchsia-400 bg-clip-text text-transparent">
-                    Shorts With AI.
+                    Videos With AI.
                     <svg
                       aria-hidden="true"
                       viewBox="0 0 320 24"
@@ -2054,12 +2080,10 @@ export function LandingPage({
 
               <Reveal immediate delay={150}>
                 <p className="mx-auto mt-8 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base sm:leading-8">
-                  LumoClip is an AI video clipper
-                  that finds the best moments from
-                  your long videos and turns them
-                  into engaging short-form content
-                  for YouTube Shorts, TikTok, and
-                  Instagram Reels.
+                  LumoClip is an AI video creation and editing platform
+                  that helps you create, edit and repurpose content
+                  with AI — from captions, clips and B-roll to reframe,
+                  speech enhancement, dubbing, SFX and more.
                 </p>
               </Reveal>
 
@@ -2414,7 +2438,7 @@ export function LandingPage({
             <Reveal>
               <div className="mx-auto max-w-2xl text-center">
                 <SectionLabel>
-                  AI video clipping features
+                  AI video creation & editing
                 </SectionLabel>
 
                 <h2
@@ -2425,15 +2449,14 @@ export function LandingPage({
                   <br />
 
                   <span className="text-zinc-700">
-                    repurpose at scale.
+                    create, edit & publish faster.
                   </span>
                 </h2>
 
                 <p className="mt-5 text-sm leading-7 text-zinc-700">
-                  A single AI workspace for
-                  discovering, generating and
-                  organizing your next short-form
-                  content ideas.
+                  One AI workspace for video creation, editing,
+                  repurposing, audio, captions and publishing-ready
+                  content across every major format.
                 </p>
               </div>
             </Reveal>
@@ -2895,31 +2918,35 @@ export function LandingPage({
             <Reveal>
               <div className="mx-auto max-w-3xl text-center">
                 <SectionLabel icon={Scissors}>
-                  AI video editor & repurposing
+                  AI video creation & editing
                 </SectionLabel>
                 <h2
                   id="ai-video-editor-title"
                   className="mt-6 text-3xl font-black tracking-[-0.055em] sm:text-5xl"
                 >
-                  An AI video editor built
+                  One AI workspace for creation, editing &
                   <br />
                   <span className="bg-gradient-to-r from-violet-200 to-fuchsia-400 bg-clip-text text-transparent">
-                    for long-form content.
+                    video repurposing.
                   </span>
                 </h2>
                 <p className="mx-auto mt-5 max-w-2xl text-sm leading-7 text-zinc-700">
-                  LumoClip helps creators turn long videos into short-form content without starting every edit from scratch. Use AI to find strong moments, generate clips and captions, reframe content for different platforms, enhance speech and organize the assets you want to publish.
+                  LumoClip brings video creation, editing and repurposing into one AI-powered workspace. Create clips and captions, generate B-roll and voiceovers, reframe for every platform, enhance speech, add SFX, dub videos and prepare content for publishing.
                 </p>
               </div>
             </Reveal>
 
             <div className="mt-12 grid gap-4 md:grid-cols-3">
               {[
+                [Sparkles, "AI video creation", "Create new video content with AI-powered workflows from one workspace.", "/"],
                 [Scissors, "AI video clipper", "Find compelling moments in long videos and turn them into short-form clips.", "/long-video-to-shorts"],
-                [Subtitles, "AI captions", "Create caption-ready content that is easier to review and publish across social platforms.", "/ai-captions"],
-                [Mic2, "Enhance speech", "Improve spoken audio with LumoClip's AI speech enhancement workflow.", "/ai-speech-enhancer"],
+                [Subtitles, "AI captions", "Generate engaging captions and ready-to-publish subtitle content.", "/ai-captions"],
                 [Film, "AI video reframe", "Adapt video composition for vertical, square and landscape formats.", "/ai-video-reframe"],
-                [Sparkles, "Auto SFX", "Add sound effects through LumoClip's automatic SFX workflow.", "/ai-sound-effects"],
+                [Mic2, "Enhance speech", "Improve spoken audio with LumoClip's AI speech enhancement workflow.", "/ai-speech-enhancer"],
+                [WandSparkles, "AI B-roll", "Add supporting visual moments to make your videos more dynamic.", "/ai-b-roll"],
+                [Zap, "Auto SFX", "Add sound effects through LumoClip's automatic SFX workflow.", "/ai-sound-effects"],
+                [Globe2, "AI video dubbing", "Create localized dubbed versions for audiences in new languages.", "/video-dubbing"],
+                [TrendingUp, "Script to video", "Turn ideas and scripts into polished video content faster.", "/script-to-video"],
               ].map(([Icon, title, text, href], index) => {
                 const I = Icon as React.ElementType;
                 return (
@@ -3116,7 +3143,7 @@ export function LandingPage({
 
           <div className="flex flex-wrap items-center gap-3 text-[8px] font-bold uppercase tracking-[0.18em] text-zinc-800">
             <span>
-              LumoClip AI video clipper
+              LumoClip AI video creation platform
             </span>
 
             <span>•</span>
