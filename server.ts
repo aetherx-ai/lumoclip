@@ -1302,11 +1302,12 @@ const DUBBING_CHUNK_MAX_SPAN_SECONDS = 45;
 interface DubbingChunk {
   text: string;
   start: number;
+  end: number;
 }
 
 function buildDubbingChunks(segments: TranscriptSegment[]): DubbingChunk[] {
   const chunks: DubbingChunk[] = [];
-  let current: { texts: string[]; start: number; charCount: number } | null = null;
+  let current: { texts: string[]; start: number; end: number; charCount: number } | null = null;
 
   for (const segment of segments) {
     const text = (segment.text || "").trim();
@@ -1317,15 +1318,18 @@ function buildDubbingChunks(segments: TranscriptSegment[]): DubbingChunk[] {
       current.charCount + text.length > DUBBING_CHUNK_MAX_CHARS ||
       segment.start - current.start > DUBBING_CHUNK_MAX_SPAN_SECONDS;
 
+    const segmentEnd = Math.max(segment.start, segment.end ?? segment.start);
+
     if (startsNewChunk) {
-      if (current) chunks.push({ text: current.texts.join(" "), start: current.start });
-      current = { texts: [text], start: Math.max(0, segment.start), charCount: text.length };
+      if (current) chunks.push({ text: current.texts.join(" "), start: current.start, end: current.end });
+      current = { texts: [text], start: Math.max(0, segment.start), end: segmentEnd, charCount: text.length };
     } else {
       current!.texts.push(text);
       current!.charCount += text.length;
+      current!.end = Math.max(current!.end, segmentEnd);
     }
   }
-  if (current) chunks.push({ text: current.texts.join(" "), start: current.start });
+  if (current) chunks.push({ text: current.texts.join(" "), start: current.start, end: current.end });
 
   return chunks;
 }
@@ -1424,6 +1428,34 @@ async function generateSpeechChunk(text: string, languageName: string): Promise<
   return null;
 }
 
+// Minimum span treated as "real" — protects against a divide-by-zero or an
+// absurd stretch factor when a chunk's segments all land on nearly the same
+// timestamp.
+const DUBBING_MIN_CHUNK_SPAN_SECONDS = 1;
+// Keep any stretch/compression within a range that still sounds like a
+// person talking. Drifting slightly out of sync is preferable to speech
+// that's unintelligibly fast or slow.
+const DUBBING_TEMPO_MIN = 0.6;
+const DUBBING_TEMPO_MAX = 1.8;
+
+// ffmpeg's atempo filter only accepts a 0.5–2.0 factor per instance, so a
+// factor outside that range needs to be split across chained instances that
+// multiply back to the desired total.
+function buildAtempoChain(factor: number): string[] {
+  let remaining = factor;
+  const stages: number[] = [];
+  while (remaining > 2.0) {
+    stages.push(2.0);
+    remaining /= 2.0;
+  }
+  while (remaining < 0.5) {
+    stages.push(0.5);
+    remaining /= 0.5;
+  }
+  stages.push(remaining);
+  return stages.map((s) => `atempo=${s.toFixed(3)}`);
+}
+
 // Generates a small number of speech chunks via Gemini's native TTS
 // (grouping many transcript segments per call to stay within the
 // provider's daily request quota), then stitches them into a single
@@ -1441,6 +1473,13 @@ async function generateDubbedAudioTrack(
 
   const chunks = buildDubbingChunks(translatedSegments);
   console.log(`Dubbing: ${translatedSegments.length} transcript segments grouped into ${chunks.length} TTS call(s).`);
+  if (translatedSegments.length) {
+    const firstStart = translatedSegments[0].start;
+    const lastEnd = translatedSegments[translatedSegments.length - 1].end;
+    console.log(
+      `Dubbing: transcript speech spans ${firstStart.toFixed(1)}s–${lastEnd.toFixed(1)}s of a ${duration.toFixed(1)}s video.`,
+    );
+  }
 
   const chunkFiles: { path: string; start: number }[] = [];
 
@@ -1455,12 +1494,38 @@ async function generateDubbedAudioTrack(
     const pcmPath = path.join(segmentDir, `chunk-${i}.pcm`);
     fs.writeFileSync(pcmPath, pcmBuffer);
 
+    // Bytes / (sample rate * 2 bytes-per-sample, 16-bit mono) = seconds.
+    const actualDurationSec = pcmBuffer.length / (DUBBING_TTS_SAMPLE_RATE * 2);
+    const targetDurationSec = Math.max(
+      DUBBING_MIN_CHUNK_SPAN_SECONDS,
+      chunk.end - chunk.start,
+    );
+    let tempoFactor = actualDurationSec / targetDurationSec;
+    tempoFactor = Math.min(DUBBING_TEMPO_MAX, Math.max(DUBBING_TEMPO_MIN, tempoFactor));
+    const needsTempoAdjust = Math.abs(tempoFactor - 1) > 0.05;
+
+    console.log(
+      `Dubbing: chunk ${i} spans ${chunk.start.toFixed(1)}s–${chunk.end.toFixed(1)}s (${targetDurationSec.toFixed(1)}s), TTS produced ${actualDurationSec.toFixed(1)}s${
+        needsTempoAdjust ? `, applying atempo=${tempoFactor.toFixed(2)} to fit.` : "."
+      }`,
+    );
+
     // Gemini TTS returns raw 24kHz mono 16-bit little-endian PCM — wrap
     // it into a playable WAV so ffmpeg can treat it as a normal input.
+    // Also nudge the tempo so the narration fills roughly the same time
+    // span its source segments occupied, instead of drifting out of sync
+    // with the rest of the video once multiple lines are concatenated.
     const wavPath = path.join(segmentDir, `chunk-${i}.wav`);
     await new Promise<void>((resolve, reject) => {
-      ffmpeg(pcmPath)
-        .inputOptions(["-f", "s16le", "-ar", String(DUBBING_TTS_SAMPLE_RATE), "-ac", "1"])
+      const command = ffmpeg(pcmPath).inputOptions([
+        "-f", "s16le",
+        "-ar", String(DUBBING_TTS_SAMPLE_RATE),
+        "-ac", "1",
+      ]);
+      if (needsTempoAdjust) {
+        command.audioFilters(buildAtempoChain(tempoFactor));
+      }
+      command
         .output(wavPath)
         .on("end", () => resolve())
         .on("error", reject)
