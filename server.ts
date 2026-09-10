@@ -1508,6 +1508,7 @@ function muxDubbedVideo(
         "-c:a", "aac",
         "-b:a", "192k",
         "-shortest",
+        "-movflags", "+faststart",
       ])
       .output(outputPath)
       .on("end", () => resolve())
@@ -4559,6 +4560,12 @@ function publicMediaUrl(
 
   if (parts[0] === "debugged") {
     return `/api/media/${encodedProject}/debugged/${parts
+      .slice(1)
+      .join("/")}`;
+  }
+
+  if (parts[0] === "dub") {
+    return `/api/media/${encodedProject}/dub/${parts
       .slice(1)
       .join("/")}`;
   }
@@ -11294,6 +11301,13 @@ app.get(
   "/api/media/:projectId/debugged/:filename",
   (req, res) =>
     sendProjectMedia(req, res, "debugged"),
+);
+
+// Video Dubbing output (translated + re-voiced audio track muxed back in).
+app.get(
+  "/api/media/:projectId/dub/:filename",
+  (req, res) =>
+    sendProjectMedia(req, res, "dub"),
 );
 
 /* =========================================================
