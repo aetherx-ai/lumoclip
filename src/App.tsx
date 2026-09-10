@@ -94,7 +94,8 @@ type NewProjectMode =
   | "clips"
   | "reframe"
   | "full_video_caption"
-  | "auto_sfx";
+  | "auto_sfx"
+  | "dubbing";
 
 /* =========================================================
    ACTIVE TAB

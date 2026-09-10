@@ -57,7 +57,8 @@ export type LandingProcessingMode =
   | "clips"
   | "reframe"
   | "full_video_caption"
-  | "auto_sfx";
+  | "auto_sfx"
+  | "dubbing";
 
 type LandingPageProps = {
   onGetStarted: (
@@ -451,7 +452,7 @@ const toolGridItems: ToolGridItem[] = [
   { id: "ai-reframe", label: "AI Reframe", accent: "blue", mode: "reframe" },
   { id: "auto-sfx", label: "Auto SFX", badge: "New", accent: "violet", mode: "auto_sfx" },
   { id: "upscale", label: "Upscale", badge: "New", accent: "diamond" },
-  { id: "video-dubbing", label: "Video dubbing", badge: "New", accent: "sky" },
+  { id: "video-dubbing", label: "Video dubbing", badge: "New", accent: "sky", mode: "dubbing" },
 
   { id: "enhance-speech", label: "Enhance speech", accent: "wave" },
   { id: "voiceover-hook", label: "Voiceover hook", accent: "orange" },

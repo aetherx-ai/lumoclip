@@ -910,6 +910,61 @@ interface ProcessingConfig {
   reframe: ReframeConfig;
   speechSettings: SpeechSettings;
   clipSettings: ClipSettings;
+  dubbing: DubbingConfig;
+}
+
+// Target languages offered for Video Dubbing, mirroring OpusClip's public
+// dubbing language list (25 languages). Keyed by BCP-47-ish short code;
+// `label` is shown in the UI, `geminiName` is the plain-English name used
+// inside translation/TTS prompts (Gemini responds more reliably to a
+// written-out language name than to a bare code).
+const DUBBING_LANGUAGES: Record<string, { label: string; geminiName: string }> = {
+  en: { label: "English", geminiName: "English" },
+  de: { label: "German", geminiName: "German" },
+  es: { label: "Spanish", geminiName: "Spanish" },
+  fr: { label: "French", geminiName: "French" },
+  pt: { label: "Portuguese", geminiName: "Portuguese" },
+  it: { label: "Italian", geminiName: "Italian" },
+  nl: { label: "Dutch", geminiName: "Dutch" },
+  ru: { label: "Russian", geminiName: "Russian" },
+  pl: { label: "Polish", geminiName: "Polish" },
+  id: { label: "Indonesian", geminiName: "Indonesian" },
+  uk: { label: "Ukrainian", geminiName: "Ukrainian" },
+  sv: { label: "Swedish", geminiName: "Swedish" },
+  tr: { label: "Turkish", geminiName: "Turkish" },
+  no: { label: "Norwegian", geminiName: "Norwegian" },
+  hr: { label: "Croatian", geminiName: "Croatian" },
+  ro: { label: "Romanian", geminiName: "Romanian" },
+  sk: { label: "Slovak", geminiName: "Slovak" },
+  el: { label: "Greek", geminiName: "Greek" },
+  da: { label: "Danish", geminiName: "Danish" },
+  fi: { label: "Finnish", geminiName: "Finnish" },
+  hu: { label: "Hungarian", geminiName: "Hungarian" },
+  cs: { label: "Czech", geminiName: "Czech" },
+  ja: { label: "Japanese", geminiName: "Japanese" },
+  ko: { label: "Korean", geminiName: "Korean" },
+  vi: { label: "Vietnamese", geminiName: "Vietnamese" },
+};
+
+interface DubbingConfig {
+  targetLanguage: string;
+}
+
+function normalizeDubbingConfig(value: unknown): DubbingConfig {
+  let raw: any = value;
+  if (typeof value === "string") {
+    try {
+      raw = JSON.parse(value);
+    } catch {
+      raw = {};
+    }
+  }
+  raw = raw || {};
+  const targetLanguage =
+    typeof raw.targetLanguage === "string" && DUBBING_LANGUAGES[raw.targetLanguage]
+      ? raw.targetLanguage
+      : "en";
+  return { targetLanguage };
 }
 
 interface ReframePoint {
@@ -1169,6 +1224,183 @@ JSON: {"events":[{"time":12.4,"type":"impact","intensity":0.65,"reason":"Strong 
   } finally { void geminiFileName; }
 }
 
+/* =========================================================
+   VIDEO DUBBING
+   Pipeline: reuse the existing transcript (per-word timestamps,
+   already produced for full_video_caption/clips) -> translate each
+   segment's text with Gemini -> synthesize speech per segment with
+   Gemini's native TTS -> delay/mix segments back onto the original
+   timeline with ffmpeg -> mux the result over the source video,
+   replacing its original audio track entirely.
+========================================================= */
+
+// Translates transcript segments into the target language. Only `.text`
+// is replaced — start/end timing is preserved unchanged so the TTS
+// stitching step below can still place each dubbed line at (roughly)
+// the same moment the original line was spoken.
+async function translateTranscriptForDubbing(
+  transcript: TranscriptSegment[],
+  targetLanguage: string,
+): Promise<TranscriptSegment[]> {
+  const languageName = DUBBING_LANGUAGES[targetLanguage]?.geminiName || "English";
+  if (!transcript.length) return transcript;
+
+  const numbered = transcript.map((segment, index) => ({
+    index,
+    text: segment.text,
+  }));
+
+  const prompt = `You are translating a video transcript for AI voice dubbing.
+Translate every segment into natural, spoken ${languageName} — the way a narrator
+would actually say it out loud, not a literal word-for-word translation.
+Try to keep each translated line roughly the same length to speak as the
+original, so the dubbed audio stays close to the original timing.
+Return ONLY valid JSON, no markdown, no commentary:
+{"segments":[{"index":0,"text":"..."}]}
+SEGMENTS: ${JSON.stringify(numbered)}`;
+
+  const response = await generateGeminiWithRetry(async () => ({
+    model: GEMINI_MODEL_BASIC,
+    contents: createUserContent([prompt]),
+    config: { responseMimeType: "application/json", temperature: 0.3 },
+  }));
+
+  const parsed = JSON.parse(cleanJson(response.text || "{}"));
+  const translatedByIndex = new Map<number, string>();
+  for (const item of Array.isArray(parsed?.segments) ? parsed.segments : []) {
+    if (typeof item?.index === "number" && typeof item?.text === "string" && item.text.trim()) {
+      translatedByIndex.set(item.index, item.text.trim());
+    }
+  }
+
+  return transcript.map((segment, index) => ({
+    ...segment,
+    text: translatedByIndex.get(index) || segment.text,
+  }));
+}
+
+const DUBBING_TTS_MODEL = "gemini-2.5-flash-preview-tts";
+const DUBBING_TTS_VOICE = "Kore";
+const DUBBING_TTS_SAMPLE_RATE = 24000;
+
+// Generates one speech clip per transcript segment via Gemini's native
+// TTS, then stitches them into a single audio track the same length as
+// the source video, delaying each clip to its original segment.start
+// time so dubbed lines land close to where the original line was said.
+async function generateDubbedAudioTrack(
+  translatedSegments: TranscriptSegment[],
+  targetLanguage: string,
+  duration: number,
+  workDir: string,
+): Promise<string> {
+  const languageName = DUBBING_LANGUAGES[targetLanguage]?.geminiName || "English";
+  const segmentDir = path.join(workDir, "dub-segments");
+  fs.mkdirSync(segmentDir, { recursive: true });
+
+  const segmentFiles: { path: string; start: number }[] = [];
+
+  for (let i = 0; i < translatedSegments.length; i++) {
+    const segment = translatedSegments[i];
+    if (!segment.text || !segment.text.trim()) continue;
+
+    let ttsResponse: any;
+    try {
+      ttsResponse = await ai.models.generateContent({
+        model: DUBBING_TTS_MODEL,
+        contents: createUserContent([
+          `Narrate the following in natural, clear spoken ${languageName}, as a single continuous voiceover line (no extra commentary, just say it): ${segment.text}`,
+        ]),
+        config: {
+          responseModalities: ["AUDIO"],
+          speechConfig: {
+            voiceConfig: { prebuiltVoiceConfig: { voiceName: DUBBING_TTS_VOICE } },
+          },
+        },
+      } as any);
+    } catch (ttsError) {
+      console.warn(`Dubbing: TTS failed for segment ${i}, skipping:`, getGeminiErrorMessage(ttsError));
+      continue;
+    }
+
+    const audioPart = ttsResponse?.candidates?.[0]?.content?.parts?.find(
+      (part: any) => part?.inlineData?.data,
+    );
+    if (!audioPart) {
+      console.warn(`Dubbing: no audio returned for segment ${i}, skipping.`);
+      continue;
+    }
+
+    const pcmPath = path.join(segmentDir, `seg-${i}.pcm`);
+    fs.writeFileSync(pcmPath, Buffer.from(audioPart.inlineData.data, "base64"));
+
+    // Gemini TTS returns raw 24kHz mono 16-bit little-endian PCM — wrap
+    // it into a playable WAV so ffmpeg can treat it as a normal input.
+    const wavPath = path.join(segmentDir, `seg-${i}.wav`);
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(pcmPath)
+        .inputOptions(["-f", "s16le", "-ar", String(DUBBING_TTS_SAMPLE_RATE), "-ac", "1"])
+        .output(wavPath)
+        .on("end", () => resolve())
+        .on("error", reject)
+        .run();
+    });
+
+    segmentFiles.push({ path: wavPath, start: Math.max(0, segment.start) });
+  }
+
+  if (!segmentFiles.length) {
+    throw new Error("Dubbing: no speech audio could be generated for this video.");
+  }
+
+  const trackOutputPath = path.join(workDir, "dubbed-audio.wav");
+  const delayFilters = segmentFiles
+    .map((s, i) => {
+      const delayMs = Math.round(s.start * 1000);
+      return `[${i}:a]adelay=${delayMs}|${delayMs}[a${i}]`;
+    })
+    .join("; ");
+  const mixInputs = segmentFiles.map((_, i) => `[a${i}]`).join("");
+  const filterComplex = `${delayFilters}; ${mixInputs}amix=inputs=${segmentFiles.length}:normalize=0[aout]`;
+
+  await new Promise<void>((resolve, reject) => {
+    const command = ffmpeg();
+    for (const segment of segmentFiles) command.input(segment.path);
+    command
+      .complexFilter(filterComplex, ["aout"])
+      .outputOptions(["-t", duration.toFixed(2)])
+      .output(trackOutputPath)
+      .on("end", () => resolve())
+      .on("error", reject)
+      .run();
+  });
+
+  return trackOutputPath;
+}
+
+// Replaces the source video's audio track entirely with the dubbed track.
+function muxDubbedVideo(
+  videoPath: string,
+  dubbedAudioPath: string,
+  outputPath: string,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    ffmpeg(videoPath)
+      .input(dubbedAudioPath)
+      .outputOptions([
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-shortest",
+      ])
+      .output(outputPath)
+      .on("end", () => resolve())
+      .on("error", reject)
+      .run();
+  });
+}
+
 // The in-memory value makes the mode available to the worker during the
 // current server lifetime. If the optional database columns are present,
 // they are also used so a worker job can survive a restart.
@@ -1184,6 +1416,14 @@ async function rememberProcessingConfig(
   // LumoClip databases may not have the optional speech_settings and/or
   // clip_settings columns yet. The processing mode itself remains durable.
   const candidates: Array<Record<string, unknown>> = [
+    {
+      processing_mode: config.mode,
+      caption_style: config.captionStyle,
+      reframe_config: config.reframe,
+      speech_settings: config.speechSettings,
+      clip_settings: config.clipSettings,
+      dubbing_config: config.dubbing,
+    },
     {
       processing_mode: config.mode,
       caption_style: config.captionStyle,
@@ -1220,7 +1460,7 @@ async function rememberProcessingConfig(
       .eq("id", projectId);
 
     if (!error) {
-      if (Object.keys(update).length < 5) {
+      if (Object.keys(update).length < 6) {
         console.warn(
           `Project processing config persisted with available columns only: ${Object.keys(update).join(", ")}`,
         );
@@ -1269,6 +1509,7 @@ async function getProcessingConfig(
   // compatibility with existing LumoClip databases. Try the newest schema
   // first, then progressively remove optional columns that do not exist.
   const metadataSelects = [
+    "processing_mode, caption_style, reframe_config, speech_settings, clip_settings, dubbing_config",
     "processing_mode, caption_style, reframe_config, speech_settings, clip_settings",
     "processing_mode, caption_style, reframe_config, clip_settings",
     "processing_mode, caption_style, reframe_config",
@@ -1308,6 +1549,7 @@ async function getProcessingConfig(
       reframe: normalizeReframeConfig(metadata?.reframe_config),
       speechSettings: normalizeSpeechSettings(metadata?.speech_settings),
       clipSettings: normalizeClipSettings(metadata?.clip_settings),
+      dubbing: normalizeDubbingConfig(metadata?.dubbing_config),
     };
   }
 
@@ -1325,6 +1567,7 @@ async function getProcessingConfig(
       reframe: normalizeReframeConfig(metadata.reframe_config),
       speechSettings: normalizeSpeechSettings(metadata?.speech_settings),
       clipSettings: normalizeClipSettings(metadata?.clip_settings),
+      dubbing: normalizeDubbingConfig(metadata?.dubbing_config),
     };
   }
 
@@ -1334,6 +1577,7 @@ async function getProcessingConfig(
     reframe: normalizeReframeConfig(undefined),
     speechSettings: normalizeSpeechSettings(undefined),
     clipSettings: normalizeClipSettings(undefined),
+    dubbing: normalizeDubbingConfig(undefined),
   };
 }
 /* =========================================================
@@ -1487,7 +1731,7 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
-type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe" | "auto_sfx" | "video_debugger";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe" | "auto_sfx" | "video_debugger" | "dubbing";
 
 interface SubtitleStyle {
   enabled: boolean;
@@ -1571,6 +1815,11 @@ function normalizeProcessingMode(value: unknown): ProcessingMode {
   // worker) got downgraded into an ordinary clip-generation job instead
   // of running Video Debugger.
   if (value === "video_debugger") return "video_debugger";
+  // Same reasoning as "video_debugger" above: without this case, a
+  // dubbing job whose in-memory config is missing on this worker would
+  // silently fall through to "clips" and re-charge/re-run as a normal
+  // clip-generation job instead of Video Dubbing.
+  if (value === "dubbing") return "dubbing";
   return "clips";
 }
 
@@ -1723,6 +1972,7 @@ function getProcessingConfigFromRequest(
   reframeValue?: unknown,
   speechSettingsValue?: unknown,
   clipSettingsValue?: unknown,
+  dubbingValue?: unknown,
 ): ProcessingConfig {
   let rawStyle: any = styleValue;
 
@@ -1740,6 +1990,7 @@ function getProcessingConfigFromRequest(
     reframe: normalizeReframeConfig(reframeValue || rawStyle?.reframe),
     speechSettings: normalizeSpeechSettings(speechSettingsValue),
     clipSettings: normalizeClipSettings(clipSettingsValue),
+    dubbing: normalizeDubbingConfig(dubbingValue || rawStyle?.dubbing),
   };
 }
 
@@ -6810,6 +7061,7 @@ async function processVideo(
   // available if a future auto-enhance step needs it.
   speechSettings: SpeechSettings = normalizeSpeechSettings(undefined),
   clipSettings: ClipSettings = normalizeClipSettings(undefined),
+  dubbingConfig: DubbingConfig = normalizeDubbingConfig(undefined),
 ) {
   const mode = normalizeProcessingMode(processingMode);
   if (mode === "video_debugger") {
@@ -6818,6 +7070,7 @@ async function processVideo(
   const safeCaptionStyle = normalizeCaptionStyle(captionStyle);
   const normalizedReframeConfig = normalizeReframeConfig(reframeConfig);
   const safeClipSettings = normalizeClipSettings(clipSettings);
+  const safeDubbingConfig = normalizeDubbingConfig(dubbingConfig);
   void speechSettings;
   // AI Reframe output must NEVER burn captions into the video. Captions are
   // handled by the dedicated caption feature, not by the Reframe renderer.
@@ -7006,6 +7259,84 @@ async function processVideo(
         projectId, metadata: { mode, outputUrl, eventCount: sfxAnalysis.events.length, events: sfxAnalysis.events, creditsUsed: VIDEO_COST },
       });
       console.log(`Project ${projectId} completed with Auto SFX (${sfxAnalysis.events.length} effects).`);
+      return;
+    }
+
+    if (mode === "dubbing") {
+      const targetLanguage = safeDubbingConfig.targetLanguage;
+      const languageLabel = DUBBING_LANGUAGES[targetLanguage]?.label || "English";
+
+      await updateProject(projectId, 30, "Dubbing: transcribing original audio", "processing");
+      // Dubbing only needs a timestamped transcript, not clip generation —
+      // reuse the full_video_caption analysis path, which already skips
+      // clip generation and produces per-word timestamps.
+      const dubAnalysis = await analyzeLocalVideo(
+        sourcePath,
+        mimeType,
+        duration,
+        "full_video_caption",
+        false,
+        safeClipSettings,
+      );
+
+      if (!dubAnalysis.transcript.length) {
+        throw new Error("Dubbing: could not transcribe any speech in this video.");
+      }
+
+      try { await saveTranscript(projectId, dubAnalysis.transcript); } catch (transcriptSaveError) {
+        console.warn("Dubbing: failed to persist transcript (non-fatal):", transcriptSaveError);
+      }
+
+      await updateProject(projectId, 50, `Dubbing: translating to ${languageLabel}`, "processing");
+      const translatedSegments = await translateTranscriptForDubbing(
+        dubAnalysis.transcript,
+        targetLanguage,
+      );
+
+      await updateProject(projectId, 65, `Dubbing: generating ${languageLabel} voiceover`, "processing");
+      const dubDir = path.join(projectDir, "dub");
+      fs.mkdirSync(dubDir, { recursive: true });
+      const dubbedAudioPath = await generateDubbedAudioTrack(
+        translatedSegments,
+        targetLanguage,
+        duration,
+        dubDir,
+      );
+
+      await updateProject(projectId, 85, "Dubbing: merging voiceover into video", "processing");
+      const dubOutputPath = path.join(dubDir, "dubbed.mp4");
+      await muxDubbedVideo(sourcePath, dubbedAudioPath, dubOutputPath);
+
+      const outputUrl = publicMediaUrl(projectId, "dub/dubbed.mp4");
+      const completionPayload = {
+        processing_mode: mode,
+        full_video_url: outputUrl,
+        progress: 100,
+        current_step: `Dubbing ready — ${languageLabel}`,
+        status: "completed",
+        total_clips: 0,
+      };
+      const completionUpdate = await supabase
+        .from("projects")
+        .update({ ...completionPayload, dubbing_url: outputUrl })
+        .eq("id", projectId);
+
+      // `dubbing_url` is optional for older databases — the output is also
+      // exposed as full_video_url, so Dubbing still completes cleanly.
+      if (completionUpdate.error) {
+        const fallbackUpdate = await supabase
+          .from("projects")
+          .update(completionPayload)
+          .eq("id", projectId);
+        if (fallbackUpdate.error) throw fallbackUpdate.error;
+      }
+
+      await createNotification({
+        userId, type: "project_completed", title: "Dubbing is ready",
+        message: `LumoClip dubbed your video into ${languageLabel}.`,
+        projectId, metadata: { mode, outputUrl, targetLanguage, creditsUsed: VIDEO_COST },
+      });
+      console.log(`Project ${projectId} completed with Dubbing (${languageLabel}).`);
       return;
     }
 
@@ -7634,7 +7965,8 @@ async function processPodcastImport(
       requestedConfig.mode === "clips" ||
       requestedConfig.mode === "full_video_caption" ||
       requestedConfig.mode === "reframe" ||
-      requestedConfig.mode === "video_debugger";
+      requestedConfig.mode === "video_debugger" ||
+      requestedConfig.mode === "dubbing";
 
     if (needsVideo && !hasVideo) {
       throw new Error(
@@ -7700,6 +8032,7 @@ async function processPodcastImport(
     requestedConfig.reframe,
     requestedConfig.speechSettings,
     requestedConfig.clipSettings,
+    requestedConfig.dubbing,
   );
 }
 
@@ -9222,6 +9555,7 @@ app.post(
         req.body?.reframe,
         req.body?.speechSettings,
         req.body?.clipSettings,
+        req.body?.dubbing,
       );
 
       const {
@@ -9324,6 +9658,7 @@ app.post(
           requestedConfig.reframe,
           requestedConfig.speechSettings,
           requestedConfig.clipSettings,
+          requestedConfig.dubbing,
         ).catch(
           async (
             error,
@@ -9505,6 +9840,7 @@ app.post(
         req.body?.reframe,
         req.body?.speechSettings,
         req.body?.clipSettings,
+        req.body?.dubbing,
       );
 
       /* =================================================
@@ -9911,6 +10247,7 @@ app.post(
           effectiveProcessingConfig.reframe,
           effectiveProcessingConfig.speechSettings,
           effectiveProcessingConfig.clipSettings,
+          effectiveProcessingConfig.dubbing,
         ).catch(async (error) => {
           console.error(`Worker-upload processing failed for project ${projectId}:`, error);
           await refundCredits(project.user_id, projectId);

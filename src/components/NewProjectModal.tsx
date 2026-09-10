@@ -19,6 +19,7 @@ import {
   Clock3,
   FileCheck2,
   Film,
+  Languages,
   Link2,
   Loader2,
   Maximize2,
@@ -135,7 +136,41 @@ type ProcessingMode =
   | "reframe"
   | "speech_only"
   | "auto_sfx"
-  | "video_debugger";
+  | "video_debugger"
+  | "dubbing";
+
+// Must match DUBBING_LANGUAGES on the server (server.ts).
+const DUBBING_LANGUAGES: { code: string; label: string }[] = [
+  { code: "en", label: "English" },
+  { code: "de", label: "German" },
+  { code: "es", label: "Spanish" },
+  { code: "fr", label: "French" },
+  { code: "pt", label: "Portuguese" },
+  { code: "it", label: "Italian" },
+  { code: "nl", label: "Dutch" },
+  { code: "ru", label: "Russian" },
+  { code: "pl", label: "Polish" },
+  { code: "id", label: "Indonesian" },
+  { code: "uk", label: "Ukrainian" },
+  { code: "sv", label: "Swedish" },
+  { code: "tr", label: "Turkish" },
+  { code: "no", label: "Norwegian" },
+  { code: "hr", label: "Croatian" },
+  { code: "ro", label: "Romanian" },
+  { code: "sk", label: "Slovak" },
+  { code: "el", label: "Greek" },
+  { code: "da", label: "Danish" },
+  { code: "fi", label: "Finnish" },
+  { code: "hu", label: "Hungarian" },
+  { code: "cs", label: "Czech" },
+  { code: "ja", label: "Japanese" },
+  { code: "ko", label: "Korean" },
+  { code: "vi", label: "Vietnamese" },
+];
+
+interface DubbingConfig {
+  targetLanguage: string;
+}
 
 interface ReframeConfig {
   enabled: boolean;
@@ -557,6 +592,7 @@ interface UploadVideoOptions {
   reframe: ReframeConfig;
   speechSettings?: SpeechSettings;
   clipSettings?: ClipSettings;
+  dubbing?: DubbingConfig;
 
   onProgress?: (progress: number) => void;
 
@@ -577,6 +613,7 @@ const uploadVideoWithProgress = ({
   reframe,
   speechSettings,
   clipSettings,
+  dubbing,
   onProgress,
   onStage,
   signal,
@@ -798,6 +835,13 @@ const uploadVideoWithProgress = ({
       formData.append(
         "clipSettings",
         JSON.stringify(clipSettings),
+      );
+    }
+
+    if (dubbing) {
+      formData.append(
+        "dubbing",
+        JSON.stringify(dubbing),
       );
     }
 
@@ -2133,6 +2177,9 @@ export const NewProjectModal: React.FC<
   const [clipSettings, setClipSettings] =
     useState<ClipSettings>(DEFAULT_CLIP_SETTINGS);
 
+  const [dubbingConfig, setDubbingConfig] =
+    useState<DubbingConfig>({ targetLanguage: "en" });
+
   const isFullVideoMode =
     processingMode === "full_video_caption";
 
@@ -2144,6 +2191,9 @@ export const NewProjectModal: React.FC<
 
   const isVideoDebuggerMode =
     processingMode === "video_debugger";
+
+  const isDubbingMode =
+    processingMode === "dubbing";
 
   // Full-video mode has no purpose without captions, so force them on
   // (and keep the toggle locked) whenever this mode is selected.
@@ -2734,6 +2784,7 @@ export const NewProjectModal: React.FC<
                 reframe: reframeConfig,
                 speechSettings,
                 clipSettings,
+                dubbing: dubbingConfig,
 
                 signal:
                   controller.signal,
@@ -2800,6 +2851,7 @@ export const NewProjectModal: React.FC<
                   reframe: reframeConfig,
                   speechSettings,
                   clipSettings,
+                  dubbing: dubbingConfig,
                 }),
               },
             );
@@ -3146,7 +3198,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[10px]
@@ -3171,13 +3223,13 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || processingMode === "clips") ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : intent === "enhance-speech" ? "Enhance speech" : processingMode === "clips" ? "AI Short Clips" : "AI Reframe"}</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : processingMode === "clips" ? "AI finds the best moments and cuts several social-ready clips." : "Let AI automatically reframe your content to fit any social platform."}</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : isDubbingMode ? "Video Dubbing" : intent === "enhance-speech" ? "Enhance speech" : processingMode === "clips" ? "AI Short Clips" : "AI Reframe"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : isDubbingMode ? "AI translates and re-voices your video in another language." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : processingMode === "clips" ? "AI finds the best moments and cuts several social-ready clips." : "Let AI automatically reframe your content to fit any social platform."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
@@ -3202,7 +3254,7 @@ export const NewProjectModal: React.FC<
             </button>
           </div>
 
-          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode)) && (
+          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isDubbingMode)) && (
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><ShieldCheck className="h-3 w-3 text-emerald-500" />Secure processing</span>
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><Sparkles className="h-3 w-3 text-violet-400" />AI-powered clipping</span>
@@ -3436,6 +3488,40 @@ export const NewProjectModal: React.FC<
                               </div>
                             </div>
                           </div>
+                        ) : isDubbingMode ? (
+                          <div className="space-y-4">
+                            <div className="flex justify-center">
+                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                                {selectedFile ? (
+                                  <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                                ) : getYouTubeVideoId(youtubeUrl) ? (
+                                  <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-sky-950/70 to-zinc-950"><Languages className="h-9 w-9 text-sky-400" /></div>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/85 to-transparent" />
+                                <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
+                                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-500/20 backdrop-blur"><Languages className="h-3.5 w-3.5 text-sky-300" /></div>
+                                  <div><p className="text-[8px] font-bold text-white">AI voice dubbing</p><p className="text-[7px] text-zinc-400">Translate → voice → merge</p></div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-[18px] border border-white/[0.06] bg-white/[0.02] p-4">
+                              <label htmlFor="dubbing-target-language" className="text-[9px] font-bold uppercase tracking-[0.1em] text-zinc-500">Target language</label>
+                              <select
+                                id="dubbing-target-language"
+                                value={dubbingConfig.targetLanguage}
+                                onChange={(e) => setDubbingConfig({ targetLanguage: e.target.value })}
+                                disabled={loading}
+                                className="mt-2 w-full rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2.5 text-[10px] font-semibold text-white outline-none focus:border-sky-500/40 disabled:opacity-50"
+                              >
+                                {DUBBING_LANGUAGES.map((lang) => (
+                                  <option key={lang.code} value={lang.code}>{lang.label}</option>
+                                ))}
+                              </select>
+                              <p className="mt-3 text-[8px] leading-4 text-zinc-500">AI transcribes the original speech, translates it into the selected language, generates a natural voiceover, and replaces the original audio track. The original video visuals are unchanged.</p>
+                            </div>
+                          </div>
                         ) : isAutoSfxMode ? (
                           <div className="space-y-4">
                             <div className="flex justify-center">
@@ -3590,12 +3676,12 @@ export const NewProjectModal: React.FC<
             FOOTER
         ================================================= */}
 
-        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
+        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isDubbingMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
           <div className="flex items-center justify-between gap-3">
-            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode) ? (
+            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isAutoSfxMode ? "Adding Auto SFX..." : isVideoDebuggerMode ? "Scanning video..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isAutoSfxMode ? "Add Auto SFX in 1 click" : isVideoDebuggerMode ? "Scan video" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isAutoSfxMode ? "Adding Auto SFX..." : isVideoDebuggerMode ? "Scanning video..." : isDubbingMode ? "Dubbing video..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isAutoSfxMode ? "Add Auto SFX in 1 click" : isVideoDebuggerMode ? "Scan video" : isDubbingMode ? "Dub video" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
