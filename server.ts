@@ -1287,7 +1287,11 @@ SEGMENTS: ${JSON.stringify(numbered)}`;
 }
 
 const DUBBING_TTS_MODEL = "gemini-2.5-flash-preview-tts";
-const DUBBING_TTS_VOICE = "Kore";
+// "Kore" reads as a firm, informative newsreader tone — fine for a
+// straight explainer, but flat and out of place for songs, casual talk,
+// or anything with emotion. "Sulafat" is a warmer, more natural-sounding
+// preset voice; swap it back to "Kore" if a more neutral tone is wanted.
+const DUBBING_TTS_VOICE = "Sulafat";
 const DUBBING_TTS_SAMPLE_RATE = 24000;
 
 // Gemini's free tier caps gemini-2.5-flash-tts at ~10 requests/day per
@@ -1349,7 +1353,7 @@ async function generateSpeechChunk(text: string, languageName: string): Promise<
     const response: any = await ai.models.generateContent({
       model: DUBBING_TTS_MODEL,
       contents: createUserContent([
-        `Narrate the following in natural, clear spoken ${languageName}, as a single continuous voiceover (no extra commentary, just say it, with natural pauses between sentences): ${text}`,
+        `Say the following in warm, natural, expressive spoken ${languageName} — like a person talking with real feeling, matching the mood of the words (excited, tender, playful, etc. as fits). Do NOT sound like a news anchor or a flat, formal announcement. No extra commentary, just say it, as a single continuous voiceover with natural pauses between lines: ${text}`,
       ]),
       config: {
         responseModalities: ["AUDIO"],
