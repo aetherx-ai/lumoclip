@@ -3176,8 +3176,8 @@ export const NewProjectModal: React.FC<
             <div className="min-w-0">
               {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || processingMode === "clips") ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : intent === "enhance-speech" ? "Enhance speech" : "AI Reframe"}</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : "Let AI automatically reframe your content to fit any social platform."}</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : intent === "enhance-speech" ? "Enhance speech" : processingMode === "clips" ? "AI Short Clips" : "AI Reframe"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : processingMode === "clips" ? "AI finds the best moments and cuts several social-ready clips." : "Let AI automatically reframe your content to fit any social platform."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
