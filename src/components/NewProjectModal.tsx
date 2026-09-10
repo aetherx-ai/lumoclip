@@ -2672,12 +2672,23 @@ export const NewProjectModal: React.FC<
 
       setLoading(true);
 
-      // Never trust stale React state for Enhance Speech.
-      // This action is always a speech-only source-preparation job.
+      // Resolve the mode at submit time. Enhance Speech is always speech-only,
+      // while a mode explicitly selected/locked from the landing page must win
+      // over any stale/default React state. This prevents Video Debugger from
+      // accidentally falling back to the normal clip pipeline.
       const effectiveProcessingMode: ProcessingMode =
         intent === "enhance-speech"
           ? "speech_only"
-          : processingMode;
+          : modeLocked && initialProcessingMode
+            ? initialProcessingMode
+            : processingMode;
+
+      console.log("[LumoClip] New project submit mode", {
+        processingMode,
+        initialProcessingMode,
+        modeLocked,
+        effectiveProcessingMode,
+      });
 
       try {
         const {
@@ -3338,6 +3349,20 @@ export const NewProjectModal: React.FC<
               </section>
             ) : (
               <section className={intent === "enhance-speech" ? "space-y-4" : "space-y-6"}>
+                {intent !== "enhance-speech" && (
+                  <OutputModePicker
+                    mode={processingMode}
+                    onChange={(nextMode) => {
+                      if (!loading) setProcessingMode(nextMode);
+                    }}
+                    disabled={loading}
+                    lockedMode={modeLocked ? processingMode : null}
+                    onUnlock={() => {
+                      if (!loading) setModeLocked(false);
+                    }}
+                  />
+                )}
+
                 {intent === "enhance-speech" ? (
                   <>
                     <div className="flex justify-center">
