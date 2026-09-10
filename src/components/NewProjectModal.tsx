@@ -2672,23 +2672,12 @@ export const NewProjectModal: React.FC<
 
       setLoading(true);
 
-      // Resolve the mode at submit time. Enhance Speech is always speech-only,
-      // while a mode explicitly selected/locked from the landing page must win
-      // over any stale/default React state. This prevents Video Debugger from
-      // accidentally falling back to the normal clip pipeline.
+      // Never trust stale React state for Enhance Speech.
+      // This action is always a speech-only source-preparation job.
       const effectiveProcessingMode: ProcessingMode =
         intent === "enhance-speech"
           ? "speech_only"
-          : modeLocked && initialProcessingMode
-            ? initialProcessingMode
-            : processingMode;
-
-      console.log("[LumoClip] New project submit mode", {
-        processingMode,
-        initialProcessingMode,
-        modeLocked,
-        effectiveProcessingMode,
-      });
+          : processingMode;
 
       try {
         const {
@@ -3349,20 +3338,6 @@ export const NewProjectModal: React.FC<
               </section>
             ) : (
               <section className={intent === "enhance-speech" ? "space-y-4" : "space-y-6"}>
-                {intent !== "enhance-speech" && (
-                  <OutputModePicker
-                    mode={processingMode}
-                    onChange={(nextMode) => {
-                      if (!loading) setProcessingMode(nextMode);
-                    }}
-                    disabled={loading}
-                    lockedMode={modeLocked ? processingMode : null}
-                    onUnlock={() => {
-                      if (!loading) setModeLocked(false);
-                    }}
-                  />
-                )}
-
                 {intent === "enhance-speech" ? (
                   <>
                     <div className="flex justify-center">
@@ -3535,7 +3510,7 @@ export const NewProjectModal: React.FC<
               </section>
             )}
 
-            {wizardStep === 1 && error && (
+            {(wizardStep === 1 || (wizardStep === 2 && intent !== "enhance-speech")) && error && (
               <div role="alert" className="mx-auto mt-5 flex max-w-[590px] items-start gap-3 rounded-[18px] border border-red-500/20 bg-red-500/[0.06] p-4"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-400" /><div><p className="text-[8px] font-bold uppercase tracking-[0.15em] text-red-400">Unable to continue</p><p className="mt-1 text-[10px] leading-5 text-red-300/80">{error}</p></div></div>
             )}
           </div>
