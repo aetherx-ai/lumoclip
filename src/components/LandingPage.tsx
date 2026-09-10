@@ -693,10 +693,10 @@ function ToolGridButton({
       type="button"
       onClick={onClick}
       aria-label={item.label}
-      className="group relative flex w-[108px] flex-col items-center gap-2.5 rounded-2xl py-1 focus:outline-none"
+      className="group relative flex w-[92px] flex-col items-center gap-1.5 rounded-2xl py-1 focus:outline-none"
     >
       <span
-        className="absolute inset-x-2 top-2 h-16 rounded-full opacity-0 blur-2xl transition-all duration-300 group-hover:opacity-100"
+        className="absolute inset-x-2 top-1 h-12 rounded-full opacity-0 blur-2xl transition-all duration-300 group-hover:opacity-100"
         style={{
           background:
             item.accent === "green"
@@ -707,21 +707,21 @@ function ToolGridButton({
         }}
       />
 
-      <span className="relative flex h-[74px] w-[74px] items-center justify-center rounded-full border border-white/[0.055] bg-[#17181c] shadow-[0_12px_35px_rgba(0,0,0,.34)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-white/[0.12] group-hover:bg-[#1d1f24] group-hover:shadow-[0_18px_45px_rgba(0,0,0,.45)]">
-        <span className="absolute inset-[7px] rounded-full bg-[#202126] shadow-[inset_0_1px_0_rgba(255,255,255,.035)]" />
+      <span className="relative flex h-[58px] w-[58px] items-center justify-center rounded-full border border-white/[0.055] bg-[#17181c] shadow-[0_12px_35px_rgba(0,0,0,.34)] transition-all duration-300 group-hover:-translate-y-1 group-hover:border-white/[0.12] group-hover:bg-[#1d1f24] group-hover:shadow-[0_18px_45px_rgba(0,0,0,.45)]">
+        <span className="absolute inset-[5px] rounded-full bg-[#202126] shadow-[inset_0_1px_0_rgba(255,255,255,.035)]" />
 
-        <span className="relative z-10 flex h-12 w-12 items-center justify-center">
+        <span className="relative z-10 flex h-10 w-10 items-center justify-center">
           <ToolLogo accent={item.accent} />
         </span>
 
         {badgeLabel && (
-          <span className="absolute -right-1 -top-2 z-30 rounded-lg bg-[#292b30] px-2.5 py-1.5 text-[10px] font-bold leading-none text-white shadow-[0_6px_16px_rgba(0,0,0,.4)]">
+          <span className="absolute -right-1 -top-2 z-30 rounded-lg bg-[#292b30] px-2 py-1 text-[8px] font-bold leading-none text-white shadow-[0_6px_16px_rgba(0,0,0,.4)]">
             {badgeLabel}
           </span>
         )}
       </span>
 
-      <span className="relative z-10 max-w-[108px] text-center text-[13px] font-semibold leading-[1.2] tracking-[-0.01em] text-zinc-300 transition-colors duration-200 group-hover:text-white">
+      <span className="relative z-10 max-w-[92px] text-center text-[9px] font-semibold leading-[1.15] tracking-[-0.01em] text-zinc-300 transition-colors duration-200 group-hover:text-white">
         {item.label}
       </span>
     </button>
@@ -740,11 +740,11 @@ function ToolGrid({
   ];
 
   return (
-    <div className="mx-auto flex max-w-[820px] flex-col items-center gap-8 sm:gap-10">
+    <div className="mx-auto flex max-w-[690px] flex-col items-center gap-3 sm:gap-4">
       {rows.map((row, rowIndex) => (
         <div
           key={`tool-row-${rowIndex}`}
-          className="flex flex-wrap items-start justify-center gap-x-5 gap-y-7 sm:gap-x-8 sm:gap-y-8"
+          className="grid grid-cols-6 items-start justify-items-center gap-x-1 gap-y-3 sm:gap-x-3 sm:gap-y-3"
         >
           {row.map((item) => (
             <ToolGridButton
@@ -2024,50 +2024,50 @@ export function LandingPage({
 
         <section
           aria-labelledby="hero-title"
-          className="relative min-h-screen overflow-hidden"
+          className="relative overflow-hidden"
         >
           <div
             ref={spotlightRef}
             aria-hidden="true"
-            className="pointer-events-none absolute h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-300/[0.035] blur-[70px] transition-all duration-1000"
+            className="pointer-events-none absolute h-[620px] w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-300/[0.035] blur-[85px] transition-all duration-1000"
             style={{
               left: "50%",
-              top: "15%",
+              top: "8%",
             }}
           />
 
-          <Glow className="left-1/2 top-[-320px] h-[700px] w-[1100px] -translate-x-1/2 bg-violet-400/[0.065]" />
+          <Glow className="left-1/2 top-[-260px] h-[620px] w-[1000px] -translate-x-1/2 bg-violet-400/[0.065]" />
 
-          <div className="relative mx-auto max-w-[1280px] px-5 pb-20 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pt-28">
-            <div className="mx-auto max-w-5xl text-center">
+          <div className="relative mx-auto max-w-[1280px] px-5 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-14 lg:px-8 lg:pt-16">
+            <div className="mx-auto max-w-[1080px] text-center">
               <Reveal immediate>
                 <SectionLabel>
                   AI VIDEO CREATION PLATFORM
                 </SectionLabel>
               </Reveal>
 
-              <Reveal immediate delay={80}>
+              <Reveal immediate delay={60}>
                 <h1
                   id="hero-title"
-                  className="mt-7 text-[52px] font-black leading-[0.9] tracking-[-0.07em] drop-shadow-[0_8px_35px_rgba(0,0,0,.35)] sm:text-[78px] lg:text-[104px]"
+                  className="mx-auto mt-5 max-w-5xl text-[48px] font-black leading-[0.91] tracking-[-0.075em] drop-shadow-[0_8px_35px_rgba(0,0,0,.35)] sm:text-[68px] lg:text-[88px]"
                 >
                   <span className="sr-only">
-                    LumoClip: AI video creation and editing platform.{" "}
+                    LumoClip: AI video creation and editing platform. {""}
                   </span>
 
-                  Create, Edit & Repurpose
+                  Create. Edit. Repurpose.
                   <br />
 
                   <span className="relative inline-block bg-gradient-to-r from-violet-100 via-violet-300 to-fuchsia-400 bg-clip-text text-transparent">
-                    Videos With AI.
+                    All with AI.
                     <svg
                       aria-hidden="true"
-                      viewBox="0 0 320 24"
+                      viewBox="0 0 300 24"
                       preserveAspectRatio="none"
-                      className="absolute -bottom-2 left-0 h-4 w-full text-violet-400/70 sm:-bottom-3 sm:h-5"
+                      className="absolute -bottom-2 left-0 h-3.5 w-full text-violet-400/70 sm:-bottom-3 sm:h-4"
                     >
                       <path
-                        d="M4 14C60 6 120 4 160 8C210 13 270 16 316 9"
+                        d="M4 14C60 6 120 4 160 8C210 13 250 16 296 9"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="4"
@@ -2078,39 +2078,39 @@ export function LandingPage({
                 </h1>
               </Reveal>
 
-              <Reveal immediate delay={150}>
-                <p className="mx-auto mt-8 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base sm:leading-8">
-                  LumoClip is an AI video creation and editing platform
-                  that helps you create, edit and repurpose content
-                  with AI — from captions, clips and B-roll to reframe,
-                  speech enhancement, dubbing, SFX and more.
+              <Reveal immediate delay={120}>
+                <p className="mx-auto mt-5 max-w-2xl text-[13px] leading-6 text-zinc-600 sm:text-sm sm:leading-7">
+                  Create, edit and repurpose videos in one AI workspace —
+                  from clips, captions and B-roll to reframe, speech enhancement,
+                  dubbing, SFX, voiceover and more.
                 </p>
               </Reveal>
 
-              {/* SOURCE BOX */}
-
+              {/* ============================================================
+                  PRIMARY CREATION BOX
+                  This is intentionally the first major action, inspired by
+                  modern AI video creation products while keeping LumoClip's
+                  own visual identity and workflow.
+              ============================================================ */}
               <Reveal
                 immediate
-                delay={220}
-                className="mx-auto mt-10 max-w-[800px]"
+                delay={170}
+                className="mx-auto mt-7 max-w-[820px]"
               >
                 <div className="relative">
-                  <div className="absolute -inset-4 rounded-[38px] bg-gradient-to-r from-violet-400/[0.09] via-fuchsia-500/[0.07] to-violet-400/[0.09] blur-2xl" />
+                  <div className="absolute -inset-5 rounded-[38px] bg-gradient-to-r from-violet-500/[0.10] via-fuchsia-500/[0.08] to-cyan-400/[0.06] blur-3xl" />
 
-                  <div className="relative rounded-[30px] border border-white/[0.11] bg-[#080b10]/95 p-2 shadow-[0_45px_160px_rgba(0,0,0,0.62),0_0_80px_rgba(139,92,246,0.07)] backdrop-blur-2xl">
-                    <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-                      <div className="flex min-w-0 items-center gap-3 rounded-[21px] border border-white/[0.055] bg-white/[0.018] px-3 transition focus-within:border-violet-300/20">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06]">
+                  <div className="relative overflow-hidden rounded-[26px] border border-white/[0.12] bg-[#080b10]/95 p-2 shadow-[0_35px_120px_rgba(0,0,0,.58),0_0_80px_rgba(139,92,246,.08)] backdrop-blur-2xl">
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <div className="flex min-w-0 flex-1 items-center gap-3 rounded-[19px] border border-white/[0.065] bg-white/[0.025] px-3 transition focus-within:border-violet-300/25 focus-within:bg-white/[0.035]">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.07]">
                           <Link2
                             aria-hidden="true"
                             className="h-4 w-4 text-violet-300"
                           />
                         </div>
 
-                        <label
-                          htmlFor="youtube-url"
-                          className="sr-only"
-                        >
+                        <label htmlFor="youtube-url" className="sr-only">
                           YouTube video URL
                         </label>
 
@@ -2118,69 +2118,54 @@ export function LandingPage({
                           id="youtube-url"
                           value={url}
                           onChange={(e) => {
-                            setUrl(
-                              e.target.value
-                            );
-
-                            if (
-                              selectedFile
-                            ) {
-                              setSelectedFile(
-                                null
-                              );
-                            }
+                            setUrl(e.target.value);
+                            if (selectedFile) setSelectedFile(null);
                           }}
                           onKeyDown={(e) => {
-                            if (
-                              e.key ===
-                              "Enter"
-                            ) {
-                              submit();
-                            }
+                            if (e.key === "Enter") submit();
                           }}
-                          placeholder="Paste a YouTube URL..."
+                          placeholder="Paste a YouTube URL or video link..."
                           autoComplete="url"
                           inputMode="url"
-                          className="h-12 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-zinc-700"
+                          className="h-11 min-w-0 flex-1 bg-transparent text-[13px] text-white outline-none placeholder:text-zinc-700"
                         />
 
                         {url && (
                           <button
                             type="button"
-                            aria-label="Clear YouTube URL"
-                            onClick={() =>
-                              setUrl("")
-                            }
-                            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-700 transition hover:bg-white/[0.04] hover:text-white"
+                            aria-label="Clear video URL"
+                            onClick={() => setUrl("")}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-zinc-600 transition hover:bg-white/[0.05] hover:text-white"
                           >
                             <X className="h-4 w-4" />
                           </button>
                         )}
                       </div>
 
-                      <PremiumButton
+                      <button
+                        type="button"
                         onClick={submit}
-                        icon
+                        className="group relative flex h-[58px] shrink-0 items-center justify-center gap-2 overflow-hidden rounded-[19px] bg-white px-6 text-[13px] font-bold text-black shadow-[0_10px_35px_rgba(139,92,246,.18)] transition hover:-translate-y-0.5 hover:bg-violet-50 hover:shadow-[0_15px_45px_rgba(139,92,246,.28)] active:translate-y-0 sm:h-[58px]"
                       >
-                        Create clips
-                      </PremiumButton>
+                        <span className="pointer-events-none absolute inset-y-0 -left-1/2 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-violet-200/70 to-transparent opacity-0 transition duration-700 group-hover:translate-x-[360%] group-hover:opacity-100" />
+                        <span className="relative">Create with AI</span>
+                        <ArrowRight className="relative h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </button>
                     </div>
 
                     <div className="my-2 flex items-center gap-3 px-2">
                       <div className="h-px flex-1 bg-white/[0.045]" />
-
-                      <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-zinc-800">
+                      <span className="text-[8px] font-bold uppercase tracking-[0.2em] text-zinc-700">
                         OR
                       </span>
-
                       <div className="h-px flex-1 bg-white/[0.045]" />
                     </div>
 
                     <label
-                      className={`group flex cursor-pointer items-center justify-between gap-4 rounded-[21px] border border-dashed px-4 py-3.5 transition-all duration-300 ${
+                      className={`group flex cursor-pointer items-center justify-between gap-3 rounded-[19px] border border-dashed px-3.5 py-3 transition-all duration-300 ${
                         isDragging
-                          ? "border-violet-300/50 bg-violet-400/[0.08] shadow-[0_0_45px_rgba(139,92,246,0.08)]"
-                          : "border-violet-300/10 bg-violet-400/[0.018] hover:border-violet-300/25 hover:bg-violet-400/[0.04]"
+                          ? "border-violet-300/50 bg-violet-400/[0.08] shadow-[0_0_45px_rgba(139,92,246,.08)]"
+                          : "border-white/[0.09] bg-white/[0.018] hover:border-violet-300/20 hover:bg-violet-400/[0.035]"
                       }`}
                       onDragOver={(e) => {
                         e.preventDefault();
@@ -2199,163 +2184,102 @@ export function LandingPage({
                         accept="video/*,.mp4,.mov,.webm,.mkv"
                         className="sr-only"
                         onChange={(e) => {
-                          const file =
-                            e.target.files?.[0];
-
-                          if (!file) return;
-
-                          acceptVideoFile(file);
-
-                          // Keep the file selected so the user can choose
-                          // a caption style before starting the job.
+                          const file = e.target.files?.[0];
+                          if (file) acceptVideoFile(file);
                         }}
                       />
 
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06] transition group-hover:scale-105">
-                          <Upload className="relative h-4 w-4 text-violet-300" />
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-300/10 bg-violet-400/[0.06] transition group-hover:scale-105">
+                          <Upload className="h-4 w-4 text-violet-300" />
                         </div>
 
                         <div className="min-w-0 text-left">
-                          <p className="truncate text-xs font-bold text-zinc-200">
-                            {selectedFile
-                              ? selectedFile.name
-                              : "Upload your video"}
+                          <p className="truncate text-[11px] font-bold text-zinc-200">
+                            {selectedFile ? selectedFile.name : "Upload your video"}
                           </p>
-
-                          <p className="mt-0.5 text-[9px] text-zinc-700">
+                          <p className="mt-0.5 truncate text-[8px] text-zinc-700">
                             {selectedFile
-                              ? `${(
-                                  selectedFile.size /
-                                  1024 /
-                                  1024
-                                ).toFixed(
-                                  1
-                                )} MB • ready to process`
-                              : "MP4, MOV, WebM and supported video formats"}
+                              ? `${(selectedFile.size / 1024 / 1024).toFixed(1)} MB • ready to process`
+                              : "MP4, MOV, WebM and other supported video formats"}
                           </p>
                         </div>
                       </div>
 
-                      <span className="shrink-0 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-[9px] font-bold text-zinc-400 transition group-hover:border-violet-300/15 group-hover:text-violet-200">
-                        {selectedFile
-                          ? "Change"
-                          : "Choose file"}
+                      <span className="shrink-0 rounded-xl border border-white/[0.07] bg-white/[0.035] px-3 py-2 text-[8px] font-bold text-zinc-400 transition group-hover:border-violet-300/15 group-hover:text-violet-200">
+                        {selectedFile ? "Change" : "Choose file"}
                       </span>
                     </label>
 
                     {fileError && (
-                      <p className="mt-2 px-2 text-left text-[9px] font-medium text-rose-300">{fileError}</p>
+                      <p className="mt-2 px-2 text-left text-[9px] font-medium text-rose-300">
+                        {fileError}
+                      </p>
                     )}
                   </div>
                 </div>
 
-                <div className="mt-4 flex flex-wrap justify-center gap-x-6 gap-y-2">
+                <div className="mt-3 flex flex-wrap justify-center gap-x-5 gap-y-1.5">
                   {[
                     "AI-powered",
                     "Upload or URL",
-                    "No editing expertise",
+                    "One workspace",
                     "Fast workflow",
                   ].map((item) => (
                     <span
                       key={item}
-                      className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-800"
+                      className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-700"
                     >
                       <Check className="h-3 w-3 text-emerald-400/70" />
-
                       {item}
                     </span>
                   ))}
                 </div>
               </Reveal>
 
-              {/* TOOL GRID (Opus-style small icon buttons) */}
+              {/* ============================================================
+                  TOOL DOCK — 12 TOOLS / 2 ROWS
+              ============================================================ */}
+              <Reveal immediate delay={220} className="mx-auto mt-7 max-w-[760px]">
+                <div className="rounded-[25px] border border-white/[0.07] bg-white/[0.012] px-3 py-4 shadow-[0_25px_80px_rgba(0,0,0,.28)] backdrop-blur-xl sm:px-5 sm:py-5">
+                  <div className="mb-3 flex items-center justify-center gap-2">
+                    <span className="h-1 w-1 rounded-full bg-violet-300" />
+                    <span className="text-[8px] font-bold uppercase tracking-[0.22em] text-zinc-700">
+                      Create with LumoClip
+                    </span>
+                    <span className="h-1 w-1 rounded-full bg-fuchsia-300" />
+                  </div>
 
-              <Reveal immediate delay={260} className="mt-12">
-                <ToolGrid
-                  onSelect={(item) =>
-                    onGetStarted(
-                      item.id === "enhance-speech"
-                        ? "enhance-speech"
-                        : undefined,
-                      item.mode
-                    )
-                  }
-                />
+                  <ToolGrid
+                    onSelect={(item) =>
+                      onGetStarted(
+                        item.id === "enhance-speech"
+                          ? "enhance-speech"
+                          : undefined,
+                        item.mode
+                      )
+                    }
+                  />
+                </div>
+              </Reveal>
+
+              <Reveal immediate delay={260} className="mx-auto mt-5 max-w-3xl">
+                <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[8px] font-medium uppercase tracking-[0.16em] text-zinc-800">
+                  <span>Creation</span>
+                  <span className="text-zinc-900">•</span>
+                  <span>Editing</span>
+                  <span className="text-zinc-900">•</span>
+                  <span>Audio</span>
+                  <span className="text-zinc-900">•</span>
+                  <span>Repurposing</span>
+                  <span className="text-zinc-900">•</span>
+                  <span>Publishing</span>
+                </div>
               </Reveal>
             </div>
-
-            {/* HERO INTELLIGENCE */}
-
-            <Reveal
-              immediate
-              delay={300}
-              className="relative mx-auto mt-20 max-w-[1120px]"
-            >
-              <div className="grid items-center gap-10 lg:grid-cols-[0.9fr_1.1fr]">
-                <div className="order-2 lg:order-1">
-                  <SectionLabel icon={WandSparkles}>
-                    AI video intelligence
-                  </SectionLabel>
-
-                  <h2 className="mt-7 text-3xl font-black tracking-[-0.055em] text-white sm:text-5xl">
-                    Your content.
-                    <br />
-
-                    <span className="text-zinc-700">
-                      Understood by AI.
-                    </span>
-                  </h2>
-
-                  <p className="mt-5 max-w-lg text-sm leading-7 text-zinc-700">
-                    LumoClip analyzes what is
-                    being said, what matters and
-                    what could become compelling
-                    short-form content.
-                  </p>
-
-                  <div className="mt-7 grid gap-2 sm:grid-cols-2">
-                    {[
-                      [Mic2, "Context analysis"],
-                      [Sparkles, "Moment detection"],
-                      [Scissors, "Clip generation"],
-                      [Subtitles, "Caption generation"],
-                    ].map(([Icon, text]) => {
-                      const I =
-                        Icon as React.ElementType;
-
-                      return (
-                        <div
-                          key={String(text)}
-                          className="group flex items-center gap-3 rounded-2xl border border-white/[0.05] bg-white/[0.012] px-3 py-3 transition hover:border-violet-300/10 hover:bg-white/[0.025]"
-                        >
-                          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-400/[0.05]">
-                            <I className="h-3.5 w-3.5 text-violet-300 transition group-hover:scale-110" />
-                          </div>
-
-                          <span className="text-[10px] font-semibold text-zinc-500">
-                            {String(text)}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <div className="order-1 lg:order-2">
-                  <AIOrb />
-                </div>
-              </div>
-            </Reveal>
-
-            <Reveal immediate delay={100}>
-              <div className="mx-auto mt-6 max-w-[1000px]">
-                <MiniStats />
-              </div>
-            </Reveal>
           </div>
 
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-36 bg-gradient-to-t from-[#040608] to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#040608] to-transparent" />
         </section>
 
         {/* ==================================================================
