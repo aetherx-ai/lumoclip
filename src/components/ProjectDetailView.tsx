@@ -17,6 +17,7 @@ import {
   FileVideo,
   Film,
   Flame,
+  Languages,
   Layers3,
   Loader2,
   MoreHorizontal,
@@ -1976,6 +1977,121 @@ const FullCaptionedVideoResult: React.FC<{
 };
 
 /* =========================================================
+   VIDEO DUBBING RESULT
+========================================================= */
+
+const DUBBING_LANGUAGE_LABELS: Record<string, string> = {
+  en: "English", de: "German", es: "Spanish", fr: "French", pt: "Portuguese",
+  it: "Italian", nl: "Dutch", ru: "Russian", pl: "Polish", id: "Indonesian",
+  uk: "Ukrainian", sv: "Swedish", tr: "Turkish", no: "Norwegian", hr: "Croatian",
+  ro: "Romanian", sk: "Slovak", el: "Greek", da: "Danish", fi: "Finnish",
+  hu: "Hungarian", cs: "Czech", ja: "Japanese", ko: "Korean", vi: "Vietnamese",
+};
+
+const DubbingVideoResult: React.FC<{
+  project: Project;
+  onPublish: () => void;
+}> = ({ project, onPublish }) => {
+  const fullVideoUrl =
+    getFullVideoUrl(project);
+
+  const thumbnail =
+    project.thumbnail_url || "";
+
+  const targetLanguageCode = String(
+    (project as any).dubbing_config?.targetLanguage || "",
+  );
+  const languageLabel =
+    DUBBING_LANGUAGE_LABELS[targetLanguageCode] || "";
+
+  return (
+    <section className="mt-8">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Languages className="h-4 w-4 text-sky-400" />
+
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              Dubbed video{languageLabel ? ` — ${languageLabel}` : ""}
+            </h2>
+          </div>
+
+          <p className="mt-1 text-[10px] text-zinc-600">
+            Your video's audio, translated and re-voiced by AI. Visuals are unchanged.
+          </p>
+        </div>
+      </div>
+
+      <Surface className="overflow-hidden">
+        <div className="bg-black">
+          {fullVideoUrl ? (
+            <video
+              src={fullVideoUrl}
+              controls
+              playsInline
+              preload="metadata"
+              poster={thumbnail || undefined}
+              className="max-h-[72vh] min-h-[220px] w-full object-contain sm:max-h-[680px]"
+            />
+          ) : (
+            <div className="flex aspect-video flex-col items-center justify-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-sky-400" />
+
+              <p className="text-[10px] text-zinc-600">
+                Preparing your dubbed video...
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-[10px] text-zinc-600">
+            <Clock3 className="h-3.5 w-3.5" />
+
+            {formatDuration(project.duration)}
+
+            <span>•</span>
+
+            {languageLabel ? `Dubbed in ${languageLabel}` : "Dubbed audio"}
+          </div>
+
+          {fullVideoUrl && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <PublishToYouTubeButton
+                onPublish={onPublish}
+                className="sm:w-auto"
+              />
+
+              <div className="flex gap-2">
+                <a
+                  href={fullVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-white to-zinc-100 px-4 py-2.5 text-[10px] font-bold text-black shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white sm:flex-none"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </a>
+
+                <a
+                  href={fullVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </Surface>
+    </section>
+  );
+};
+
+/* =========================================================
    AI REFRAME RESULT
 ========================================================= */
 
@@ -3575,6 +3691,9 @@ export const ProjectDetailView: React.FC<
     projectCurrentStep.includes("repairing video") ||
     projectCurrentStep.includes("video debugging");
 
+  const isDubbingMode =
+    getProcessingMode(project) === "dubbing";
+
   const [showDeleteMenu, setShowDeleteMenu] =
     useState(false);
 
@@ -4048,6 +4167,28 @@ export const ProjectDetailView: React.FC<
                       clips={safeClips}
                     />
                   </div>
+                </div>
+              </>
+            ) : isDubbingMode ? (
+              <>
+                <div className="grid gap-5 xl:grid-cols-12">
+                  <div className="xl:col-span-12 min-w-0">
+                    <DubbingVideoResult
+                      project={project}
+                      onPublish={() =>
+                        setPublishTarget({
+                          kind: "project",
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <PremiumStats
+                    project={project}
+                    clips={[]}
+                  />
                 </div>
               </>
             ) : isReframeMode ? (
