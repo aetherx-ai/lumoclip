@@ -1283,10 +1283,116 @@ const DUBBING_TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const DUBBING_TTS_VOICE = "Kore";
 const DUBBING_TTS_SAMPLE_RATE = 24000;
 
-// Generates one speech clip per transcript segment via Gemini's native
-// TTS, then stitches them into a single audio track the same length as
-// the source video, delaying each clip to its original segment.start
-// time so dubbed lines land close to where the original line was said.
+// Gemini's free tier caps gemini-2.5-flash-tts at ~10 requests/day per
+// project — a single request per transcript segment (often 20-40 for a
+// typical video) blows through that in one job. Group consecutive
+// segments into a handful of larger chunks instead, so one video costs
+// a small, roughly-constant number of TTS calls regardless of how many
+// lines it has. A chunk closes when either budget is hit.
+const DUBBING_CHUNK_MAX_CHARS = 1600;
+const DUBBING_CHUNK_MAX_SPAN_SECONDS = 45;
+
+interface DubbingChunk {
+  text: string;
+  start: number;
+}
+
+function buildDubbingChunks(segments: TranscriptSegment[]): DubbingChunk[] {
+  const chunks: DubbingChunk[] = [];
+  let current: { texts: string[]; start: number; charCount: number } | null = null;
+
+  for (const segment of segments) {
+    const text = (segment.text || "").trim();
+    if (!text) continue;
+
+    const startsNewChunk =
+      !current ||
+      current.charCount + text.length > DUBBING_CHUNK_MAX_CHARS ||
+      segment.start - current.start > DUBBING_CHUNK_MAX_SPAN_SECONDS;
+
+    if (startsNewChunk) {
+      if (current) chunks.push({ text: current.texts.join(" "), start: current.start });
+      current = { texts: [text], start: Math.max(0, segment.start), charCount: text.length };
+    } else {
+      current!.texts.push(text);
+      current!.charCount += text.length;
+    }
+  }
+  if (current) chunks.push({ text: current.texts.join(" "), start: current.start });
+
+  return chunks;
+}
+
+// Parses the "Please retry in Ns" hint Gemini's 429 responses include, so
+// a transient quota hiccup can be waited out instead of just skipped.
+function parseGeminiRetryDelaySeconds(error: unknown): number | null {
+  const message = getGeminiErrorMessage(error) || "";
+  const match = message.match(/retry in ([\d.]+)s/i) || message.match(/"retryDelay":"(\d+)s"/i);
+  if (!match) return null;
+  const seconds = parseFloat(match[1]);
+  return Number.isFinite(seconds) ? seconds : null;
+}
+
+async function generateSpeechChunk(text: string, languageName: string): Promise<Buffer | null> {
+  const attemptOnce = async () => {
+    const response: any = await ai.models.generateContent({
+      model: DUBBING_TTS_MODEL,
+      contents: createUserContent([
+        `Narrate the following in natural, clear spoken ${languageName}, as a single continuous voiceover (no extra commentary, just say it, with natural pauses between sentences): ${text}`,
+      ]),
+      config: {
+        responseModalities: ["AUDIO"],
+        speechConfig: {
+          voiceConfig: { prebuiltVoiceConfig: { voiceName: DUBBING_TTS_VOICE } },
+        },
+      },
+    } as any);
+
+    const audioPart = response?.candidates?.[0]?.content?.parts?.find(
+      (part: any) => part?.inlineData?.data,
+    );
+    if (!audioPart) {
+      // Log enough of the raw response to diagnose *why* no audio came
+      // back (blocked by safety filters, wrong modality, empty candidate,
+      // etc.) instead of only knowing that it happened.
+      console.warn(
+        "Dubbing: TTS response had no audio part. finishReason:",
+        response?.candidates?.[0]?.finishReason,
+        "promptFeedback:",
+        JSON.stringify(response?.promptFeedback || {}),
+      );
+      return null;
+    }
+    return Buffer.from(audioPart.inlineData.data, "base64");
+  };
+
+  try {
+    return await attemptOnce();
+  } catch (firstError) {
+    const retryDelay = parseGeminiRetryDelaySeconds(firstError);
+    // Only worth waiting out short, quota-hint-provided delays. Anything
+    // longer (or with no hint) almost certainly won't clear within this
+    // request's lifetime, so fail fast instead of hanging the job.
+    if (retryDelay === null || retryDelay > 20) {
+      console.warn("Dubbing: TTS call failed:", getGeminiErrorMessage(firstError));
+      return null;
+    }
+    console.warn(`Dubbing: TTS rate-limited, waiting ${retryDelay.toFixed(1)}s before one retry...`);
+    await sleep(Math.ceil(retryDelay * 1000) + 500);
+    try {
+      return await attemptOnce();
+    } catch (secondError) {
+      console.warn("Dubbing: TTS retry also failed:", getGeminiErrorMessage(secondError));
+      return null;
+    }
+  }
+}
+
+// Generates a small number of speech chunks via Gemini's native TTS
+// (grouping many transcript segments per call to stay within the
+// provider's daily request quota), then stitches them into a single
+// audio track the same length as the source video, delaying each chunk
+// to roughly where its first line was originally spoken.
 async function generateDubbedAudioTrack(
   translatedSegments: TranscriptSegment[],
   targetLanguage: string,
@@ -1297,45 +1403,25 @@ async function generateDubbedAudioTrack(
   const segmentDir = path.join(workDir, "dub-segments");
   fs.mkdirSync(segmentDir, { recursive: true });
 
-  const segmentFiles: { path: string; start: number }[] = [];
+  const chunks = buildDubbingChunks(translatedSegments);
+  console.log(`Dubbing: ${translatedSegments.length} transcript segments grouped into ${chunks.length} TTS call(s).`);
 
-  for (let i = 0; i < translatedSegments.length; i++) {
-    const segment = translatedSegments[i];
-    if (!segment.text || !segment.text.trim()) continue;
+  const chunkFiles: { path: string; start: number }[] = [];
 
-    let ttsResponse: any;
-    try {
-      ttsResponse = await ai.models.generateContent({
-        model: DUBBING_TTS_MODEL,
-        contents: createUserContent([
-          `Narrate the following in natural, clear spoken ${languageName}, as a single continuous voiceover line (no extra commentary, just say it): ${segment.text}`,
-        ]),
-        config: {
-          responseModalities: ["AUDIO"],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: DUBBING_TTS_VOICE } },
-          },
-        },
-      } as any);
-    } catch (ttsError) {
-      console.warn(`Dubbing: TTS failed for segment ${i}, skipping:`, getGeminiErrorMessage(ttsError));
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
+    const pcmBuffer = await generateSpeechChunk(chunk.text, languageName);
+    if (!pcmBuffer) {
+      console.warn(`Dubbing: chunk ${i} produced no audio, skipping.`);
       continue;
     }
 
-    const audioPart = ttsResponse?.candidates?.[0]?.content?.parts?.find(
-      (part: any) => part?.inlineData?.data,
-    );
-    if (!audioPart) {
-      console.warn(`Dubbing: no audio returned for segment ${i}, skipping.`);
-      continue;
-    }
-
-    const pcmPath = path.join(segmentDir, `seg-${i}.pcm`);
-    fs.writeFileSync(pcmPath, Buffer.from(audioPart.inlineData.data, "base64"));
+    const pcmPath = path.join(segmentDir, `chunk-${i}.pcm`);
+    fs.writeFileSync(pcmPath, pcmBuffer);
 
     // Gemini TTS returns raw 24kHz mono 16-bit little-endian PCM — wrap
     // it into a playable WAV so ffmpeg can treat it as a normal input.
-    const wavPath = path.join(segmentDir, `seg-${i}.wav`);
+    const wavPath = path.join(segmentDir, `chunk-${i}.wav`);
     await new Promise<void>((resolve, reject) => {
       ffmpeg(pcmPath)
         .inputOptions(["-f", "s16le", "-ar", String(DUBBING_TTS_SAMPLE_RATE), "-ac", "1"])
@@ -1345,26 +1431,26 @@ async function generateDubbedAudioTrack(
         .run();
     });
 
-    segmentFiles.push({ path: wavPath, start: Math.max(0, segment.start) });
+    chunkFiles.push({ path: wavPath, start: chunk.start });
   }
 
-  if (!segmentFiles.length) {
+  if (!chunkFiles.length) {
     throw new Error("Dubbing: no speech audio could be generated for this video.");
   }
 
   const trackOutputPath = path.join(workDir, "dubbed-audio.wav");
-  const delayFilters = segmentFiles
+  const delayFilters = chunkFiles
     .map((s, i) => {
       const delayMs = Math.round(s.start * 1000);
       return `[${i}:a]adelay=${delayMs}|${delayMs}[a${i}]`;
     })
     .join("; ");
-  const mixInputs = segmentFiles.map((_, i) => `[a${i}]`).join("");
-  const filterComplex = `${delayFilters}; ${mixInputs}amix=inputs=${segmentFiles.length}:normalize=0[aout]`;
+  const mixInputs = chunkFiles.map((_, i) => `[a${i}]`).join("");
+  const filterComplex = `${delayFilters}; ${mixInputs}amix=inputs=${chunkFiles.length}:normalize=0[aout]`;
 
   await new Promise<void>((resolve, reject) => {
     const command = ffmpeg();
-    for (const segment of segmentFiles) command.input(segment.path);
+    for (const chunk of chunkFiles) command.input(chunk.path);
     command
       .complexFilter(filterComplex, ["aout"])
       .outputOptions(["-t", duration.toFixed(2)])
