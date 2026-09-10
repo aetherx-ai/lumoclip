@@ -5760,7 +5760,20 @@ async function analyzeLocalVideo(
       console.log("Gemini processing state:", state);
 
       if (state === "FAILED") {
-        throw new Error("Gemini video processing failed.");
+        const detail = (file as any)?.error?.message || (file as any)?.error?.code;
+        console.warn(
+          "Gemini file processing FAILED",
+          detail ? `— provider detail: ${detail}` : "(no detail returned by provider).",
+        );
+        const failError: any = new Error(
+          `Gemini video processing failed${detail ? `: ${detail}` : "."}`,
+        );
+        // File-processing failures are often transient (a bad chunk of the
+        // upload, a momentary provider hiccup) — treat like a 503 so the
+        // existing retry loop gets a chance to re-upload and try again
+        // (and rotate to another key) before giving up on Gemini entirely.
+        failError.status = 503;
+        throw failError;
       }
 
       await sleep(GEMINI_POLL_MS);
