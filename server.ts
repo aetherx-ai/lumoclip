@@ -1366,26 +1366,55 @@ async function generateSpeechChunk(text: string, languageName: string): Promise<
     return Buffer.from(audioPart.inlineData.data, "base64");
   };
 
-  try {
-    return await attemptOnce();
-  } catch (firstError) {
-    const retryDelay = parseGeminiRetryDelaySeconds(firstError);
-    // Only worth waiting out short, quota-hint-provided delays. Anything
-    // longer (or with no hint) almost certainly won't clear within this
-    // request's lifetime, so fail fast instead of hanging the job.
-    if (retryDelay === null || retryDelay > 20) {
-      console.warn("Dubbing: TTS call failed:", getGeminiErrorMessage(firstError));
-      return null;
-    }
-    console.warn(`Dubbing: TTS rate-limited, waiting ${retryDelay.toFixed(1)}s before one retry...`);
-    await sleep(Math.ceil(retryDelay * 1000) + 500);
+  // Try every configured Gemini API key before giving up on this chunk.
+  // geminiKeyIndex only ever advances (shared with generateGeminiWithRetry),
+  // so once a key's daily TTS quota is confirmed exhausted every later
+  // chunk — and every later job in this process — skips straight past it.
+  for (let keyPass = 0; keyPass < geminiClients.length; keyPass++) {
     try {
       return await attemptOnce();
-    } catch (secondError) {
-      console.warn("Dubbing: TTS retry also failed:", getGeminiErrorMessage(secondError));
-      return null;
+    } catch (firstError) {
+      const quotaExceeded = isGeminiQuotaExceeded(firstError);
+
+      console.warn(
+        `Dubbing: TTS call failed on key #${geminiKeyIndex + 1}/${geminiClients.length}${
+          quotaExceeded ? " [QUOTA EXCEEDED]" : ""
+        }:`,
+        getGeminiErrorMessage(firstError),
+      );
+
+      if (quotaExceeded) {
+        // A daily/free-tier quota will not recover during this job. Move
+        // straight to the next key rather than waiting or retrying here.
+        if (rotateGeminiKey()) {
+          console.warn(
+            `Dubbing: TTS retrying this chunk on key #${geminiKeyIndex + 1}/${geminiClients.length}.`,
+          );
+          continue;
+        }
+        console.warn("Dubbing: TTS quota exhausted on all configured Gemini API keys.");
+        return null;
+      }
+
+      // Not a quota error — only worth waiting out short, quota-hint-provided
+      // delays on the SAME key. Anything longer (or with no hint) almost
+      // certainly won't clear within this request's lifetime, so fail fast.
+      const retryDelay = parseGeminiRetryDelaySeconds(firstError);
+      if (retryDelay === null || retryDelay > 20) {
+        return null;
+      }
+      console.warn(`Dubbing: TTS rate-limited, waiting ${retryDelay.toFixed(1)}s before one retry...`);
+      await sleep(Math.ceil(retryDelay * 1000) + 500);
+      try {
+        return await attemptOnce();
+      } catch (secondError) {
+        console.warn("Dubbing: TTS retry also failed:", getGeminiErrorMessage(secondError));
+        return null;
+      }
     }
   }
+
+  return null;
 }
 
 // Generates a small number of speech chunks via Gemini's native TTS
