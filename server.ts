@@ -170,10 +170,17 @@ const GEMINI_RETRY_MAX_MS = Number(
 );
 
 // Hard limit for one Gemini generateContent request. This prevents a stuck
-// provider request from hanging a Render worker indefinitely.
-const GEMINI_REQUEST_TIMEOUT_MS = Number(
-  process.env.GEMINI_REQUEST_TIMEOUT_MS || 120000,
+// provider request from hanging a Render worker indefinitely. Guarded
+// against a malformed env var (e.g. "240000ms" or "4 minutes") producing
+// NaN, which would make setTimeout fire immediately and every Gemini call
+// appear to "time out" before it even had a chance to run.
+const GEMINI_REQUEST_TIMEOUT_MS_RAW = Number(
+  process.env.GEMINI_REQUEST_TIMEOUT_MS,
 );
+const GEMINI_REQUEST_TIMEOUT_MS =
+  Number.isFinite(GEMINI_REQUEST_TIMEOUT_MS_RAW) && GEMINI_REQUEST_TIMEOUT_MS_RAW > 0
+    ? GEMINI_REQUEST_TIMEOUT_MS_RAW
+    : 120000;
 
 // If the primary model exhausts its retries on a transient error
 // (429/5xx/"high demand"), fall back to these models in order before
@@ -4073,7 +4080,10 @@ async function withGeminiTimeout<T>(
   timeoutMs: number,
   label: string,
 ): Promise<T> {
-  const safeTimeout = Math.max(1000, timeoutMs);
+  const safeTimeout =
+    Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? Math.max(1000, timeoutMs)
+      : 120000;
 
   return await Promise.race([
     operation,
