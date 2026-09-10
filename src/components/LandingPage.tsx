@@ -2024,50 +2024,50 @@ export function LandingPage({
 
         <section
           aria-labelledby="hero-title"
-          className="relative min-h-screen overflow-hidden"
+          className="relative overflow-hidden"
         >
           <div
             ref={spotlightRef}
             aria-hidden="true"
-            className="pointer-events-none absolute h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-300/[0.035] blur-[70px] transition-all duration-1000"
+            className="pointer-events-none absolute h-[620px] w-[620px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-violet-300/[0.035] blur-[85px] transition-all duration-1000"
             style={{
               left: "50%",
-              top: "15%",
+              top: "8%",
             }}
           />
 
-          <Glow className="left-1/2 top-[-320px] h-[700px] w-[1100px] -translate-x-1/2 bg-violet-400/[0.065]" />
+          <Glow className="left-1/2 top-[-260px] h-[620px] w-[1000px] -translate-x-1/2 bg-violet-400/[0.065]" />
 
-          <div className="relative mx-auto max-w-[1280px] px-5 pb-20 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pt-28">
-            <div className="mx-auto max-w-5xl text-center">
+          <div className="relative mx-auto max-w-[1280px] px-5 pb-14 pt-10 sm:px-6 sm:pb-16 sm:pt-14 lg:px-8 lg:pt-16">
+            <div className="mx-auto max-w-[1080px] text-center">
               <Reveal immediate>
                 <SectionLabel>
                   AI VIDEO CREATION PLATFORM
                 </SectionLabel>
               </Reveal>
 
-              <Reveal immediate delay={80}>
+              <Reveal immediate delay={60}>
                 <h1
                   id="hero-title"
-                  className="mt-7 text-[52px] font-black leading-[0.9] tracking-[-0.07em] drop-shadow-[0_8px_35px_rgba(0,0,0,.35)] sm:text-[78px] lg:text-[104px]"
+                  className="mx-auto mt-5 max-w-5xl text-[48px] font-black leading-[0.91] tracking-[-0.075em] drop-shadow-[0_8px_35px_rgba(0,0,0,.35)] sm:text-[68px] lg:text-[88px]"
                 >
                   <span className="sr-only">
-                    LumoClip: AI video creation and editing platform.{" "}
+                    LumoClip: AI video creation and editing platform. {""}
                   </span>
 
-                  Create, Edit & Repurpose
+                  Create. Edit. Repurpose.
                   <br />
 
                   <span className="relative inline-block bg-gradient-to-r from-violet-100 via-violet-300 to-fuchsia-400 bg-clip-text text-transparent">
-                    Videos With AI.
+                    All with AI.
                     <svg
                       aria-hidden="true"
-                      viewBox="0 0 320 24"
+                      viewBox="0 0 300 24"
                       preserveAspectRatio="none"
-                      className="absolute -bottom-2 left-0 h-4 w-full text-violet-400/70 sm:-bottom-3 sm:h-5"
+                      className="absolute -bottom-2 left-0 h-3.5 w-full text-violet-400/70 sm:-bottom-3 sm:h-4"
                     >
                       <path
-                        d="M4 14C60 6 120 4 160 8C210 13 270 16 316 9"
+                        d="M4 14C60 6 120 4 160 8C210 13 250 16 296 9"
                         fill="none"
                         stroke="currentColor"
                         strokeWidth="4"
@@ -2078,12 +2078,11 @@ export function LandingPage({
                 </h1>
               </Reveal>
 
-              <Reveal immediate delay={150}>
-                <p className="mx-auto mt-8 max-w-2xl text-sm leading-7 text-zinc-600 sm:text-base sm:leading-8">
-                  LumoClip is an AI video creation and editing platform
-                  that helps you create, edit and repurpose content
-                  with AI — from captions, clips and B-roll to reframe,
-                  speech enhancement, dubbing, SFX and more.
+              <Reveal immediate delay={120}>
+                <p className="mx-auto mt-5 max-w-2xl text-[13px] leading-6 text-zinc-600 sm:text-sm sm:leading-7">
+                  Create, edit and repurpose videos in one AI workspace —
+                  from clips, captions and B-roll to reframe, speech enhancement,
+                  dubbing, SFX, voiceover and more.
                 </p>
               </Reveal>
 
