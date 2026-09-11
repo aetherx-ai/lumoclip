@@ -127,7 +127,14 @@ interface CaptionStyle {
   animation: "pop" | "none";
 }
 
-// Must match ProcessingMode on the server (server.ts).
+// Must match ProcessingMode on the server (server.ts) — EXCEPT "upscale",
+// which is a client-only UI mode. The server has no "upscale" project
+// -creation mode: AI Upscale is a separate action
+// (POST /api/projects/:projectId/upscale) that runs on an existing
+// project's already-prepared source. When the user picks "upscale" here,
+// project creation is sent to the server as mode "video_debugger" (the
+// existing free/prepare-only mode), and once the source is ready this
+// client calls the dedicated upscale endpoint. See handleSubmit below.
 type ProcessingMode =
   | "clips"
   | "full_video_caption"
@@ -135,7 +142,13 @@ type ProcessingMode =
   | "speech_only"
   | "auto_sfx"
   | "video_debugger"
-  | "dubbing";
+  | "dubbing"
+  | "upscale";
+
+// Must match UPSCALE_FACTORS on the server (server.ts).
+interface UpscaleConfig {
+  factor: 2 | 4;
+}
 
 // Must match DUBBING_LANGUAGES on the server (server.ts).
 const DUBBING_LANGUAGES: { code: string; label: string }[] = [
@@ -244,6 +257,10 @@ const DEFAULT_REFRAME_CONFIG: ReframeConfig = {
   addCaptions: true,
   autoLayout: "fill",
   cropRatio: "original",
+};
+
+const DEFAULT_UPSCALE_CONFIG: UpscaleConfig = {
+  factor: 2,
 };
 
 const DEFAULT_CLIP_SETTINGS: ClipSettings = {
@@ -1611,6 +1628,14 @@ const OutputModePicker: React.FC<{
       badge: "FREE",
       accent: "rgba(16,185,129,0.25)",
     },
+    {
+      value: "upscale",
+      icon: <Maximize2 className="h-4.5 w-4.5" />,
+      title: "AI Upscale",
+      description: "Sharpen and increase your video's resolution with AI-powered upscaling",
+      badge: "NEW",
+      accent: "rgba(250,204,21,0.25)",
+    },
   ];
 
   const visibleOptions = lockedMode
@@ -2181,6 +2206,12 @@ export const NewProjectModal: React.FC<
   const [dubbingConfig, setDubbingConfig] =
     useState<DubbingConfig>({ targetLanguage: "en" });
 
+  const [upscaleConfig, setUpscaleConfig] =
+    useState<UpscaleConfig>(DEFAULT_UPSCALE_CONFIG);
+
+  const isUpscaleMode =
+    processingMode === "upscale";
+
   const isFullVideoMode =
     processingMode === "full_video_caption";
 
@@ -2304,6 +2335,7 @@ export const NewProjectModal: React.FC<
       removePauses: true,
     });
     setClipSettings(DEFAULT_CLIP_SETTINGS);
+    setUpscaleConfig(DEFAULT_UPSCALE_CONFIG);
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
@@ -2341,6 +2373,7 @@ export const NewProjectModal: React.FC<
       removePauses: true,
     });
     setClipSettings(DEFAULT_CLIP_SETTINGS);
+    setUpscaleConfig(DEFAULT_UPSCALE_CONFIG);
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
@@ -2730,6 +2763,19 @@ export const NewProjectModal: React.FC<
           ? "speech_only"
           : processingMode;
 
+      // The server has no "upscale" project-creation mode (see the
+      // ProcessingMode comment above) — sending mode: "upscale" to
+      // /api/projects/upload or /api/projects/process would silently be
+      // treated as normalizeProcessingMode()'s default "clips" case,
+      // running (and charging for) a full clip-generation job instead of
+      // preparing the source for AI Upscale. Reuse "video_debugger" for
+      // creation instead: it's free and only prepares the source, which
+      // is exactly what AI Upscale needs before calling its own endpoint.
+      const serverCreationMode: ProcessingMode =
+        effectiveProcessingMode === "upscale"
+          ? "video_debugger"
+          : effectiveProcessingMode;
+
       try {
         const {
           data: { session },
@@ -2780,7 +2826,7 @@ export const NewProjectModal: React.FC<
 
                 captionStyle,
 
-                mode: effectiveProcessingMode,
+                mode: serverCreationMode,
 
                 reframe: reframeConfig,
                 speechSettings,
@@ -2845,7 +2891,7 @@ export const NewProjectModal: React.FC<
 
                   sourceUrl: finalUrl,
 
-                  mode: effectiveProcessingMode,
+                  mode: serverCreationMode,
 
                   captionStyle,
 
@@ -2874,15 +2920,21 @@ export const NewProjectModal: React.FC<
         }
 
         /* =================================================
-           VIDEO DEBUGGER
+           VIDEO DEBUGGER / AI UPSCALE
 
-           Debugger creation is deliberately separate from the normal
-           AI pipeline. The backend creates the project/source for free;
-           this client waits for a YouTube/Podcast source to arrive,
-           performs a diagnostic scan, and repairs only when needed.
+           Both are deliberately separate from the normal AI pipeline.
+           The backend creates the project/source for free (mode was sent
+           as "video_debugger" for both — see serverCreationMode above);
+           this client waits for a YouTube/Podcast source to arrive, then
+           either runs the diagnostic scan+repair (Video Debugger) or
+           calls the dedicated /upscale endpoint (AI Upscale), which is
+           where the AI Upscale credit charge actually happens.
         ================================================= */
 
-        if (effectiveProcessingMode === "video_debugger") {
+        if (
+          effectiveProcessingMode === "video_debugger" ||
+          effectiveProcessingMode === "upscale"
+        ) {
           const projectId = String(
             (data as any)?.project?.id ||
               (data as any)?.projectId ||
@@ -2891,7 +2943,9 @@ export const NewProjectModal: React.FC<
 
           if (!projectId) {
             throw new Error(
-              "Video Debugger could not create the project.",
+              effectiveProcessingMode === "upscale"
+                ? "AI Upscale could not create the project."
+                : "Video Debugger could not create the project.",
             );
           }
 
@@ -2965,9 +3019,63 @@ export const NewProjectModal: React.FC<
 
           if (!sourceReadyOnServer) {
             throw new Error(
-              "The source video is taking too long to become available. Please open the project and try Video Debugger again.",
+              effectiveProcessingMode === "upscale"
+                ? "The source video is taking too long to become available. Please open the project and try AI Upscale again."
+                : "The source video is taking too long to become available. Please open the project and try Video Debugger again.",
             );
           }
+
+          /* ===============================================
+             AI UPSCALE
+
+             Runs on the now-ready source via the dedicated endpoint.
+             This is where credits are actually charged (UPSCALE_COST).
+          =============================================== */
+          if (effectiveProcessingMode === "upscale") {
+            setUploadState({
+              progress: 60,
+              stage: "processing",
+              message: "Upscaling video…",
+            });
+
+            const upscaleResponse = await fetch(
+              `/api/projects/${projectId}/upscale`,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${authToken}`,
+                },
+                body: JSON.stringify({
+                  inputType: "source",
+                  factor: upscaleConfig.factor,
+                }),
+              },
+            );
+
+            const upscaleData = await parseResponse(
+              upscaleResponse,
+            );
+
+            if (!upscaleResponse.ok) {
+              throw new Error(
+                upscaleData?.error ||
+                  upscaleData?.message ||
+                  "Video upscale failed.",
+              );
+            }
+
+            data = {
+              ...(data || {}),
+              ...upscaleData,
+            };
+
+            setUploadState({
+              progress: 100,
+              stage: "complete",
+              message: "Video upscaled successfully",
+            });
+          } else {
 
           // -------------------------------------------------------
           // STEP 1 — Diagnostic scan (read-only)
@@ -3077,6 +3185,7 @@ export const NewProjectModal: React.FC<
                 ? "Video repaired and converted to MP4"
                 : "Video repaired and verified successfully",
           });
+          }
         }
 
         /* =================================================
@@ -3199,7 +3308,7 @@ export const NewProjectModal: React.FC<
         tabIndex={-1}
         className={`
           relative flex w-full
-          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
+          ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || isUpscaleMode || processingMode === "clips") ? "max-w-[500px]" : "max-w-[680px]"}
           max-h-[92vh]
           flex-col overflow-hidden
           rounded-[10px]
@@ -3224,13 +3333,13 @@ export const NewProjectModal: React.FC<
             HEADER
         ================================================= */}
 
-        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
+        <header className={`relative shrink-0 border-b border-white/[0.07] ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || isUpscaleMode || processingMode === "clips") ? "px-6 pb-3 pt-4" : "px-5 py-5 sm:px-7 sm:py-6"}`}>
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || processingMode === "clips") ? (
+              {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || isUpscaleMode || processingMode === "clips") ? (
                 <>
-                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : isDubbingMode ? "Video Dubbing" : intent === "enhance-speech" ? "Enhance speech" : processingMode === "clips" ? "AI Short Clips" : "AI Reframe"}</h2>
-                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : isDubbingMode ? "AI translates and re-voices your video in another language." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : processingMode === "clips" ? "AI finds the best moments and cuts several social-ready clips." : "Let AI automatically reframe your content to fit any social platform."}</p>
+                  <h2 id="new-project-title" className="text-[18px] font-bold tracking-[-0.03em] text-white">{isFullVideoMode ? "AI Captions" : isAutoSfxMode ? "Auto SFX" : isVideoDebuggerMode ? "Video Debugger" : isDubbingMode ? "Video Dubbing" : isUpscaleMode ? "AI Upscale" : intent === "enhance-speech" ? "Enhance speech" : processingMode === "clips" ? "AI Short Clips" : "AI Reframe"}</h2>
+                  <p className="mt-1 text-[10px] leading-4 text-zinc-500">{isFullVideoMode ? "Add stylish captions or translate your content with one click." : isAutoSfxMode ? "Let AI detect meaningful moments and add subtle sound effects automatically." : isVideoDebuggerMode ? "Scan, diagnose, and repair common video playback problems." : isDubbingMode ? "AI translates and re-voices your video in another language." : isUpscaleMode ? "Sharpen and increase your video's resolution with AI-powered upscaling." : intent === "enhance-speech" ? "Enhance voice clarity and remove filler words with one click." : processingMode === "clips" ? "AI finds the best moments and cuts several social-ready clips." : "Let AI automatically reframe your content to fit any social platform."}</p>
                 </>
               ) : (
                 <div className="flex items-start gap-4">
@@ -3255,7 +3364,7 @@ export const NewProjectModal: React.FC<
             </button>
           </div>
 
-          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isDubbingMode)) && (
+          {!(wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isDubbingMode || isUpscaleMode)) && (
             <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2">
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><ShieldCheck className="h-3 w-3 text-emerald-500" />Secure processing</span>
               <span className="flex items-center gap-1.5 text-[8px] font-medium text-zinc-600"><Sparkles className="h-3 w-3 text-violet-400" />AI-powered clipping</span>
@@ -3489,6 +3598,50 @@ export const NewProjectModal: React.FC<
                               </div>
                             </div>
                           </div>
+                        ) : isUpscaleMode ? (
+                          <div className="space-y-4">
+                            <div className="flex justify-center">
+                              <div className="relative h-[140px] w-[266px] overflow-hidden rounded-[12px] bg-[#151519] shadow-[0_12px_40px_rgba(0,0,0,0.45)]">
+                                {selectedFile ? (
+                                  <video src={URL.createObjectURL(selectedFile)} className="h-full w-full object-cover" muted playsInline preload="metadata" />
+                                ) : getYouTubeVideoId(youtubeUrl) ? (
+                                  <img src={`https://i.ytimg.com/vi/${getYouTubeVideoId(youtubeUrl)}/hqdefault.jpg`} alt="Video preview" className="h-full w-full object-cover" />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-amber-950/70 to-zinc-950"><Maximize2 className="h-9 w-9 text-amber-400" /></div>
+                                )}
+                                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/85 to-transparent" />
+                                <div className="absolute bottom-3 left-3 right-3 flex items-center gap-2">
+                                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/20 backdrop-blur"><Maximize2 className="h-3.5 w-3.5 text-amber-300" /></div>
+                                  <div><p className="text-[8px] font-bold text-white">AI resolution upscale</p><p className="text-[7px] text-zinc-400">Analyze → upscale → sharpen</p></div>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="rounded-[18px] border border-amber-500/15 bg-amber-500/[0.045] p-4">
+                              <p className="text-[9px] font-bold uppercase tracking-[0.1em] text-zinc-500">Upscale factor</p>
+                              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                                {([2, 4] as const).map((factor) => {
+                                  const active = upscaleConfig.factor === factor;
+                                  return (
+                                    <button
+                                      key={factor}
+                                      type="button"
+                                      disabled={loading}
+                                      onClick={() => setUpscaleConfig({ factor })}
+                                      className={`rounded-xl border px-3 py-3 text-left transition ${
+                                        active
+                                          ? "border-amber-400/30 bg-amber-500/10"
+                                          : "border-white/[0.06] bg-black/20 hover:bg-white/[0.03]"
+                                      } disabled:cursor-not-allowed disabled:opacity-50`}
+                                    >
+                                      <p className="text-[12px] font-bold text-white">{factor}x</p>
+                                      <p className="mt-0.5 text-[8px] text-zinc-500">{factor === 2 ? "Good for most clips" : "Max detail, slower render"}</p>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p className="mt-3 text-[8px] leading-4 text-zinc-500">AI sharpens and upscales your source video's resolution. Works best on clean, lower-resolution sources.</p>
+                            </div>
+                          </div>
                         ) : isDubbingMode ? (
                           <div className="space-y-4">
                             <div className="flex justify-center">
@@ -3677,12 +3830,12 @@ export const NewProjectModal: React.FC<
             FOOTER
         ================================================= */}
 
-        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isDubbingMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
+        <footer className={`relative shrink-0 border-t border-white/[0.07] bg-black/30 ${wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isDubbingMode || isUpscaleMode) ? "px-6 py-3" : "px-5 py-4 sm:px-7"}`}>
           <div className="flex items-center justify-between gap-3">
-            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode) ? (
+            {wizardStep === 2 && (intent === "enhance-speech" || isFullVideoMode || isReframeMode || isAutoSfxMode || isVideoDebuggerMode || isDubbingMode || isUpscaleMode) ? (
               <div className="ml-auto w-full">
                 <button type="button" onClick={() => void handleSubmit()} disabled={!canSubmit || loading} className="group relative flex h-12 w-full items-center justify-center overflow-hidden rounded-[7px] bg-white px-5 text-[13px] font-bold text-[#161619] transition hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-45">
-                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isAutoSfxMode ? "Adding Auto SFX..." : isVideoDebuggerMode ? "Scanning video..." : isDubbingMode ? "Dubbing video..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isAutoSfxMode ? "Add Auto SFX in 1 click" : isVideoDebuggerMode ? "Scan video" : isDubbingMode ? "Dub video" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
+                  <span className="relative flex items-center gap-2">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : null}{loading ? (uploadState.message || (isFullVideoMode ? "Adding captions..." : isAutoSfxMode ? "Adding Auto SFX..." : isVideoDebuggerMode ? "Scanning video..." : isDubbingMode ? "Dubbing video..." : isUpscaleMode ? "Upscaling video..." : isReframeMode ? "Reframing video..." : processingMode === "clips" ? "Creating clips..." : "Enhancing speech...")) : (isFullVideoMode ? "Add captions in 1 click" : isAutoSfxMode ? "Add Auto SFX in 1 click" : isVideoDebuggerMode ? "Scan video" : isDubbingMode ? "Dub video" : isUpscaleMode ? "Upscale video in 1 click" : isReframeMode ? "Reframe video in 1 click" : processingMode === "clips" ? "Get clips in 1 click" : "Enhance speech in 1 click")}</span>
                 </button>
               </div>
             ) : (
