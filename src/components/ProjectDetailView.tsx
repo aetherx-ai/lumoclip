@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   Wrench,
   AlertTriangle,
+  Maximize2,
 } from "lucide-react";
 
 import { Project, Clip } from "../types.js";
@@ -186,6 +187,46 @@ function isSpeechOnlyProject(project: Project): boolean {
     currentStep.includes("speech enhancement source") ||
     currentStep.includes("ready for enhanced speech")
   );
+}
+
+/* =========================================================
+   AI UPSCALE HELPERS
+
+   The server has no dedicated "upscale" processing_mode (see
+   NewProjectModal.tsx) — an Upscale project is created with
+   processing_mode "video_debugger", and the actual upscale runs
+   on the dedicated /upscale endpoint (server.ts), which persists
+   its result the same way Dubbing/Auto SFX/Reframe do: writing
+   the finished video to `full_video_url`. It has no dedicated
+   factor column, so the applied factor is folded into
+   `current_step` as "Upscale complete (Nx)" — mirroring the
+   "Upscaling video (N%)" progress messages already written
+   during the run. So a "video_debugger" project must be checked
+   against `current_step` FIRST to tell a real Video Debugger
+   project apart from an Upscale one — otherwise it wrongly
+   renders as Video Debugger.
+========================================================= */
+
+function isUpscaleProject(project: Project): boolean {
+  const currentStep = String(
+    (project as any).current_step ||
+      (project as any).currentStep ||
+      "",
+  ).toLowerCase();
+
+  return currentStep.includes("upscal");
+}
+
+function getUpscaleFactor(project: Project): number | null {
+  const currentStep = String(
+    (project as any).current_step ||
+      (project as any).currentStep ||
+      "",
+  ).toLowerCase();
+
+  const match = currentStep.match(/(\d+)x/);
+  const factor = match ? Number(match[1]) : 0;
+  return factor === 2 || factor === 4 ? factor : null;
 }
 
 /* =========================================================
@@ -1406,11 +1447,12 @@ const VideoDebuggerPanel: React.FC<VideoDebuggerPanelProps> = ({
     ).toLowerCase();
 
     const debuggerProject =
-      mode === "video_debugger" ||
-      currentStep.includes("video ready for debugging") ||
-      currentStep.includes("debugging video") ||
-      currentStep.includes("repairing video") ||
-      currentStep.includes("video debugging");
+      !isUpscaleProject(project) &&
+      (mode === "video_debugger" ||
+        currentStep.includes("video ready for debugging") ||
+        currentStep.includes("debugging video") ||
+        currentStep.includes("repairing video") ||
+        currentStep.includes("video debugging"));
 
     if (
       !debuggerProject ||
@@ -2053,6 +2095,109 @@ const DubbingVideoResult: React.FC<{
             <span>•</span>
 
             {languageLabel ? `Dubbed in ${languageLabel}` : "Dubbed audio"}
+          </div>
+
+          {fullVideoUrl && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <PublishToYouTubeButton
+                onPublish={onPublish}
+                className="sm:w-auto"
+              />
+
+              <div className="flex gap-2">
+                <a
+                  href={fullVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 flex-1 touch-manipulation items-center justify-center gap-2 rounded-xl bg-gradient-to-b from-white to-zinc-100 px-4 py-2.5 text-[10px] font-bold text-black shadow-[0_6px_18px_rgba(0,0,0,0.25)] transition hover:from-white hover:to-white sm:flex-none"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  Download
+                </a>
+
+                <a
+                  href={fullVideoUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-11 w-11 shrink-0 touch-manipulation items-center justify-center rounded-xl border border-white/[0.07] bg-white/[0.02] text-zinc-500 transition hover:bg-white/[0.05] hover:text-white"
+                  title="Open in new tab"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </div>
+          )}
+        </div>
+      </Surface>
+    </section>
+  );
+};
+
+/* =========================================================
+   AI UPSCALE RESULT
+========================================================= */
+
+const UpscaleVideoResult: React.FC<{
+  project: Project;
+  onPublish: () => void;
+}> = ({ project, onPublish }) => {
+  const fullVideoUrl =
+    getFullVideoUrl(project);
+
+  const thumbnail =
+    project.thumbnail_url || "";
+
+  const factor = getUpscaleFactor(project);
+
+  return (
+    <section className="mt-8">
+      <div className="mb-4 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Maximize2 className="h-4 w-4 text-amber-400" />
+
+            <h2 className="text-lg font-semibold tracking-tight text-white">
+              Upscaled video{factor ? ` — ${factor}x` : ""}
+            </h2>
+          </div>
+
+          <p className="mt-1 text-[10px] text-zinc-600">
+            Your video's resolution, sharpened and increased by AI.
+          </p>
+        </div>
+      </div>
+
+      <Surface className="overflow-hidden">
+        <div className="bg-black">
+          {fullVideoUrl ? (
+            <video
+              src={fullVideoUrl}
+              controls
+              playsInline
+              preload="metadata"
+              poster={thumbnail || undefined}
+              className="max-h-[72vh] min-h-[220px] w-full object-contain sm:max-h-[680px]"
+            />
+          ) : (
+            <div className="flex aspect-video flex-col items-center justify-center gap-3">
+              <Loader2 className="h-5 w-5 animate-spin text-amber-400" />
+
+              <p className="text-[10px] text-zinc-600">
+                Preparing your upscaled video...
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-white/[0.06] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-[10px] text-zinc-600">
+            <Clock3 className="h-3.5 w-3.5" />
+
+            {formatDuration(project.duration)}
+
+            <span>•</span>
+
+            {factor ? `${factor}x resolution` : "AI upscaled"}
           </div>
 
           {fullVideoUrl && (
@@ -3684,12 +3829,19 @@ export const ProjectDetailView: React.FC<
       "",
   ).toLowerCase();
 
+  const isUpscaleProjectMode =
+    isUpscaleProject(project);
+
+  // A "video_debugger" processing_mode is shared with Upscale (see the
+  // AI UPSCALE HELPERS comment above) — only treat it as a real Video
+  // Debugger project when it isn't actually an Upscale one.
   const isVideoDebuggerMode =
-    getProcessingMode(project) === "video_debugger" ||
-    projectCurrentStep.includes("video ready for debugging") ||
-    projectCurrentStep.includes("debugging video") ||
-    projectCurrentStep.includes("repairing video") ||
-    projectCurrentStep.includes("video debugging");
+    !isUpscaleProjectMode &&
+    (getProcessingMode(project) === "video_debugger" ||
+      projectCurrentStep.includes("video ready for debugging") ||
+      projectCurrentStep.includes("debugging video") ||
+      projectCurrentStep.includes("repairing video") ||
+      projectCurrentStep.includes("video debugging"));
 
   const isDubbingMode =
     getProcessingMode(project) === "dubbing";
@@ -3960,7 +4112,8 @@ export const ProjectDetailView: React.FC<
             {!isFullVideoMode &&
               !isReframeMode &&
               !isSpeechOnlyMode &&
-              !isVideoDebuggerMode && (
+              !isVideoDebuggerMode &&
+              !isUpscaleProjectMode && (
               <>
                 <div className="mt-5">
                   <PremiumStats
@@ -4051,6 +4204,7 @@ export const ProjectDetailView: React.FC<
 
             {!isFullVideoMode &&
               !isVideoDebuggerMode &&
+              !isUpscaleProjectMode &&
               safeClips.length > 0 && (
                 <ClipsSection
                   clips={safeClips}
@@ -4158,7 +4312,29 @@ export const ProjectDetailView: React.FC<
               )}
             </div>
 
-            {isVideoDebuggerMode ? (
+            {isUpscaleProjectMode ? (
+              <>
+                <div className="grid gap-5 xl:grid-cols-12">
+                  <div className="xl:col-span-12 min-w-0">
+                    <UpscaleVideoResult
+                      project={project}
+                      onPublish={() =>
+                        setPublishTarget({
+                          kind: "project",
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="mt-5">
+                  <PremiumStats
+                    project={project}
+                    clips={[]}
+                  />
+                </div>
+              </>
+            ) : isVideoDebuggerMode ? (
               <>
                 <div className="grid gap-5 xl:grid-cols-12">
                   <div className="xl:col-span-12 min-w-0">
@@ -4386,7 +4562,8 @@ export const ProjectDetailView: React.FC<
 
 
                 {!isSpeechOnlyMode &&
-                  !isVideoDebuggerMode && (
+                  !isVideoDebuggerMode &&
+                  !isUpscaleProjectMode && (
                   <ClipsSection
                     clips={safeClips}
                     onPublish={(clip) =>
@@ -4431,7 +4608,8 @@ export const ProjectDetailView: React.FC<
               {!isFullVideoMode &&
                 !isReframeMode &&
                 !isSpeechOnlyMode &&
-                !isVideoDebuggerMode && (
+                !isVideoDebuggerMode &&
+                !isUpscaleProjectMode && (
                 <>
                   <div className="mt-5">
                     <PremiumStats

@@ -12628,9 +12628,20 @@ app.post(
         console.error("Upscale notification failed:", notificationError);
       }
 
+      // Persist the result the same way every other single-output feature
+      // does (Dubbing/Auto SFX/Reframe all write `full_video_url` — see
+      // the other `.update({ full_video_url: ... })` calls in this file).
+      // Without this, outputUrl only ever lives in this response: closing
+      // the modal or revisiting the project later loses it entirely, and
+      // there is no server column dedicated to the upscale factor, so it
+      // is folded into current_step (matching the "Upscaling video (N%)"
+      // progress messages already written above) for the client to parse.
       await supabase
         .from("projects")
-        .update({ current_step: "Upscale complete" })
+        .update({
+          full_video_url: outputUrl,
+          current_step: `Upscale complete (${dimensions.cappedFactor}x)`,
+        })
         .eq("id", projectId)
         .eq("user_id", user.id);
 
