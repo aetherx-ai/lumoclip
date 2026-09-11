@@ -89,6 +89,13 @@ const GEMINI_MODEL =
 
 const VIDEO_COST = 10;
 
+// AI Upscale is a full video re-encode (same CPU cost class as AI Reframe/
+// Dubbing), so it's charged like the other heavy video-to-video ops by
+// default. Kept as its own constant so it can be tuned independently later.
+const UPSCALE_COST = Number(
+  process.env.UPSCALE_COST || VIDEO_COST,
+);
+
 // Speech enhancement is completely free for all authenticated users.
 // No credits are charged, consumed, or refunded for this action.
 
@@ -329,6 +336,27 @@ const SPEECH_ENHANCE_AUDIO_BITRATE =
 
 const SPEECH_ENHANCE_VIDEO_CRF =
   process.env.SPEECH_ENHANCE_VIDEO_CRF?.trim() || FFMPEG_CRF;
+
+// AI Upscale is a pure-FFmpeg (lanczos + light sharpen) resolution upscale.
+// No external API/GPU is used, so there is no per-call provider cost —
+// only local CPU/encode time, same as the rest of the FFmpeg pipeline.
+const UPSCALE_TIMEOUT_MS = Number(
+  process.env.UPSCALE_TIMEOUT_MS || FFMPEG_TIMEOUT_MS,
+);
+
+// Hard cap on the output height regardless of requested factor, so a 4x
+// request on an already-large source can't produce a multi-GB file or
+// pin a Render worker for an unbounded amount of time.
+const UPSCALE_MAX_OUTPUT_HEIGHT = Number(
+  process.env.UPSCALE_MAX_OUTPUT_HEIGHT || 3840,
+);
+
+// Upscaled output benefits from a slightly lower (higher quality) CRF
+// than the fast-clip default, since the whole point is visual quality —
+// but still overridable via env like the other FFmpeg knobs.
+const UPSCALE_VIDEO_CRF =
+  process.env.UPSCALE_VIDEO_CRF?.trim() ||
+  String(Math.max(18, Number(FFMPEG_CRF) - 4));
 
 /* =========================================================
    SELF-HOSTED YOUTUBE WORKER
@@ -4645,6 +4673,12 @@ function publicMediaUrl(
 
   if (parts[0] === "dub") {
     return `/api/media/${encodedProject}/dub/${parts
+      .slice(1)
+      .join("/")}`;
+  }
+
+  if (parts[0] === "upscaled") {
+    return `/api/media/${encodedProject}/upscaled/${parts
       .slice(1)
       .join("/")}`;
   }
@@ -11402,6 +11436,14 @@ app.get(
     sendProjectMedia(req, res, "dub"),
 );
 
+// AI Upscale output lives outside `/clips`, matching the other
+// single-file, standalone-action outputs (enhanced/reframed/dub).
+app.get(
+  "/api/media/:projectId/upscaled/:filename",
+  (req, res) =>
+    sendProjectMedia(req, res, "upscaled"),
+);
+
 /* =========================================================
    VIDEO DEBUGGER
 
@@ -12192,6 +12234,457 @@ app.post(
 
       return res.status(error?.statusCode || 500).json({
         error: error?.message || "Speech enhancement failed.",
+      });
+    }
+  },
+);
+
+/* =========================================================
+   AI UPSCALE
+
+   Pure FFmpeg resolution upscale (lanczos scaling + a light unsharp
+   pass for perceived sharpness). No external API or GPU model is
+   used, so there is no per-call provider cost — only local FFmpeg
+   encode time, same as AI Reframe/Auto SFX/Dubbing.
+
+   Cost: UPSCALE_COST credits (same class as other video-to-video ops),
+   charged atomically up front and refunded automatically on failure.
+========================================================= */
+
+const UPSCALE_FACTORS = [2, 4] as const;
+type UpscaleFactor = (typeof UPSCALE_FACTORS)[number];
+
+function normalizeUpscaleFactor(value: unknown): UpscaleFactor {
+  const parsed = Number(value);
+  return (UPSCALE_FACTORS as readonly number[]).includes(parsed)
+    ? (parsed as UpscaleFactor)
+    : 2;
+}
+
+async function probeUpscaleInput(inputPath: string): Promise<{
+  duration: number;
+  hasVideo: boolean;
+  hasAudio: boolean;
+  width: number;
+  height: number;
+}> {
+  if (!fs.existsSync(inputPath)) {
+    throw new Error("Selected video is not available on the server.");
+  }
+
+  return new Promise((resolve, reject) => {
+    ffmpeg.ffprobe(inputPath, (error, metadata) => {
+      if (error) {
+        return reject(new Error("Unable to inspect the selected video."));
+      }
+
+      const streams = metadata.streams || [];
+      const video = streams.find((stream) => stream.codec_type === "video");
+      const audio = streams.find((stream) => stream.codec_type === "audio");
+
+      resolve({
+        duration: Number(metadata.format?.duration || 0),
+        hasVideo: Boolean(video),
+        hasAudio: Boolean(audio),
+        width: Number(video?.width || 0),
+        height: Number(video?.height || 0),
+      });
+    });
+  });
+}
+
+/**
+ * Computes the target output dimensions for a given upscale factor,
+ * capped by UPSCALE_MAX_OUTPUT_HEIGHT so a 4x request on an already
+ * large source can't produce an unbounded render. Dimensions are
+ * rounded down to the nearest even number, which libx264 requires.
+ */
+function computeUpscaleDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+  factor: UpscaleFactor,
+): { width: number; height: number; cappedFactor: number } {
+  const rawHeight = sourceHeight * factor;
+  const cappedHeight = Math.min(rawHeight, UPSCALE_MAX_OUTPUT_HEIGHT);
+  const effectiveFactor = cappedHeight / sourceHeight;
+  const rawWidth = sourceWidth * effectiveFactor;
+
+  const evenDown = (n: number) => Math.max(2, Math.floor(n / 2) * 2);
+
+  return {
+    width: evenDown(rawWidth),
+    height: evenDown(cappedHeight),
+    cappedFactor: Math.round(effectiveFactor * 100) / 100,
+  };
+}
+
+async function runVideoUpscale(
+  inputPath: string,
+  outputPath: string,
+  options: {
+    targetWidth: number;
+    targetHeight: number;
+    hasAudio: boolean;
+    onProgressPercent?: (percent: number) => void;
+  },
+): Promise<void> {
+  await fs.promises.mkdir(path.dirname(outputPath), { recursive: true });
+
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let timer: NodeJS.Timeout | undefined;
+    let lastReportedPercent = -1;
+
+    const cleanupPartialOutput = () => {
+      try {
+        if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+      } catch {}
+    };
+
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      cleanupPartialOutput();
+      reject(error);
+    };
+
+    const succeed = () => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve();
+    };
+
+    const command = ffmpeg(inputPath)
+      .videoFilters(
+        // lanczos gives the sharpest, least-blurry result of FFmpeg's
+        // stock scaling algorithms for upscaling; a very light unsharp
+        // pass afterward recovers some perceived detail that scaling
+        // alone softens, without introducing obvious ringing artifacts.
+        `scale=${options.targetWidth}:${options.targetHeight}:flags=lanczos,unsharp=5:5:0.5:5:5:0.0`,
+      )
+      .videoCodec("libx264")
+      .outputOptions([
+        "-preset",
+        FFMPEG_PRESET,
+        "-crf",
+        UPSCALE_VIDEO_CRF,
+        "-movflags",
+        "+faststart",
+      ])
+      .format("mp4");
+
+    // Audio is never re-encoded here — it's either copied straight through
+    // (source has audio) or dropped entirely (silent source), since
+    // upscaling only ever touches the video stream.
+    if (options.hasAudio) {
+      command.audioCodec("copy");
+    } else {
+      command.noAudio();
+    }
+
+    command
+      .on("start", () => {
+        console.log(
+          `AI Upscale started: target=${options.targetWidth}x${options.targetHeight}`,
+        );
+      })
+      .on("progress", (progress) => {
+        if (
+          typeof progress.percent !== "number" ||
+          !Number.isFinite(progress.percent)
+        ) {
+          return;
+        }
+
+        const percent = Math.min(100, Math.max(0, Math.round(progress.percent)));
+        if (percent <= lastReportedPercent) return;
+        lastReportedPercent = percent;
+
+        console.log(`AI Upscale progress: ${percent}%`);
+        options.onProgressPercent?.(percent);
+      })
+      .on("end", () => {
+        if (
+          !fs.existsSync(outputPath) ||
+          !fs.statSync(outputPath).isFile() ||
+          fs.statSync(outputPath).size <= 0
+        ) {
+          return fail(new Error("Upscaled output was not created."));
+        }
+        console.log("AI Upscale completed.");
+        succeed();
+      })
+      .on("error", (error) => fail(error))
+      .save(outputPath);
+
+    timer = setTimeout(
+      () => {
+        try {
+          command.kill("SIGKILL");
+        } catch {}
+        fail(new Error(`AI Upscale timed out after ${UPSCALE_TIMEOUT_MS}ms.`));
+      },
+      Math.max(1000, UPSCALE_TIMEOUT_MS),
+    );
+
+    timer.unref?.();
+  });
+}
+
+app.post(
+  "/api/projects/:projectId/upscale",
+  async (req, res) => {
+    const projectId = String(req.params.projectId || "").trim();
+    let userId = "";
+    let outputPath = "";
+    let charged = false;
+
+    try {
+      if (!projectId) {
+        return res.status(400).json({ error: "Project ID is required." });
+      }
+
+      const user = await getAuthenticatedUser(req);
+      userId = user.id;
+
+      const inputType =
+        req.body?.inputType === "clip" ? "clip" : "source";
+      const clipId =
+        typeof req.body?.clipId === "string"
+          ? req.body.clipId.trim()
+          : "";
+      const factor = normalizeUpscaleFactor(req.body?.factor);
+
+      const { data: project, error: projectError } = await supabase
+        .from("projects")
+        .select("id, user_id, name, source_media_url")
+        .eq("id", projectId)
+        .eq("user_id", user.id)
+        .single();
+
+      if (projectError || !project) {
+        return res.status(404).json({ error: "Project not found." });
+      }
+
+      let inputPath = "";
+
+      if (inputType === "clip") {
+        if (!clipId) {
+          return res.status(400).json({ error: "clipId is required when inputType is clip." });
+        }
+
+        const { data: clip, error: clipError } = await supabase
+          .from("clips")
+          .select("id, project_id, user_id, video_url, title")
+          .eq("id", clipId)
+          .eq("project_id", projectId)
+          .eq("user_id", user.id)
+          .single();
+
+        if (clipError || !clip) {
+          return res.status(404).json({ error: "Clip not found." });
+        }
+
+        inputPath = resolveClipPathFromUrl(projectId, String(clip.video_url || ""));
+      } else {
+        inputPath = resolveProjectSourcePath(projectId);
+      }
+
+      const probe = await probeUpscaleInput(inputPath);
+
+      if (!probe.hasVideo) {
+        return res.status(400).json({
+          error: "The selected file does not contain a video track.",
+        });
+      }
+
+      if (!probe.width || !probe.height) {
+        return res.status(400).json({
+          error: "Could not determine the selected video's resolution.",
+        });
+      }
+
+      if (!Number.isFinite(probe.duration) || probe.duration <= 0) {
+        return res.status(400).json({
+          error: "The selected video has no valid duration.",
+        });
+      }
+
+      if (probe.duration > MAX_VIDEO_DURATION) {
+        return res.status(400).json({
+          error: `Video duration cannot exceed ${MAX_VIDEO_DURATION} seconds.`,
+        });
+      }
+
+      if (probe.height >= UPSCALE_MAX_OUTPUT_HEIGHT) {
+        return res.status(400).json({
+          error: `This video is already at or above the maximum supported output resolution (${UPSCALE_MAX_OUTPUT_HEIGHT}p).`,
+        });
+      }
+
+      // =========================================================
+      // ATOMIC CREDIT CHARGE (same RPC used for project creation)
+      // =========================================================
+      const { data: chargeResult, error: chargeError } = await supabase.rpc(
+        "charge_video_credits",
+        {
+          p_user_id: user.id,
+          p_cost: UPSCALE_COST,
+          p_daily_limit: DAILY_CREDIT_LIMIT,
+        },
+      );
+
+      if (chargeError) {
+        const message = String(chargeError.message || "");
+        if (message.includes("INSUFFICIENT_CREDITS")) {
+          return res.status(402).json({
+            error: `You need ${UPSCALE_COST} credits.`,
+          });
+        }
+        console.error("Upscale credit charge failed:", chargeError);
+        return res.status(500).json({ error: "Failed to charge credits." });
+      }
+
+      charged = true;
+
+      const dimensions = computeUpscaleDimensions(
+        probe.width,
+        probe.height,
+        factor,
+      );
+
+      const outputName = `upscaled-${generateId()}.mp4`;
+      outputPath = path.join(
+        mediaDir,
+        safeSegment(projectId),
+        "upscaled",
+        outputName,
+      );
+
+      await supabase
+        .from("projects")
+        .update({ current_step: "Upscaling video (0%)" })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      const startedAt = Date.now();
+
+      let lastProgressWriteAt = 0;
+      let lastWrittenPercent = -1;
+
+      await runVideoUpscale(inputPath, outputPath, {
+        targetWidth: dimensions.width,
+        targetHeight: dimensions.height,
+        hasAudio: probe.hasAudio,
+        onProgressPercent: (percent) => {
+          const now = Date.now();
+          const dueByTime = now - lastProgressWriteAt >= 3000;
+          const dueByJump = percent - lastWrittenPercent >= 10;
+          if (!dueByTime && !dueByJump && percent < 100) return;
+
+          lastProgressWriteAt = now;
+          lastWrittenPercent = percent;
+
+          supabase
+            .from("projects")
+            .update({ current_step: `Upscaling video (${percent}%)` })
+            .eq("id", projectId)
+            .eq("user_id", user.id)
+            .then(undefined, (updateError: any) => {
+              console.error("Upscale progress update failed:", updateError);
+            });
+        },
+      });
+
+      const processingTimeMs = Date.now() - startedAt;
+      const outputUrl = publicMediaUrl(projectId, `upscaled/${outputName}`);
+
+      await supabase.from("usage_logs").insert({
+        user_id: user.id,
+        action: `AI Upscale (${dimensions.width}x${dimensions.height}): ${project.name || projectId}`,
+        credits_used: UPSCALE_COST,
+      });
+
+      try {
+        await createNotification({
+          userId: user.id,
+          type: "video_upscaled",
+          title: "Video upscaled",
+          message: "Your upscaled video is ready.",
+          projectId,
+          metadata: {
+            inputType,
+            credits: UPSCALE_COST,
+            factorRequested: factor,
+            factorApplied: dimensions.cappedFactor,
+            sourceResolution: `${probe.width}x${probe.height}`,
+            outputResolution: `${dimensions.width}x${dimensions.height}`,
+            processingTimeMs,
+          },
+        });
+      } catch (notificationError) {
+        console.error("Upscale notification failed:", notificationError);
+      }
+
+      await supabase
+        .from("projects")
+        .update({ current_step: "Upscale complete" })
+        .eq("id", projectId)
+        .eq("user_id", user.id);
+
+      console.log(
+        `AI Upscale done in ${(processingTimeMs / 1000).toFixed(1)}s ` +
+          `(${probe.width}x${probe.height} -> ${dimensions.width}x${dimensions.height}).`,
+      );
+
+      return res.json({
+        success: true,
+        projectId,
+        inputType,
+        outputUrl,
+        filename: outputName,
+        creditsUsed: UPSCALE_COST,
+        processingTimeMs,
+        factorRequested: factor,
+        factorApplied: dimensions.cappedFactor,
+        sourceResolution: { width: probe.width, height: probe.height },
+        outputResolution: { width: dimensions.width, height: dimensions.height },
+        message: "Video upscaled successfully.",
+      });
+    } catch (error: any) {
+      console.error("Upscale endpoint failed:", error);
+
+      if (outputPath) {
+        try {
+          if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+        } catch {}
+      }
+
+      if (charged && userId) {
+        try {
+          await supabase.rpc("refund_video_credits", {
+            p_user_id: userId,
+            p_cost: UPSCALE_COST,
+            p_daily_limit: DAILY_CREDIT_LIMIT,
+          });
+          await supabase.from("usage_logs").insert({
+            user_id: userId,
+            action: `Refund: failed upscale for project ${projectId}`,
+            credits_used: -UPSCALE_COST,
+          });
+        } catch (refundError) {
+          console.error("Upscale credit refund failed:", refundError);
+        }
+      }
+
+      if (error?.message === "UNAUTHORIZED") {
+        return res.status(401).json({ error: "Unauthorized." });
+      }
+
+      return res.status(error?.statusCode || 500).json({
+        error: error?.message || "Video upscale failed.",
       });
     }
   },

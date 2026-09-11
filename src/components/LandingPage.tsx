@@ -62,7 +62,7 @@ export type LandingProcessingMode =
 
 type LandingPageProps = {
   onGetStarted: (
-    intent?: "enhance-speech",
+    intent?: "enhance-speech" | "upscale",
     initialProcessingMode?: LandingProcessingMode
   ) => void;
   onOpenPricing: () => void;
@@ -453,8 +453,11 @@ type ToolGridItem = {
   accent: string;
   // Maps this tile to a New Project output mode, so clicking it opens the
   // modal locked to that mode instead of asking the user to choose again.
-  // Tiles without a mode (Video editor, AI Producer, etc.) open the
-  // generic modal, same as before.
+  // Tiles without a mode AND not handled via intent (Video editor, AI
+  // Producer, etc.) open the generic modal, same as before. Enhance
+  // Speech and Upscale are standalone actions on an existing project, so
+  // they're routed by id via the `intent` param instead of a mode — see
+  // the ToolGrid onSelect handler below.
   mode?: LandingProcessingMode;
 };
 
@@ -2276,6 +2279,8 @@ export function LandingPage({
                     onGetStarted(
                       item.id === "enhance-speech"
                         ? "enhance-speech"
+                        : item.id === "upscale"
+                        ? "upscale"
                         : undefined,
                       item.mode
                     )

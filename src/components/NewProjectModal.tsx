@@ -27,8 +27,6 @@ import {
   Columns2,
   MonitorUp,
   Gamepad2,
-  PanelsTopLeft,
-  Grid2X2,
   Monitor,
   Square,
   Mic,
@@ -1702,8 +1700,11 @@ const ReframeSettings: React.FC<{
     { value: "split", label: "Split", icon: <Columns2 className="h-3 w-3" /> },
     { value: "screenshare", label: "ScreenShare", icon: <MonitorUp className="h-3 w-3" /> },
     { value: "gameplay", label: "Gameplay", icon: <Gamepad2 className="h-3 w-3" /> },
-    { value: "three", label: "Three", icon: <PanelsTopLeft className="h-3 w-3" /> },
-    { value: "four", label: "Four", icon: <Grid2X2 className="h-3 w-3" /> },
+    // "three" / "four" (multi-speaker grid) are NOT implemented on the
+    // server yet — server.ts silently falls back to "fill" for these
+    // (see the ReframeConfig["autoLayout"] comment and
+    // buildReframeFilterPlan() in server.ts). Hidden here so users can't
+    // pick a layout that quietly renders as something else than advertised.
   ];
 
   const cropRatios: Array<{ value: ReframeConfig["cropRatio"]; label: string }> = [
