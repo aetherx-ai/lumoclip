@@ -71,8 +71,10 @@ interface NewProjectModalProps {
   // Where the user came in from. "enhance-speech" shows a contextual hint
   // explaining that a project must exist before speech can be enhanced,
   // since /api/projects/:projectId/enhance-speech runs on an existing
-  // project's source or clip, not as a project-creation mode.
-  intent?: "default" | "enhance-speech";
+  // project's source or clip, not as a project-creation mode. "upscale"
+  // is routed the same way (see the landing page's ToolGrid onSelect) and
+  // must lock the modal straight into the "upscale" processing mode.
+  intent?: "default" | "enhance-speech" | "upscale";
   // Set when the user picked a specific output (e.g. clicked "AI Reframe"
   // on the landing page instead of the generic "New Project" button). When
   // present, the "What do you want to make?" step opens locked to this one
@@ -2339,10 +2341,14 @@ export const NewProjectModal: React.FC<
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
-        : (initialProcessingMode ??
-            DEFAULT_PROCESSING_MODE),
+        : intent === "upscale"
+          ? "upscale"
+          : (initialProcessingMode ??
+              DEFAULT_PROCESSING_MODE),
     );
-    setModeLocked(Boolean(initialProcessingMode));
+    setModeLocked(
+      intent === "upscale" || Boolean(initialProcessingMode),
+    );
 
     setUploadState({
       progress: 0,
@@ -2377,16 +2383,22 @@ export const NewProjectModal: React.FC<
     setDragActive(false);
 
     // Tool intent is authoritative: Enhance Speech can never fall back
-    // to normal clip generation, even if stale modal state exists.
+    // to normal clip generation, even if stale modal state exists. The
+    // same applies to Upscale, which arrives via intent (no mode is
+    // passed for it — see the landing page's ToolGrid onSelect).
     // Otherwise, a mode passed in from the landing page (e.g. the "AI
     // Reframe" button) wins over the generic default.
     setProcessingMode(
       intent === "enhance-speech"
         ? "speech_only"
-        : (initialProcessingMode ??
-            DEFAULT_PROCESSING_MODE),
+        : intent === "upscale"
+          ? "upscale"
+          : (initialProcessingMode ??
+              DEFAULT_PROCESSING_MODE),
     );
-    setModeLocked(Boolean(initialProcessingMode));
+    setModeLocked(
+      intent === "upscale" || Boolean(initialProcessingMode),
+    );
 
     setUploadState({
       progress: 0,
@@ -2756,12 +2768,15 @@ export const NewProjectModal: React.FC<
 
       setLoading(true);
 
-      // Never trust stale React state for Enhance Speech.
-      // This action is always a speech-only source-preparation job.
+      // Never trust stale React state for Enhance Speech or Upscale.
+      // These actions always mean their dedicated mode, regardless of
+      // whatever processingMode happened to be left over in state.
       const effectiveProcessingMode: ProcessingMode =
         intent === "enhance-speech"
           ? "speech_only"
-          : processingMode;
+          : intent === "upscale"
+            ? "upscale"
+            : processingMode;
 
       // The server has no "upscale" project-creation mode (see the
       // ProcessingMode comment above) — sending mode: "upscale" to
