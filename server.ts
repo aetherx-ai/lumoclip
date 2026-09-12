@@ -12498,13 +12498,32 @@ app.post(
 
       const { data: project, error: projectError } = await supabase
         .from("projects")
-        .select("id, user_id, name, source_media_url")
+        .select("id, user_id, name, source_media_url, current_step, status")
         .eq("id", projectId)
         .eq("user_id", user.id)
         .single();
 
       if (projectError || !project) {
         return res.status(404).json({ error: "Project not found." });
+      }
+
+      // =========================================================
+      // IDEMPOTENCY GUARD
+      // Without this, a double-click / retried request / re-submitted
+      // form can call this endpoint twice for the same project, spawning
+      // two concurrent ffmpeg renders (double credit charge, two
+      // interleaved progress streams, whichever finishes last silently
+      // overwrites the other's output). If a render is already in
+      // flight for this project, reject the second call outright.
+      // =========================================================
+      {
+        const existingStep = String((project as any).current_step || "").toLowerCase();
+        const existingStatus = String((project as any).status || "").toLowerCase();
+        if (existingStatus === "processing" && existingStep.includes("upscal")) {
+          return res.status(409).json({
+            error: "An upscale is already in progress for this project.",
+          });
+        }
       }
 
       let inputPath = "";
@@ -12607,6 +12626,7 @@ app.post(
         .update({
           current_step: "Upscaling video (0%)",
           status: "processing",
+          progress: 0,
         })
         .eq("id", projectId)
         .eq("user_id", user.id);
@@ -12665,7 +12685,10 @@ app.post(
 
               supabase
                 .from("projects")
-                .update({ current_step: `Upscaling video (${percent}%)` })
+                .update({
+                  current_step: `Upscaling video (${percent}%)`,
+                  progress: percent,
+                })
                 .eq("id", projectId)
                 .eq("user_id", user.id)
                 .then(undefined, (updateError: any) => {

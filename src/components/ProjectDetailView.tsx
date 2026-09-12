@@ -2593,7 +2593,33 @@ const Pipeline: React.FC<{
   const speechOnlyMode =
     isSpeechOnlyProject(project);
 
-  const steps = speechOnlyMode
+  const upscaleOnlyMode =
+    isUpscaleProject(project);
+
+  const steps = upscaleOnlyMode
+    ? [
+        {
+          label: "Video received",
+          description: "Source video successfully uploaded",
+          threshold: 5,
+        },
+        {
+          label: "Preparing for upscale",
+          description: "Getting the source ready for AI upscaling",
+          threshold: 10,
+        },
+        {
+          label: "Upscaling video",
+          description: "Increasing resolution and sharpening with AI",
+          threshold: 95,
+        },
+        {
+          label: "Finalizing",
+          description: "Saving the upscaled video",
+          threshold: 96,
+        },
+      ]
+    : speechOnlyMode
     ? [
         {
           label: "Video received",
