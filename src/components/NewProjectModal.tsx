@@ -3088,7 +3088,7 @@ export const NewProjectModal: React.FC<
             setUploadState({
               progress: 100,
               stage: "complete",
-              message: "Video upscaled successfully",
+              message: "Upscale started — open the project to watch progress",
             });
           } else {
 

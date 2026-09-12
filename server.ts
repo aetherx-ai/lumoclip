@@ -1951,7 +1951,7 @@ if (fs.existsSync(fontPath)) {
 const CAPTIONS_ENABLED =
   process.env.CAPTIONS_ENABLED !== "false";
 
-type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "reframe" | "auto_sfx" | "video_debugger" | "dubbing";
+type ProcessingMode = "clips" | "full_video_caption" | "speech_only" | "upscale_only" | "reframe" | "auto_sfx" | "video_debugger" | "dubbing";
 
 interface SubtitleStyle {
   enabled: boolean;
@@ -2026,6 +2026,7 @@ function normalizeCaptionStyle(value: unknown): SubtitleStyle {
 
 function normalizeProcessingMode(value: unknown): ProcessingMode {
   if (value === "speech_only") return "speech_only";
+  if (value === "upscale_only") return "upscale_only";
   if (value === "full_video_caption") return "full_video_caption";
   if (value === "reframe") return "reframe";
   if (value === "auto_sfx") return "auto_sfx";
@@ -7459,6 +7460,32 @@ async function processVideo(
       return;
     }
 
+    // Upscale-only projects are source-preparation jobs, same as
+    // speech_only above. They MUST NOT run Gemini clip analysis. The
+    // actual AI Upscale (choosing 2x/4x) is a separate action performed
+    // via /api/projects/:projectId/upscale after the source exists.
+    if (mode === "upscale_only") {
+      await updateProject(
+        projectId,
+        100,
+        "Source ready for Upscale",
+        "completed",
+        0,
+      );
+
+      await createNotification({
+        userId,
+        type: "project_ready_for_upscale",
+        title: "Video ready for Upscale",
+        message: "Your source video is ready. Upscale it whenever you want.",
+        projectId,
+        metadata: { mode: "upscale_only", generated: 0 },
+      });
+
+      console.log(`Project ${projectId} prepared for Upscale without generating clips.`);
+      return;
+    }
+
     if (mode === "auto_sfx") {
       await updateAutoSfxState(projectId, 30, "Auto SFX: analyzing the full video", "processing");
       const sfxAnalysis = await analyzeAutoSfx(sourcePath, duration);
@@ -8214,6 +8241,7 @@ async function processPodcastImport(
       requestedConfig.mode === "full_video_caption" ||
       requestedConfig.mode === "reframe" ||
       requestedConfig.mode === "video_debugger" ||
+      requestedConfig.mode === "upscale_only" ||
       requestedConfig.mode === "dubbing";
 
     if (needsVideo && !hasVideo) {
@@ -10192,6 +10220,10 @@ app.post(
         ? (WORKER_ENABLED
           ? "Waiting for LumoClip worker (speech enhancement source)"
           : "Worker is not configured. Please start/configure the LumoClip PC worker.")
+        : requestedConfig.mode === "upscale_only"
+        ? (WORKER_ENABLED
+          ? "Waiting for LumoClip worker (upscale source)"
+          : "Worker is not configured. Please start/configure the LumoClip PC worker.")
         : (WORKER_ENABLED
           ? "Waiting for LumoClip worker"
           : "Worker is not configured. Please start/configure the LumoClip PC worker.");
@@ -10451,6 +10483,7 @@ app.post(
       // optional processing_mode column is stale or unavailable.
       const workerStep = String((project as any).current_step || "");
       const isSpeechOnlyJob = workerStep.includes("speech enhancement source");
+      const isUpscaleOnlyJob = workerStep.includes("upscale source");
       const isVideoDebuggerJob = workerStep.includes("video debugger");
 
       const processingConfig = await getProcessingConfig(projectId);
@@ -10458,15 +10491,19 @@ app.post(
       const effectiveProcessingConfig: ProcessingConfig =
         isSpeechOnlyJob
           ? { ...processingConfig, mode: "speech_only" }
-          : isVideoDebuggerJob
-            ? { ...processingConfig, mode: "video_debugger" }
-            : processingConfig;
+          : isUpscaleOnlyJob
+            ? { ...processingConfig, mode: "upscale_only" }
+            : isVideoDebuggerJob
+              ? { ...processingConfig, mode: "video_debugger" }
+              : processingConfig;
 
       const downloadedStep = isSpeechOnlyJob
         ? "YouTube video downloaded (speech enhancement source)"
-        : isVideoDebuggerJob
-          ? "YouTube video downloaded (video debugger)"
-          : "YouTube video downloaded";
+        : isUpscaleOnlyJob
+          ? "YouTube video downloaded (upscale source)"
+          : isVideoDebuggerJob
+            ? "YouTube video downloaded (video debugger)"
+            : "YouTube video downloaded";
 
       const { error: updateError } = await supabase
         .from("projects")
@@ -10519,9 +10556,11 @@ app.post(
         mode: effectiveProcessingConfig.mode,
         message: effectiveProcessingConfig.mode === "speech_only"
           ? "Video received. Source prepared for Enhanced Speech."
-          : effectiveProcessingConfig.mode === "full_video_caption"
-            ? "Video received. Full-video AI caption processing started."
-            : "Video received. AI processing started.",
+          : effectiveProcessingConfig.mode === "upscale_only"
+            ? "Video received. Source prepared for Upscale."
+            : effectiveProcessingConfig.mode === "full_video_caption"
+              ? "Video received. Full-video AI caption processing started."
+              : "Video received. AI processing started.",
       });
     } catch (error: any) {
       console.error(`Worker upload failed for ${projectId}:`, error);
@@ -12565,41 +12604,12 @@ app.post(
 
       await supabase
         .from("projects")
-        .update({ current_step: "Upscaling video (0%)" })
+        .update({
+          current_step: "Upscaling video (0%)",
+          status: "processing",
+        })
         .eq("id", projectId)
         .eq("user_id", user.id);
-
-      const startedAt = Date.now();
-
-      let lastProgressWriteAt = 0;
-      let lastWrittenPercent = -1;
-
-      await runVideoUpscale(inputPath, outputPath, {
-        targetWidth: dimensions.width,
-        targetHeight: dimensions.height,
-        hasAudio: probe.hasAudio,
-        onProgressPercent: (percent) => {
-          const now = Date.now();
-          const dueByTime = now - lastProgressWriteAt >= 3000;
-          const dueByJump = percent - lastWrittenPercent >= 10;
-          if (!dueByTime && !dueByJump && percent < 100) return;
-
-          lastProgressWriteAt = now;
-          lastWrittenPercent = percent;
-
-          supabase
-            .from("projects")
-            .update({ current_step: `Upscaling video (${percent}%)` })
-            .eq("id", projectId)
-            .eq("user_id", user.id)
-            .then(undefined, (updateError: any) => {
-              console.error("Upscale progress update failed:", updateError);
-            });
-        },
-      });
-
-      const processingTimeMs = Date.now() - startedAt;
-      const outputUrl = publicMediaUrl(projectId, `upscaled/${outputName}`);
 
       await supabase.from("usage_logs").insert({
         user_id: user.id,
@@ -12607,63 +12617,155 @@ app.post(
         credits_used: UPSCALE_COST,
       });
 
-      try {
-        await createNotification({
-          userId: user.id,
-          type: "video_upscaled",
-          title: "Video upscaled",
-          message: "Your upscaled video is ready.",
-          projectId,
-          metadata: {
-            inputType,
-            credits: UPSCALE_COST,
-            factorRequested: factor,
-            factorApplied: dimensions.cappedFactor,
-            sourceResolution: `${probe.width}x${probe.height}`,
-            outputResolution: `${dimensions.width}x${dimensions.height}`,
-            processingTimeMs,
-          },
-        });
-      } catch (notificationError) {
-        console.error("Upscale notification failed:", notificationError);
-      }
-
-      // Persist the result the same way every other single-output feature
-      // does (Dubbing/Auto SFX/Reframe all write `full_video_url` — see
-      // the other `.update({ full_video_url: ... })` calls in this file).
-      // Without this, outputUrl only ever lives in this response: closing
-      // the modal or revisiting the project later loses it entirely, and
-      // there is no server column dedicated to the upscale factor, so it
-      // is folded into current_step (matching the "Upscaling video (N%)"
-      // progress messages already written above) for the client to parse.
-      await supabase
-        .from("projects")
-        .update({
-          full_video_url: outputUrl,
-          current_step: `Upscale complete (${dimensions.cappedFactor}x)`,
-        })
-        .eq("id", projectId)
-        .eq("user_id", user.id);
-
-      console.log(
-        `AI Upscale done in ${(processingTimeMs / 1000).toFixed(1)}s ` +
-          `(${probe.width}x${probe.height} -> ${dimensions.width}x${dimensions.height}).`,
-      );
-
-      return res.json({
+      // =========================================================
+      // RESPOND IMMEDIATELY — do not make the caller (the New Project
+      // modal, or anyone else) hold a connection open for the full
+      // render. A 2x/4x re-encode of a real video can easily run past
+      // typical proxy/browser-tolerable request durations. The actual
+      // render happens below, in the background, and its progress /
+      // result are polled via the project row (current_step during the
+      // run, full_video_url + "Upscale complete (Nx)" when done) —
+      // exactly like Reframe/Dubbing/Auto SFX already work.
+      // =========================================================
+      res.json({
         success: true,
         projectId,
+        status: "processing",
         inputType,
-        outputUrl,
-        filename: outputName,
         creditsUsed: UPSCALE_COST,
-        processingTimeMs,
         factorRequested: factor,
         factorApplied: dimensions.cappedFactor,
         sourceResolution: { width: probe.width, height: probe.height },
         outputResolution: { width: dimensions.width, height: dimensions.height },
-        message: "Video upscaled successfully.",
+        message:
+          "Upscale started. This can take a while for longer or higher-resolution videos — progress is saved to the project, so it's safe to leave this page.",
       });
+
+      // =========================================================
+      // BACKGROUND RENDER (not awaited by the request above)
+      // =========================================================
+      void (async () => {
+        const startedAt = Date.now();
+        let lastProgressWriteAt = 0;
+        let lastWrittenPercent = -1;
+
+        try {
+          await runVideoUpscale(inputPath, outputPath, {
+            targetWidth: dimensions.width,
+            targetHeight: dimensions.height,
+            hasAudio: probe.hasAudio,
+            onProgressPercent: (percent) => {
+              const now = Date.now();
+              const dueByTime = now - lastProgressWriteAt >= 3000;
+              const dueByJump = percent - lastWrittenPercent >= 10;
+              if (!dueByTime && !dueByJump && percent < 100) return;
+
+              lastProgressWriteAt = now;
+              lastWrittenPercent = percent;
+
+              supabase
+                .from("projects")
+                .update({ current_step: `Upscaling video (${percent}%)` })
+                .eq("id", projectId)
+                .eq("user_id", user.id)
+                .then(undefined, (updateError: any) => {
+                  console.error("Upscale progress update failed:", updateError);
+                });
+            },
+          });
+
+          const processingTimeMs = Date.now() - startedAt;
+          const outputUrl = publicMediaUrl(projectId, `upscaled/${outputName}`);
+
+          // "Upscale complete (Nx)" — the exact shape ProjectDetailView's
+          // getUpscaleFactor() parses via /(\d+)x/, so use the requested
+          // factor (always 2 or 4) here rather than the possibly-capped
+          // decimal cappedFactor.
+          await supabase
+            .from("projects")
+            .update({
+              full_video_url: outputUrl,
+              progress: 100,
+              current_step: `Upscale complete (${factor}x)`,
+              status: "completed",
+            })
+            .eq("id", projectId)
+            .eq("user_id", user.id);
+
+          try {
+            await createNotification({
+              userId: user.id,
+              type: "video_upscaled",
+              title: "Video upscaled",
+              message: "Your upscaled video is ready.",
+              projectId,
+              metadata: {
+                inputType,
+                credits: UPSCALE_COST,
+                factorRequested: factor,
+                factorApplied: dimensions.cappedFactor,
+                sourceResolution: `${probe.width}x${probe.height}`,
+                outputResolution: `${dimensions.width}x${dimensions.height}`,
+                processingTimeMs,
+              },
+            });
+          } catch (notificationError) {
+            console.error("Upscale notification failed:", notificationError);
+          }
+
+          console.log(
+            `AI Upscale done in ${(processingTimeMs / 1000).toFixed(1)}s ` +
+              `(${probe.width}x${probe.height} -> ${dimensions.width}x${dimensions.height}).`,
+          );
+        } catch (bgError: any) {
+          console.error("Upscale background render failed:", bgError);
+
+          try {
+            if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+          } catch {}
+
+          if (charged) {
+            try {
+              await supabase.rpc("refund_video_credits", {
+                p_user_id: user.id,
+                p_cost: UPSCALE_COST,
+                p_daily_limit: DAILY_CREDIT_LIMIT,
+              });
+              await supabase.from("usage_logs").insert({
+                user_id: user.id,
+                action: `Refund: failed upscale for project ${projectId}`,
+                credits_used: -UPSCALE_COST,
+              });
+            } catch (refundError) {
+              console.error("Upscale credit refund failed:", refundError);
+            }
+          }
+
+          const failureMessage =
+            bgError?.message || "Video upscale failed.";
+
+          await supabase
+            .from("projects")
+            .update({
+              status: "failed",
+              current_step: failureMessage,
+            })
+            .eq("id", projectId)
+            .eq("user_id", user.id);
+
+          try {
+            await createNotification({
+              userId: user.id,
+              type: "project_failed",
+              title: "Upscale failed",
+              message: failureMessage,
+              projectId,
+            });
+          } catch (notificationError) {
+            console.error("Upscale failure notification failed:", notificationError);
+          }
+        }
+      })();
     } catch (error: any) {
       console.error("Upscale endpoint failed:", error);
 
