@@ -2964,7 +2964,13 @@ export const NewProjectModal: React.FC<
             );
           }
 
-          const authToken = session.access_token;
+          // Refreshed on every poll below rather than captured once,
+          // since a long YouTube/podcast download (or a backgrounded
+          // tab, where Supabase's own refresh timer can be throttled)
+          // can outlast a single token's lifetime. Reusing one stale
+          // token here previously surfaced as a mid-wait "Unauthorized"
+          // error even though the user was still logged in.
+          let authToken = session.access_token;
           let sourceReadyOnServer = sourceType === "file";
 
           // YouTube/Podcast sources are downloaded asynchronously by the
@@ -2985,6 +2991,18 @@ export const NewProjectModal: React.FC<
                 stage: "processing",
                 message: "Waiting for source video…",
               });
+
+              // Re-fetch the session before each poll — getSession()
+              // transparently refreshes an expired-but-refreshable token,
+              // so this call never gets stuck on a token that went stale
+              // while we were waiting.
+              const {
+                data: { session: refreshedSession },
+              } = await (await getSupabase()).auth.getSession();
+
+              if (refreshedSession?.access_token) {
+                authToken = refreshedSession.access_token;
+              }
 
               const projectResponse = await fetch(
                 `/api/projects/${projectId}`,
