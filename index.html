@@ -1,9 +1,11 @@
+```html
 <!doctype html>
 <html lang="en">
   <head>
     <!-- =====================================================
          BASIC
     ====================================================== -->
+
     <meta charset="UTF-8" />
 
     <meta
@@ -24,6 +26,7 @@
     <!-- =====================================================
          GOOGLE SEARCH CONSOLE
     ====================================================== -->
+
     <meta
       name="google-site-verification"
       content="7ANJsW0LAZhSEeMM9PQyl82VjMWdTccjl_9Xvq-y6Dw"
@@ -31,23 +34,15 @@
 
     <!-- =====================================================
          PRIMARY SEO
-
-         Updated to reflect the full AI video toolkit — not just
-         clipping. LumoClip also does AI Upscale, AI Reframe, AI
-         Captions, Auto SFX, Enhanced Speech, and AI Dubbing, so the
-         title/description/keywords now cover the whole suite. This
-         is what search engines index and what shows in search
-         results — matching it to the real feature set helps LumoClip
-         rank for more queries than "video clipper" alone.
     ====================================================== -->
 
     <title>
-      LumoClip - AI Video Editor: Clips, Upscale, Captions, Reframe & Dubbing
+      LumoClip – AI Video Clipper & Editor | AI Shorts Generator
     </title>
 
     <meta
       name="description"
-      content="LumoClip is an all-in-one AI video toolkit: turn long videos, podcasts, and YouTube content into short clips, upscale resolution with AI, add captions, auto sound effects, enhance speech, reframe for any platform, and dub into other languages — for YouTube Shorts, TikTok, and Instagram Reels."
+      content="LumoClip is an AI video clipper and editor that turns long videos into engaging shorts with AI captions, smart reframing, speech enhancement, sound effects, and more."
     />
 
     <meta
@@ -62,7 +57,7 @@
 
     <meta
       name="keywords"
-      content="AI video clipper, AI video editor, AI video upscaler, video upscaling, AI video reframe, AI captions, auto sound effects, AI speech enhancement, AI video dubbing, video repurposing, YouTube Shorts, TikTok clips, Instagram Reels, podcast clips, script to video, LumoClip"
+      content="AI video clipper, AI shorts generator, AI video editor, long video to shorts, video repurposing, AI captions, AI reframe, AI video upscaler, AI speech enhancement, auto sound effects, AI video dubbing, YouTube Shorts, TikTok clips, Instagram Reels, podcast clips"
     />
 
     <meta
@@ -81,13 +76,6 @@
 
     <!-- =====================================================
          FAVICON
-         Uses the new LumoClip icon.
-
-         A single "icon" link (no fixed "sizes") lets the browser
-         scale one raster image for every context it needs, instead
-         of fetching the same file five separate times for five
-         declared sizes. Only apple-touch-icon needs its own entry
-         since iOS ignores the generic <link rel="icon">.
     ====================================================== -->
 
     <link
@@ -137,18 +125,33 @@
     />
 
     <meta
+      property="og:locale"
+      content="en_US"
+    />
+
+    <meta
       property="og:title"
-      content="LumoClip - AI Video Editor: Clips, Upscale, Captions, Reframe & Dubbing"
+      content="LumoClip – AI Video Clipper & Editor"
     />
 
     <meta
       property="og:description"
-      content="Turn long videos, podcasts, and YouTube content into short-form clips — plus AI upscaling, captions, auto sound effects, speech enhancement, reframing, and dubbing, all with LumoClip AI."
+      content="Turn long videos into engaging short-form content with AI clipping, captions, smart reframing, speech enhancement, sound effects, and more."
     />
 
     <meta
       property="og:image"
       content="https://lumo-clip.com/lumoclip-og-image.png"
+    />
+
+    <meta
+      property="og:image:secure_url"
+      content="https://lumo-clip.com/lumoclip-og-image.png"
+    />
+
+    <meta
+      property="og:image:type"
+      content="image/png"
     />
 
     <meta
@@ -163,17 +166,7 @@
 
     <meta
       property="og:image:alt"
-      content="LumoClip - AI Video Editor: Clips, Upscale, Captions, Reframe & Dubbing"
-    />
-
-    <meta
-      property="og:image:type"
-      content="image/png"
-    />
-
-    <meta
-      property="og:locale"
-      content="en_US"
+      content="LumoClip – AI Video Clipper and AI Video Editor"
     />
 
     <!-- =====================================================
@@ -187,12 +180,12 @@
 
     <meta
       name="twitter:title"
-      content="LumoClip - AI Video Editor: Clips, Upscale, Captions, Reframe & Dubbing"
+      content="LumoClip – AI Video Clipper & Editor"
     />
 
     <meta
       name="twitter:description"
-      content="Turn long videos, podcasts, and YouTube content into short-form clips — plus AI upscaling, captions, auto sound effects, speech enhancement, reframing, and dubbing, all with LumoClip AI."
+      content="Turn long videos into engaging shorts with AI clipping, captions, reframing, speech enhancement, sound effects, and more."
     />
 
     <meta
@@ -202,11 +195,12 @@
 
     <meta
       name="twitter:image:alt"
-      content="LumoClip - AI Video Editor"
+      content="LumoClip – AI Video Clipper and AI Video Editor"
     />
 
     <!-- =====================================================
-         ORGANIZATION + WEBSITE SCHEMA
+         STRUCTURED DATA
+         ORGANIZATION + WEBSITE + WEBPAGE
     ====================================================== -->
 
     <script type="application/ld+json">
@@ -228,12 +222,7 @@
               "height": 512,
               "caption": "LumoClip Logo"
             },
-            "description": "LumoClip is an all-in-one AI video toolkit for clipping, upscaling, captioning, reframing, and dubbing video content.",
-            "sameAs": [
-              "https://twitter.com/lumoclip",
-              "https://www.linkedin.com/company/lumoclip",
-              "https://www.producthunt.com/products/lumoclip"
-            ]
+            "description": "LumoClip is an AI video platform for creating, editing, repurposing, and enhancing short-form video content."
           },
 
           {
@@ -245,9 +234,30 @@
               "LumoClip AI",
               "Lumo Clip"
             ],
-            "description": "LumoClip is an all-in-one AI video toolkit for clipping, upscaling, captioning, reframing, and dubbing video content.",
+            "description": "AI video clipper and editor for turning long-form videos into short-form content.",
             "publisher": {
               "@id": "https://lumo-clip.com/#organization"
+            },
+            "inLanguage": "en"
+          },
+
+          {
+            "@type": "WebPage",
+            "@id": "https://lumo-clip.com/#webpage",
+            "url": "https://lumo-clip.com/",
+            "name": "LumoClip – AI Video Clipper & Editor | AI Shorts Generator",
+            "description": "LumoClip is an AI video clipper and editor that turns long videos into engaging shorts with AI captions, smart reframing, speech enhancement, sound effects, and more.",
+            "isPartOf": {
+              "@id": "https://lumo-clip.com/#website"
+            },
+            "about": {
+              "@id": "https://lumo-clip.com/#software"
+            },
+            "publisher": {
+              "@id": "https://lumo-clip.com/#organization"
+            },
+            "primaryImageOfPage": {
+              "@id": "https://lumo-clip.com/#logo"
             },
             "inLanguage": "en"
           }
@@ -257,12 +267,6 @@
 
     <!-- =====================================================
          SOFTWARE APPLICATION SCHEMA
-
-         featureList expanded to cover the full toolkit (Upscale,
-         Reframe, Auto SFX, Enhanced Speech, Dubbing) instead of only
-         the clipping features — this is what can surface as rich
-         results and is also a relevance signal for the broader set
-         of queries the site should be found for.
     ====================================================== -->
 
     <script type="application/ld+json">
@@ -273,12 +277,12 @@
         "name": "LumoClip",
         "alternateName": "LumoClip AI Video Clipper",
         "url": "https://lumo-clip.com/",
-        "description": "LumoClip is an all-in-one AI video toolkit that clips, upscales, captions, reframes, and dubs video content for short-form platforms.",
+        "description": "LumoClip is an AI video clipper and editor that turns long videos, podcasts, and YouTube content into short-form videos.",
         "applicationCategory": "MultimediaApplication",
         "applicationSubCategory": "Video Editing Software",
         "operatingSystem": "Web",
-        "image": "https://lumo-clip.com/lumoclip-icon.png",
-        "screenshot": "https://lumo-clip.com/lumoclip-icon.png",
+        "browserRequirements": "Requires a modern web browser",
+        "image": "https://lumo-clip.com/lumoclip-og-image.png",
         "brand": {
           "@type": "Brand",
           "name": "LumoClip",
@@ -293,24 +297,24 @@
         "featureList": [
           "AI video clipping",
           "Long video to shorts",
-          "Automatic highlight detection",
-          "AI video upscaling",
-          "AI video reframing",
+          "AI highlight detection",
+          "AI video editing",
           "AI captions",
-          "Auto sound effects",
+          "AI video reframing",
+          "AI video upscaling",
           "AI speech enhancement",
+          "Automatic sound effects",
           "AI video dubbing",
-          "Script to video",
-          "Short-form video creation",
           "Video repurposing",
           "YouTube video clipping",
+          "Short-form video creation",
           "Social media video optimization"
         ]
       }
     </script>
 
     <!-- =====================================================
-         APPLICATION
+         MOBILE / APP
     ====================================================== -->
 
     <meta
@@ -342,3 +346,4 @@
     <div id="root"></div>
   </body>
 </html>
+```
