@@ -1,3 +1,4 @@
+
 import React, { useState } from "react";
 import { getSupabase } from "../lib/supabase";
 import {
@@ -48,16 +49,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const supabase = await getSupabase();
 
       if (isSignUp) {
-        const { error } =
-          await supabase.auth.signUp({
-            email: email.trim(),
-            password,
-            options: {
-              data: {
-                name: name.trim() || "Creator",
-              },
+        const { error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            data: {
+              name: name.trim() || "Creator",
             },
-          });
+          },
+        });
 
         if (error) throw error;
 
@@ -68,11 +68,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-      const { error } =
-        await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
 
       if (error) throw error;
 
@@ -91,31 +90,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   const handleGoogleSignIn = async () => {
-  setLoading(true);
-  setError("");
+    setLoading(true);
+    setError("");
 
-  try {
-    const supabase = await getSupabase();
+    try {
+      const supabase = await getSupabase();
 
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/`,
-      },
-    });
+      const redirectTo = import.meta.env.PROD
+        ? "https://lumo-clip.com/"
+        : `${window.location.origin}/`;
 
-    if (error) throw error;
-  } catch (err: any) {
-    console.error("Google Sign In Error:", err);
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+        },
+      });
 
-    setError(
-      err?.message ||
-        "Google Sign In failed."
-    );
+      if (error) {
+        throw error;
+      }
+    } catch (err: any) {
+      console.error("Google Sign In Error:", err);
 
-    setLoading(false);
-  }
-};
+      setError(
+        err?.message || "Google Sign In failed."
+      );
+
+      setLoading(false);
+    }
+  };
 
   const toggleMode = () => {
     setIsSignUp((value) => !value);
@@ -154,7 +158,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </p>
           </div>
 
-          {/* Google */}
+          {/* Google Sign In */}
           <button
             type="button"
             onClick={handleGoogleSignIn}
@@ -164,6 +168,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <svg
               className="h-5 w-5"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path
                 fill="#4285F4"
@@ -201,14 +206,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           </div>
 
-          {/* Error */}
+          {/* Error / Status Message */}
           {error && (
             <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs leading-5 text-red-400">
               {error}
             </div>
           )}
 
-          {/* Form */}
+          {/* Email / Password Form */}
           <form
             onSubmit={handleSubmit}
             className="space-y-4"
@@ -225,9 +230,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <input
                     type="text"
                     value={name}
-                    onChange={(e) =>
-                      setName(e.target.value)
-                    }
+                    onChange={(e) => setName(e.target.value)}
                     placeholder="Your name"
                     className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
                   />
@@ -246,9 +249,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) =>
-                    setEmail(e.target.value)
-                  }
+                  onChange={(e) => setEmail(e.target.value)}
                   placeholder="creator@example.com"
                   required
                   className="w-full rounded-xl border border-zinc-800 bg-zinc-900/60 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-zinc-600 focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
@@ -267,9 +268,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   type="password"
                   value={password}
-                  onChange={(e) =>
-                    setPassword(e.target.value)
-                  }
+                  onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
                   required
                   minLength={6}
@@ -299,7 +298,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
           </form>
 
-          {/* Toggle */}
+          {/* Toggle Sign In / Sign Up */}
           <div className="mt-6 text-center text-xs text-zinc-400">
             {isSignUp ? (
               <>
